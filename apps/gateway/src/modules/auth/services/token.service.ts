@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import jwt from 'jsonwebtoken';
+import { ConfigService } from '../../../common/config/config.service.js';
 import { SecurityService } from '../../../common/security/security.service.js';
 import { JwtPayload, RefreshTokenPayload } from '../interfaces/jwt-payload.interface.js';
 import { TokenPair } from '../interfaces/token-pair.interface.js';
@@ -10,7 +12,10 @@ import { TokenPair } from '../interfaces/token-pair.interface.js';
  */
 @Injectable()
 export class TokenService {
-  constructor(private readonly securityService: SecurityService) {}
+  constructor(
+    private readonly securityService: SecurityService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * 生成访问令牌
@@ -27,12 +32,13 @@ export class TokenService {
     userId: string,
     tokenId: string,
   ): Promise<string> {
-    const tokenManager = this.securityService.getTokenManager();
+    const jwtConfig = this.configService.getJwtConfig();
     const payload: RefreshTokenPayload = {
       sub: userId,
       tokenId,
     };
-    return tokenManager.generateRefreshToken(payload, {
+    return jwt.sign(payload, jwtConfig.refreshSecret, {
+      algorithm: 'HS256',
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     });
   }
@@ -45,12 +51,12 @@ export class TokenService {
     tokenId: string,
   ): Promise<TokenPair> {
     const tokenManager = this.securityService.getTokenManager();
-    const tokenPair = await tokenManager.generateTokenPair(
-      payload as any,
-      tokenId,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' },
-      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' },
-    );
+    const [accessToken, refreshToken] = await Promise.all([
+      tokenManager.generateAccessToken(payload as any, {
+        expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+      }),
+      this.generateRefreshToken(payload.sub, tokenId),
+    ]);
 
     // 解析过期时间
     const expiresIn = this.parseExpiresIn(
@@ -58,8 +64,8 @@ export class TokenService {
     );
 
     return {
-      accessToken: tokenPair.accessToken,
-      refreshToken: tokenPair.refreshToken,
+      accessToken,
+      refreshToken,
       expiresIn,
     };
   }
@@ -77,8 +83,10 @@ export class TokenService {
    * 验证刷新令牌
    */
   async verifyRefreshToken(token: string): Promise<RefreshTokenPayload> {
-    const tokenManager = this.securityService.getTokenManager();
-    const payload = await tokenManager.verifyToken(token);
+    const jwtConfig = this.configService.getJwtConfig();
+    const payload = jwt.verify(token, jwtConfig.refreshSecret, {
+      algorithms: ['HS256'],
+    });
     return payload as RefreshTokenPayload;
   }
 

@@ -1,4 +1,11 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  ServiceUnavailableException,
+  Logger,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '../../common/config/config.service.js';
@@ -251,15 +258,43 @@ export class AuthService {
         expiresIn: tokenPair.expiresIn,
       };
     } catch (error: any) {
-      // 处理各种错误情况
-      if (error.response?.status === 409) {
-        // 邮箱或用户名已存在
-        throw error;
+      const status = error?.response?.status;
+      const errorData = error?.response?.data;
+      const message =
+        errorData?.error?.message ||
+        errorData?.message ||
+        error?.message ||
+        'Registration failed';
+
+      // 下游 API 返回业务冲突（邮箱/用户名重复）
+      if (status === 409) {
+        throw new ConflictException({
+          code: ErrorCode.RECORD_ALREADY_EXISTS,
+          message,
+        });
       }
-      if (error.response?.status === 400) {
-        // 参数验证错误
-        throw error;
+
+      // 参数校验错误
+      if (status === 400) {
+        throw new BadRequestException({
+          code: ErrorCode.BAD_REQUEST,
+          message,
+          ...(errorData?.error?.details ? { details: errorData.error.details } : {}),
+        });
       }
+
+      // 下游服务不可达/超时
+      if (
+        error?.code === 'ECONNREFUSED' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ENOTFOUND'
+      ) {
+        throw new ServiceUnavailableException({
+          code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+          message: 'Registration service temporarily unavailable',
+        });
+      }
+
       throw error;
     }
   }
@@ -283,6 +318,17 @@ export class AuthService {
         throw new UnauthorizedException({
           code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
           message: 'Invalid refresh token',
+        });
+      }
+
+      // 如果旧访问令牌已被撤销，拒绝继续刷新（会话已失效）
+      const isSessionRevoked = await this.authCacheService.isTokenBlacklisted(
+        refreshTokenInfo.tokenId,
+      );
+      if (isSessionRevoked) {
+        throw new UnauthorizedException({
+          code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+          message: 'Session has been revoked',
         });
       }
 
@@ -355,13 +401,16 @@ export class AuthService {
     if (tokenId) {
       await this.authCacheService.blacklistToken(tokenId);
       await this.authCacheService.deleteToken(tokenId);
+      await this.authCacheService.deleteRefreshToken(tokenId);
     }
 
     // 若前端传入 refresh token，同步使其失效
     if (refreshToken) {
       try {
         const payload = await this.tokenService.verifyRefreshToken(refreshToken);
-        await this.authCacheService.deleteRefreshToken(payload.tokenId);
+        if (payload.sub === userId) {
+          await this.authCacheService.deleteRefreshToken(payload.tokenId);
+        }
       } catch {
         // 非法或过期的 refresh token 不阻塞登出流程
       }
@@ -369,6 +418,10 @@ export class AuthService {
 
     // 清除用户缓存
     await this.authCacheService.clearUserCache(userId);
+  }
+
+  async isTokenBlacklisted(tokenId: string): Promise<boolean> {
+    return this.authCacheService.isTokenBlacklisted(tokenId);
   }
 
   /**

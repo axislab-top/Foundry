@@ -20,6 +20,7 @@ import {
   ApiBody,
   ApiQuery,
 } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
 import type { Response, Request } from '../../common/types/express.types.js';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -88,6 +89,7 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Public()
+  @UseGuards(AuthGuard('refresh'))
   @ApiOperation({ summary: '刷新令牌', description: '使用刷新令牌获取新的访问令牌' })
   @ApiBody({ type: RefreshTokenDto })
   @ApiResponse({ status: 200, description: '令牌刷新成功' })

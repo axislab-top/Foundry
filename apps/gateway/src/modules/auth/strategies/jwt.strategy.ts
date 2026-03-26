@@ -28,6 +28,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * 验证 JWT 载荷
    */
   async validate(payload: JwtPayload): Promise<UserInfo> {
+    if (payload.tokenId) {
+      const isBlacklisted = await this.authService.isTokenBlacklisted(
+        payload.tokenId,
+      );
+      if (isBlacklisted) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+    }
+
     const user = await this.authService.validateUser(payload.sub);
 
     if (!user) {

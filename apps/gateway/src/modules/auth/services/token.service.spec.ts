@@ -3,12 +3,20 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
+import jwt from 'jsonwebtoken';
 import { TokenService } from './token.service.js';
 import { SecurityService } from '../../../common/security/security.service.js';
+import { ConfigService } from '../../../common/config/config.service.js';
 
 describe('TokenService', () => {
   let service: TokenService;
   let securityService: jest.Mocked<SecurityService>;
+  const jwtConfig = {
+    secret: 'access-secret',
+    refreshSecret: 'refresh-secret',
+    expiresIn: '15m',
+    refreshExpiresIn: '7d',
+  };
   const payload = {
     sub: 'user-123',
     email: 'user@example.com',
@@ -39,6 +47,12 @@ describe('TokenService', () => {
         {
           provide: SecurityService,
           useValue: mockSecurityService,
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            getJwtConfig: jest.fn(() => jwtConfig),
+          },
         },
       ],
     }).compile();
@@ -71,8 +85,8 @@ describe('TokenService', () => {
 
       const result = await service.generateRefreshToken(userId, tokenId);
 
-      expect(result).toBe('refresh-token');
-      expect(securityService.getTokenManager().generateRefreshToken).toHaveBeenCalled();
+      expect(typeof result).toBe('string');
+      expect(securityService.getTokenManager().generateRefreshToken).not.toHaveBeenCalled();
     });
   });
 
@@ -85,7 +99,7 @@ describe('TokenService', () => {
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
       expect(result).toHaveProperty('expiresIn');
-      expect(securityService.getTokenManager().generateTokenPair).toHaveBeenCalled();
+      expect(securityService.getTokenManager().generateAccessToken).toHaveBeenCalled();
     });
   });
 
@@ -102,15 +116,15 @@ describe('TokenService', () => {
 
   describe('verifyRefreshToken', () => {
     it('should verify refresh token', async () => {
-      const token = 'refresh-token';
       const payload = { sub: 'user-123', tokenId: 'token-123' };
-
-      securityService.getTokenManager().verifyToken = jest.fn(() => Promise.resolve(payload));
+      const token = jwt.sign(payload, jwtConfig.refreshSecret, {
+        algorithm: 'HS256',
+      });
 
       const result = await service.verifyRefreshToken(token);
 
-      expect(result).toEqual(payload);
-      expect(securityService.getTokenManager().verifyToken).toHaveBeenCalledWith(token);
+      expect(result).toEqual(expect.objectContaining(payload));
+      expect(securityService.getTokenManager().verifyToken).not.toHaveBeenCalledWith(token);
     });
   });
 

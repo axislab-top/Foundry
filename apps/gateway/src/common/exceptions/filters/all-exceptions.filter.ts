@@ -8,6 +8,7 @@ import {
 import type { Response } from '../../types/express.types.js';
 import { ErrorCode, ErrorMessages } from '../error-codes.js';
 import { BaseExceptionFilter } from './base-exception.filter.js';
+import { GatewayException } from './gateway-exception.filter.js';
 
 /**
  * 全局异常过滤器
@@ -42,7 +43,12 @@ export class AllExceptionsFilter
     let code = ErrorCode.INTERNAL_ERROR;
     let details: any = undefined;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof GatewayException) {
+      status = exception.statusCode;
+      message = exception.message || ErrorMessages[exception.code];
+      code = exception.code;
+      details = exception.details;
+    } else if (exception instanceof HttpException) {
       // HttpException 应该由 HttpExceptionFilter 处理
       // 如果执行到这里，说明 HttpExceptionFilter 可能没有被调用，需要处理它
 

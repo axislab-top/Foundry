@@ -79,6 +79,7 @@ import { CircuitBreakerInterceptor } from './common/resilience/interceptors/circ
 import { createSwaggerConfig } from './common/swagger/swagger.config.js';
 import { HttpExceptionFilter } from './common/exceptions/filters/http-exception.filter.js';
 import { AllExceptionsFilter } from './common/exceptions/filters/all-exceptions.filter.js';
+import { GatewayExceptionFilter } from './common/exceptions/filters/gateway-exception.filter.js';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard.js';
 
 async function bootstrap() {
@@ -168,19 +169,28 @@ async function bootstrap() {
   // 我们也在这里显式注册全局异常过滤器
   // 注意：这样会注册两次，但 NestJS 会正确处理，只会调用一次
   try {
+    const gatewayExceptionFilter = app.get(GatewayExceptionFilter);
     const httpExceptionFilter = app.get(HttpExceptionFilter);
     const allExceptionsFilter = app.get(AllExceptionsFilter);
     
     // 显式注册全局异常过滤器（确保它们被调用）
-    app.useGlobalFilters(httpExceptionFilter, allExceptionsFilter);
+    // 顺序：GatewayException -> HttpException -> AllExceptions
+    app.useGlobalFilters(
+      gatewayExceptionFilter,
+      httpExceptionFilter,
+      allExceptionsFilter,
+    );
     
     console.log('[Main] 异常过滤器已显式注册为全局过滤器:', {
+      gatewayExceptionFilter: !!gatewayExceptionFilter,
       httpExceptionFilter: !!httpExceptionFilter,
       allExceptionsFilter: !!allExceptionsFilter,
+      gatewayExceptionFilterType: gatewayExceptionFilter?.constructor?.name,
       httpExceptionFilterType: httpExceptionFilter?.constructor?.name,
       allExceptionsFilterType: allExceptionsFilter?.constructor?.name,
     });
     process.stderr.write('[Main] 异常过滤器已显式注册为全局过滤器\n');
+    process.stderr.write(`[Main] GatewayExceptionFilter 实例: ${!!gatewayExceptionFilter}\n`);
     process.stderr.write(`[Main] HttpExceptionFilter 实例: ${!!httpExceptionFilter}\n`);
     process.stderr.write(`[Main] AllExceptionsFilter 实例: ${!!allExceptionsFilter}\n`);
   } catch (error) {

@@ -3,23 +3,30 @@ import {
   Catch,
   ArgumentsHost,
   HttpStatus,
+  HttpException,
 } from '@nestjs/common';
 import type { Response } from '../../types/express.types.js';
-import { ErrorResponse } from '../interfaces/error-response.interface.js';
 import { ErrorCode, ErrorMessages } from '../error-codes.js';
 import { BaseExceptionFilter } from './base-exception.filter.js';
 
 /**
  * 网关特定异常
  */
-export class GatewayException extends Error {
+export class GatewayException extends HttpException {
   constructor(
     public readonly code: ErrorCode,
     public readonly message: string,
     public readonly statusCode: number = HttpStatus.INTERNAL_SERVER_ERROR,
     public readonly details?: any,
   ) {
-    super(message);
+    super(
+      {
+        code,
+        message,
+        ...(details !== undefined ? { details } : {}),
+      },
+      statusCode,
+    );
     this.name = 'GatewayException';
   }
 }
