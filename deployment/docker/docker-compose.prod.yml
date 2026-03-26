@@ -1,0 +1,256 @@
+# 服务部署 Docker Compose 配置 - 生产环境
+# 包含所有核心服务的统一部署配置（生产环境）
+# 
+# 使用方式：
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 或直接使用：docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # PostgreSQL - 数据库服务（生产环境）
+  postgres:
+    extends:
+      file: ../../infrastructure/postgres/docker-compose.yml
+      service: postgres
+    container_name: service-postgres-prod
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/postgres/.env
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"  # 生产环境只绑定本地
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # Grafana Loki - 日志聚合系统（生产环境）
+  # 生产环境可以使用 ELK 栈，这里保持使用 Loki 栈
+  loki:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: loki
+    container_name: service-loki-prod
+    networks:
+      - service-network
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"  # 生产环境只绑定本地
+    environment:
+      - LOG_RETENTION_HOURS=${LOG_RETENTION_HOURS:-720}  # 生产环境保留 30 天
+
+  # Promtail - 日志收集代理（生产环境）
+  promtail:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: promtail
+    container_name: service-promtail-prod
+    networks:
+      - service-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ../../infrastructure/logging/config/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ../../infrastructure/logging/logs:/var/log/apps:ro
+
+  # Grafana - 日志可视化（生产环境）
+  grafana:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: grafana
+    container_name: service-grafana-prod
+    networks:
+      - service-network
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"  # 生产环境只绑定本地
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+  # Redis - 缓存服务（生产环境）
+  redis:
+    image: redis:7-alpine
+    container_name: service-redis-prod
+    restart: unless-stopped
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/redis/.env
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"  # 生产环境只绑定本地
+    volumes:
+      - redis-data:/data
+      - ../../infrastructure/redis/config/redis.prod.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Consul - 服务发现和配置管理（生产环境）
+  consul:
+    extends:
+      file: ../../infrastructure/consul/docker-compose.yml
+      service: consul
+    container_name: service-consul-prod
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/consul/.env
+    environment:
+      - CONSUL_DEV_MODE=false
+      - CONSUL_ACL_ENABLE=${CONSUL_ACL_ENABLE:-true}
+      - CONSUL_ACL_DEFAULT_POLICY=${CONSUL_ACL_DEFAULT_POLICY:-deny}
+      - CONSUL_ENCRYPT=${CONSUL_ENCRYPT}
+      - CONSUL_BOOTSTRAP_EXPECT=${CONSUL_BOOTSTRAP_EXPECT:-3}
+      - CONSUL_RETRY_JOIN=${CONSUL_RETRY_JOIN}
+      - CONSUL_LOG_LEVEL=${CONSUL_LOG_LEVEL:-WARN}
+    ports:
+      - "127.0.0.1:${CONSUL_PORT:-8500}:8500"  # 生产环境只绑定本地
+    volumes:
+      - consul-data:/consul/data
+      - consul-config:/consul/config
+      - ../../infrastructure/consul/config:/consul/config:ro
+    command: >
+      consul agent
+      -server
+      -ui
+      -client=0.0.0.0
+      -bootstrap-expect=${CONSUL_BOOTSTRAP_EXPECT:-3}
+      -datacenter=${CONSUL_DATACENTER:-dc1}
+      -data-dir=/consul/data
+      -config-dir=/consul/config
+      -log-level=${CONSUL_LOG_LEVEL:-WARN}
+      ${CONSUL_RETRY_JOIN:+-retry-join ${CONSUL_RETRY_JOIN}}
+      ${CONSUL_ENCRYPT:+-encrypt ${CONSUL_ENCRYPT}}
+    profiles: []
+
+  # Gateway Service - NestJS 网关服务（生产环境）
+  # 引用 apps/gateway/docker-compose.yml，并应用生产环境配置
+  # 注意：需要同时使用 apps/gateway/docker-compose.prod.yml 来应用环境特定配置
+  # 使用方式：docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f ../../apps/gateway/docker-compose.prod.yml up -d
+  gateway-service:
+    extends:
+      file: ../../apps/gateway/docker-compose.yml
+      service: gateway-service
+    container_name: service-gateway-prod
+    networks:
+      - service-network
+    ports:
+      - "127.0.0.1:${GATEWAY_SERVICE_PORT:-3002}:3002"  # 生产环境只绑定本地
+    environment:
+      # 生产环境覆盖配置
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-15m}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      - JWT_ISSUER=${JWT_ISSUER:-service-gateway}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-service-api}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      # Consul 配置（生产环境）
+      - CONSUL_ENABLED=${CONSUL_ENABLED:-false}
+      - CONSUL_HOST=${CONSUL_HOST:-consul}
+      - CONSUL_PORT=${CONSUL_PORT:-8500}
+      - CONSUL_SECURE=${CONSUL_SECURE:-false}
+      - CONSUL_TOKEN=${CONSUL_TOKEN:-}
+      - SERVICE_NAME=${SERVICE_NAME:-gateway-service}
+      - SERVICE_ADDRESS=${SERVICE_ADDRESS:-gateway-service}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - redis
+      - consul:
+          condition: service_healthy
+          required: false
+      - api-service
+      - webhooks-service
+      - worker-service
+      - logging-service
+
+  # Nginx - 负载均衡器和反向代理（生产环境）
+  # 注意：需要同时使用 infrastructure/nginx/docker-compose.prod.yml
+  # 使用方式：docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f ../../infrastructure/nginx/docker-compose.prod.yml up -d nginx
+  nginx:
+    extends:
+      file: ../../infrastructure/nginx/docker-compose.yml
+      service: nginx
+    container_name: service-nginx-prod
+    networks:
+      - service-network
+    depends_on:
+      - gateway-service
+
+volumes:
+  postgres-data:
+    driver: local
+  loki-data:
+    driver: local
+  grafana-data:
+    driver: local
+  redis-data:
+    driver: local
+  consul-data:
+    driver: local
+  consul-config:
+    driver: local
+  nginx-logs:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  rabbitmq-logs:
+    driver: local
+
+networks:
+  service-network:
+    driver: bridge
+  # 定义被 extends 引用的网络别名，都指向 service-network
+  postgres-network:
+    driver: bridge
+  logging-network:
+    driver: bridge
+  redis-network:
+    driver: bridge
+  gateway-network:
+    driver: bridge
+  messaging-network:
+    driver: bridge
+
+

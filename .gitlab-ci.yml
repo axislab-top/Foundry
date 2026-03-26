@@ -1,0 +1,274 @@
+# GitLab CI/CD 配置文件
+
+stages:
+  - lint
+  - test
+  - security
+  - build
+  - deploy
+
+variables:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "10.27.0"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  IMAGE_PREFIX: "service"
+
+# 缓存配置
+.pnpm_cache: &pnpm_cache
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+    paths:
+      - .pnpm-store
+
+# 基础镜像
+.pnpm_base:
+  image: node:${NODE_VERSION}-alpine
+  before_script:
+    - apk add --no-cache git
+    - npm install -g pnpm@${PNPM_VERSION}
+    - pnpm config set store-dir .pnpm-store
+  <<: *pnpm_cache
+
+# Lint 任务
+lint:
+  stage: lint
+  extends: .pnpm_base
+  script:
+    - pnpm install --frozen-lockfile
+    - pnpm lint
+    - |
+      for dir in apps/*/; do
+        if [ -f "${dir}tsconfig.json" ]; then
+          pnpm --filter "@service/$(basename $dir)" exec tsc --noEmit || exit 1
+        fi
+      done
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# 测试任务
+test:
+  stage: test
+  extends: .pnpm_base
+  script:
+    - pnpm install --frozen-lockfile
+    - pnpm test
+  coverage: '/Lines\s*:\s*(\d+\.\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    paths:
+      - coverage/
+    expire_in: 1 week
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# 安全扫描任务
+security-scan:
+  stage: security
+  extends: .pnpm_base
+  script:
+    - pnpm install --frozen-lockfile
+    - pnpm audit --audit-level=moderate || true
+  allow_failure: true
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# Trivy 安全扫描
+trivy-scan:
+  stage: security
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs --severity HIGH,CRITICAL --exit-code 0 --format template --template "@contrib/gitlab.tpl" -o gl-container-scanning-report.json .
+  artifacts:
+    reports:
+      container_scanning: gl-container-scanning-report.json
+  allow_failure: true
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# 构建 Docker 镜像
+build:api:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      IMAGE_TAG="${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-api:${CI_COMMIT_SHORT_SHA}"
+      docker build -f apps/api/Dockerfile -t $IMAGE_TAG .
+      docker tag $IMAGE_TAG "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-api:latest"
+      docker push $IMAGE_TAG
+      docker push "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-api:latest"
+  only:
+    - main
+    - develop
+    - tags
+
+build:gateway:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      IMAGE_TAG="${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-gateway:${CI_COMMIT_SHORT_SHA}"
+      docker build -f apps/gateway/Dockerfile -t $IMAGE_TAG .
+      docker tag $IMAGE_TAG "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-gateway:latest"
+      docker push $IMAGE_TAG
+      docker push "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-gateway:latest"
+  only:
+    - main
+    - develop
+    - tags
+
+build:logging:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      IMAGE_TAG="${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-logging:${CI_COMMIT_SHORT_SHA}"
+      docker build -f apps/logging/Dockerfile -t $IMAGE_TAG .
+      docker tag $IMAGE_TAG "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-logging:latest"
+      docker push $IMAGE_TAG
+      docker push "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-logging:latest"
+  only:
+    - main
+    - develop
+    - tags
+
+build:webhooks:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      IMAGE_TAG="${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-webhooks:${CI_COMMIT_SHORT_SHA}"
+      docker build -f apps/webhooks/Dockerfile -t $IMAGE_TAG .
+      docker tag $IMAGE_TAG "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-webhooks:latest"
+      docker push $IMAGE_TAG
+      docker push "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-webhooks:latest"
+  only:
+    - main
+    - develop
+    - tags
+
+build:worker:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - |
+      IMAGE_TAG="${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-worker:${CI_COMMIT_SHORT_SHA}"
+      docker build -f apps/worker/Dockerfile -t $IMAGE_TAG .
+      docker tag $IMAGE_TAG "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-worker:latest"
+      docker push $IMAGE_TAG
+      docker push "${CI_REGISTRY_IMAGE}/${IMAGE_PREFIX}-worker:latest"
+  only:
+    - main
+    - develop
+    - tags
+
+# 部署到测试环境
+deploy:test:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client bash
+    - eval $(ssh-agent -s)
+    - echo "$DEPLOY_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $DEPLOY_HOST >> ~/.ssh/known_hosts
+  script:
+    - |
+      ENVIRONMENT=test \
+      DOCKER_REGISTRY=$CI_REGISTRY \
+      DOCKER_IMAGE_VERSION=$CI_COMMIT_SHORT_SHA \
+      bash ci-cd/scripts/deploy.sh
+  environment:
+    name: test
+    url: https://test.example.com
+  only:
+    - develop
+
+# 部署到生产环境
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client bash
+    - eval $(ssh-agent -s)
+    - echo "$DEPLOY_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $DEPLOY_HOST >> ~/.ssh/known_hosts
+  script:
+    - |
+      ENVIRONMENT=production \
+      DOCKER_REGISTRY=$CI_REGISTRY \
+      DOCKER_IMAGE_VERSION=$CI_COMMIT_SHORT_SHA \
+      bash ci-cd/scripts/deploy.sh
+  environment:
+    name: production
+    url: https://api.example.com
+  when: manual
+  only:
+    - main
+    - tags
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,324 @@
+// Jenkins Pipeline 配置文件
+// 支持多分支流水线
+
+pipeline {
+    agent any
+    
+    environment {
+        NODE_VERSION = '20'
+        PNPM_VERSION = '10.27.0'
+        DOCKER_REGISTRY = credentials('docker-registry-url')
+        DOCKER_USERNAME = credentials('docker-username')
+        DOCKER_PASSWORD = credentials('docker-password')
+        IMAGE_PREFIX = 'service'
+        PROJECT_ROOT = "${WORKSPACE}"
+    }
+    
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        timestamps()
+        ansiColor('xterm')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+                    env.IMAGE_VERSION = env.GIT_COMMIT_SHORT
+                }
+            }
+        }
+        
+        stage('Lint') {
+            steps {
+                script {
+                    sh '''
+                        echo "🔍 Running code quality checks..."
+                        bash ci-cd/scripts/lint.sh
+                    '''
+                }
+            }
+            post {
+                always {
+                    publishHTML([
+                        reportDir: 'coverage',
+                        reportFiles: 'index.html',
+                        reportName: 'Lint Report',
+                        keepAll: true
+                    ])
+                }
+            }
+        }
+        
+        stage('Test') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "🧪 Running unit tests..."
+                                COVERAGE=true bash ci-cd/scripts/test.sh
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit '**/test-results.xml'
+                            publishCoverage adapters: [
+                                coberturaAdapter('**/coverage/cobertura-coverage.xml')
+                            ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
+                        }
+                    }
+                }
+                
+                stage('Integration Tests') {
+                    when {
+                        anyOf {
+                            branch 'main'
+                            branch 'develop'
+                        }
+                    }
+                    steps {
+                        script {
+                            sh '''
+                                echo "🧪 Running integration tests..."
+                                TEST_TYPE=integration bash ci-cd/scripts/test.sh
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                script {
+                    sh '''
+                        echo "🔒 Running security scan..."
+                        SCAN_TYPE=all FAIL_ON_VULNERABILITIES=false bash ci-cd/scripts/security-scan.sh
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-results.*', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        stage('Build') {
+            parallel {
+                stage('Build API') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "📦 Building API service..."
+                                docker build -f apps/api/Dockerfile \\
+                                    -t ${IMAGE_PREFIX}-api:${IMAGE_VERSION} \\
+                                    -t ${IMAGE_PREFIX}-api:latest \\
+                                    ${PROJECT_ROOT}
+                                    
+                                if [ -n "${DOCKER_REGISTRY}" ]; then
+                                    docker tag ${IMAGE_PREFIX}-api:${IMAGE_VERSION} \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-api:${IMAGE_VERSION}
+                                    docker tag ${IMAGE_PREFIX}-api:latest \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-api:latest
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-api:${IMAGE_VERSION}
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-api:latest
+                                fi
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Build Gateway') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "📦 Building Gateway service..."
+                                docker build -f apps/gateway/Dockerfile \\
+                                    -t ${IMAGE_PREFIX}-gateway:${IMAGE_VERSION} \\
+                                    -t ${IMAGE_PREFIX}-gateway:latest \\
+                                    ${PROJECT_ROOT}
+                                    
+                                if [ -n "${DOCKER_REGISTRY}" ]; then
+                                    docker tag ${IMAGE_PREFIX}-gateway:${IMAGE_VERSION} \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_VERSION}
+                                    docker tag ${IMAGE_PREFIX}-gateway:latest \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-gateway:latest
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_VERSION}
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-gateway:latest
+                                fi
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Build Logging') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "📦 Building Logging service..."
+                                docker build -f apps/logging/Dockerfile \\
+                                    -t ${IMAGE_PREFIX}-logging:${IMAGE_VERSION} \\
+                                    -t ${IMAGE_PREFIX}-logging:latest \\
+                                    ${PROJECT_ROOT}
+                                    
+                                if [ -n "${DOCKER_REGISTRY}" ]; then
+                                    docker tag ${IMAGE_PREFIX}-logging:${IMAGE_VERSION} \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-logging:${IMAGE_VERSION}
+                                    docker tag ${IMAGE_PREFIX}-logging:latest \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-logging:latest
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-logging:${IMAGE_VERSION}
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-logging:latest
+                                fi
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Build Webhooks') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "📦 Building Webhooks service..."
+                                docker build -f apps/webhooks/Dockerfile \\
+                                    -t ${IMAGE_PREFIX}-webhooks:${IMAGE_VERSION} \\
+                                    -t ${IMAGE_PREFIX}-webhooks:latest \\
+                                    ${PROJECT_ROOT}
+                                    
+                                if [ -n "${DOCKER_REGISTRY}" ]; then
+                                    docker tag ${IMAGE_PREFIX}-webhooks:${IMAGE_VERSION} \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-webhooks:${IMAGE_VERSION}
+                                    docker tag ${IMAGE_PREFIX}-webhooks:latest \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-webhooks:latest
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-webhooks:${IMAGE_VERSION}
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-webhooks:latest
+                                fi
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Build Worker') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "📦 Building Worker service..."
+                                docker build -f apps/worker/Dockerfile \\
+                                    -t ${IMAGE_PREFIX}-worker:${IMAGE_VERSION} \\
+                                    -t ${IMAGE_PREFIX}-worker:latest \\
+                                    ${PROJECT_ROOT}
+                                    
+                                if [ -n "${DOCKER_REGISTRY}" ]; then
+                                    docker tag ${IMAGE_PREFIX}-worker:${IMAGE_VERSION} \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-worker:${IMAGE_VERSION}
+                                    docker tag ${IMAGE_PREFIX}-worker:latest \\
+                                        ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-worker:latest
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-worker:${IMAGE_VERSION}
+                                    docker push ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-worker:latest
+                                fi
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Test') {
+            when {
+                anyOf {
+                    branch 'develop'
+                }
+            }
+            steps {
+                script {
+                    sh '''
+                        echo "🚀 Deploying to test environment..."
+                        ENVIRONMENT=test \\
+                        DOCKER_REGISTRY=${DOCKER_REGISTRY} \\
+                        DOCKER_IMAGE_VERSION=${IMAGE_VERSION} \\
+                        bash ci-cd/scripts/deploy.sh
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                anyOf {
+                    branch 'main'
+                    tag pattern: 'v.*', comparator: 'REGEXP'
+                }
+            }
+            steps {
+                script {
+                    input message: 'Deploy to production?', ok: 'Deploy'
+                    sh '''
+                        echo "🚀 Deploying to production environment..."
+                        ENVIRONMENT=production \\
+                        DOCKER_REGISTRY=${DOCKER_REGISTRY} \\
+                        DOCKER_IMAGE_VERSION=${IMAGE_VERSION} \\
+                        bash ci-cd/scripts/deploy.sh
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            emailext(
+                subject: "✅ Build Success: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Build ${env.BUILD_NUMBER} succeeded!\n\nView: ${env.BUILD_URL}",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+        failure {
+            emailext(
+                subject: "❌ Build Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Build ${env.BUILD_NUMBER} failed!\n\nView: ${env.BUILD_URL}",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

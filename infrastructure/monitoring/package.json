@@ -1,0 +1,78 @@
+{
+  "name": "@service/monitoring",
+  "version": "1.0.0",
+  "description": "统一的监控和指标收集模块，支持多种后端（Prometheus、StatsD等）",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "monitoring",
+    "metrics",
+    "prometheus",
+    "statsd",
+    "observability"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "dependencies": {
+    "prom-client": "^15.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  },
+  "optionalDependencies": {
+    "hot-shots": "^10.2.0",
+    "systeminformation": "^5.21.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

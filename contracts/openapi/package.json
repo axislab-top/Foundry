@@ -1,0 +1,31 @@
+{
+  "name": "@contracts/openapi",
+  "version": "1.0.0",
+  "description": "OpenAPI 规范定义，用于服务间 HTTP 通信的类型安全和一致性",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "validate": "swagger-cli validate *.yaml",
+    "bundle": "swagger-cli bundle api-service.yaml -o api-service.bundled.yaml -t yaml",
+    "lint": "spectral lint *.yaml"
+  },
+  "keywords": [
+    "contracts",
+    "openapi",
+    "swagger",
+    "api",
+    "specification"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "files": [
+    "*.yaml",
+    "*.yml",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.11.0",
+    "@apidevtools/swagger-cli": "^4.0.4"
+  }
+}

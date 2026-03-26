@@ -1,0 +1,94 @@
+# Filebeat 配置文件
+# 用于收集系统日志和 Docker 容器日志
+
+filebeat.inputs:
+  # 收集 Docker 容器日志
+  - type: container
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+      - add_fields:
+          fields:
+            log_type: docker
+
+  # 收集应用日志文件
+  - type: log
+    enabled: true
+    paths:
+      - '/var/log/apps/*.log'
+    fields:
+      log_type: application
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+
+# 处理配置
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_docker_metadata: ~
+  - drop_fields:
+      fields: ["agent", "ecs", "log", "input"]
+
+# 输出到 Logstash
+output.logstash:
+  hosts: ["logstash:5044"]
+
+# 日志设置
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
+
+# 监控设置
+monitoring.enabled: true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

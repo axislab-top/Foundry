@@ -1,0 +1,205 @@
+# Redis Cluster Docker Compose 配置
+# 提供 Redis 集群模式（6 个节点：3 主 + 3 从）
+#
+# 使用方式：
+# 1. 启动集群：docker-compose -f docker-compose.cluster.yml up -d
+# 2. 初始化集群：docker exec -it redis-cluster-1 redis-cli --cluster create \
+#    172.20.0.2:6379 172.20.0.3:6379 172.20.0.4:6379 \
+#    172.20.0.5:6379 172.20.0.6:6379 172.20.0.7:6379 \
+#    --cluster-replicas 1
+#
+# 注意：初始化集群需要手动执行，因为需要所有节点都启动后才能初始化
+
+version: '3.8'
+
+services:
+  # Redis Cluster Node 1 (Master)
+  redis-cluster-1:
+    image: redis:7-alpine
+    container_name: redis-cluster-1
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis-cluster.conf
+    ports:
+      - "7001:6379"
+      - "17001:16379"  # 集群总线端口
+    volumes:
+      - redis-cluster-1-data:/data
+      - ./redis-cluster.conf:/usr/local/etc/redis/redis-cluster.conf:ro
+    networks:
+      redis-cluster-network:
+        ipv4_address: 172.20.0.2
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cluster Node 2 (Master)
+  redis-cluster-2:
+    image: redis:7-alpine
+    container_name: redis-cluster-2
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis-cluster.conf
+    ports:
+      - "7002:6379"
+      - "17002:16379"
+    volumes:
+      - redis-cluster-2-data:/data
+      - ./redis-cluster.conf:/usr/local/etc/redis/redis-cluster.conf:ro
+    networks:
+      redis-cluster-network:
+        ipv4_address: 172.20.0.3
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cluster Node 3 (Master)
+  redis-cluster-3:
+    image: redis:7-alpine
+    container_name: redis-cluster-3
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis-cluster.conf
+    ports:
+      - "7003:6379"
+      - "17003:16379"
+    volumes:
+      - redis-cluster-3-data:/data
+      - ./redis-cluster.conf:/usr/local/etc/redis/redis-cluster.conf:ro
+    networks:
+      redis-cluster-network:
+        ipv4_address: 172.20.0.4
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cluster Node 4 (Replica)
+  redis-cluster-4:
+    image: redis:7-alpine
+    container_name: redis-cluster-4
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis-cluster.conf
+    ports:
+      - "7004:6379"
+      - "17004:16379"
+    volumes:
+      - redis-cluster-4-data:/data
+      - ./redis-cluster.conf:/usr/local/etc/redis/redis-cluster.conf:ro
+    networks:
+      redis-cluster-network:
+        ipv4_address: 172.20.0.5
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cluster Node 5 (Replica)
+  redis-cluster-5:
+    image: redis:7-alpine
+    container_name: redis-cluster-5
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis-cluster.conf
+    ports:
+      - "7005:6379"
+      - "17005:16379"
+    volumes:
+      - redis-cluster-5-data:/data
+      - ./redis-cluster.conf:/usr/local/etc/redis/redis-cluster.conf:ro
+    networks:
+      redis-cluster-network:
+        ipv4_address: 172.20.0.6
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cluster Node 6 (Replica)
+  redis-cluster-6:
+    image: redis:7-alpine
+    container_name: redis-cluster-6
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis-cluster.conf
+    ports:
+      - "7006:6379"
+      - "17006:16379"
+    volumes:
+      - redis-cluster-6-data:/data
+      - ./redis-cluster.conf:/usr/local/etc/redis/redis-cluster.conf:ro
+    networks:
+      redis-cluster-network:
+        ipv4_address: 172.20.0.7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis-cluster-1-data:
+    driver: local
+  redis-cluster-2-data:
+    driver: local
+  redis-cluster-3-data:
+    driver: local
+  redis-cluster-4-data:
+    driver: local
+  redis-cluster-5-data:
+    driver: local
+  redis-cluster-6-data:
+    driver: local
+
+networks:
+  redis-cluster-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

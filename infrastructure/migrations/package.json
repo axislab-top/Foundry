@@ -1,0 +1,43 @@
+{
+  "name": "@service/migrations",
+  "version": "1.0.0",
+  "description": "数据库迁移服务，基于TypeORM提供数据库迁移功能",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "migrate": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist",
+    "migrate:generate": "tsx dist/cli.js migration:generate",
+    "migrate:run": "tsx dist/cli.js migration:run",
+    "migrate:revert": "tsx dist/cli.js migration:revert",
+    "migrate:show": "tsx dist/cli.js migration:show"
+  },
+  "keywords": [
+    "database",
+    "migration",
+    "typeorm",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "dependencies": {
+    "@service/config": "workspace:*",
+    "pg": "^8.11.3",
+    "typeorm": "^0.3.17"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

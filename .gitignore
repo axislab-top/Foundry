@@ -1,0 +1,36 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# PostgreSQL data directory (contains database files)
+infrastructure/postgres/data/
+
+# PostgreSQL backups (optional - you may want to version control these)
+# infrastructure/postgres/backups/*.sql.gz
+
+# Logs
+*.log
+infrastructure/postgres/config/log/
+infrastructure/logging/logs/
+infrastructure/logging/.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+

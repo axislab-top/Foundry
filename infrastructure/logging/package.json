@@ -1,0 +1,38 @@
+{
+  "name": "@service/logging",
+  "version": "1.0.0",
+  "description": "统一的结构化日志库，提供日志记录、格式化、传输等功能",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "logging",
+    "structured-logging",
+    "logger",
+    "transports"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "dependencies": {
+    "winston": "^3.11.0",
+    "winston-elasticsearch": "^0.15.7",
+    "winston-loki": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
+
+

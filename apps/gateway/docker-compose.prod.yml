@@ -1,0 +1,41 @@
+# Gateway Service - 生产环境配置覆盖
+# 生产环境使用更严格的配置和资源限制
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  gateway-service:
+    container_name: gateway-service-prod
+    environment:
+      - NODE_ENV=production
+      # JWT 配置（生产环境必须使用强密钥）
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      # Redis 配置（使用 Docker 服务名）
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # 服务地址配置（使用 Docker 服务名）
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      # 限流配置（生产环境更严格）
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      # CORS 配置（生产环境应设置为具体域名）
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
+    ports:
+      - "127.0.0.1:${GATEWAY_SERVICE_PORT:-3002}:3002"  # 生产环境只绑定本地
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

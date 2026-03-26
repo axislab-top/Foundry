@@ -1,0 +1,20 @@
+# Consul 生产环境配置
+# 多节点集群模式，适合生产环境
+
+services:
+  consul:
+    environment:
+      - CONSUL_DEV_MODE=false
+      - CONSUL_ACL_ENABLE=${CONSUL_ACL_ENABLE:-true}
+      - CONSUL_ACL_DEFAULT_POLICY=${CONSUL_ACL_DEFAULT_POLICY:-deny}
+      - CONSUL_ENCRYPT=${CONSUL_ENCRYPT}
+      - CONSUL_BOOTSTRAP_EXPECT=${CONSUL_BOOTSTRAP_EXPECT:-3}
+      - CONSUL_RETRY_JOIN=${CONSUL_RETRY_JOIN}
+      - CONSUL_LOG_LEVEL=${CONSUL_LOG_LEVEL:-WARN}
+    # 生产环境建议使用外部存储卷
+    volumes:
+      - consul-data:/consul/data
+      - consul-config:/consul/config
+      - ./config:/consul/config:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+

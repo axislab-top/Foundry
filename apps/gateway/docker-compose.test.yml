@@ -1,0 +1,35 @@
+# Gateway Service - 测试环境配置覆盖
+# 测试环境使用独立配置和资源限制
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+services:
+  gateway-service:
+    container_name: gateway-service-test
+    environment:
+      - NODE_ENV=test
+      # JWT 配置（测试环境使用测试密钥）
+      - JWT_SECRET=${JWT_SECRET:-test-secret-key}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-test-refresh-secret-key}
+      # Redis 配置（使用 Docker 服务名）
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      # 服务地址配置（使用 Docker 服务名）
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      # 限流配置（测试环境中等限制）
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-500}
+      # CORS 配置（测试环境允许所有来源）
+      - CORS_ORIGIN=*
+      - CORS_CREDENTIALS=true
+    ports:
+      - "${GATEWAY_SERVICE_PORT:-3002}:3002"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+

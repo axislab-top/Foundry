@@ -1,0 +1,61 @@
+# Nginx 负载均衡器 Docker Compose 配置
+# 用于 Gateway 服务的负载均衡和反向代理
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: service-nginx
+    restart: unless-stopped
+    networks:
+      - service-network
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      # Nginx 配置文件
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf.d:/etc/nginx/conf.d:ro
+      # SSL 证书（如果启用 HTTPS）
+      - ./ssl:/etc/nginx/ssl:ro
+      # 日志目录
+      - nginx-logs:/var/log/nginx
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - gateway-service
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 资源限制（可选）
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+volumes:
+  nginx-logs:
+    driver: local
+
+networks:
+  service-network:
+    driver: bridge
+
+
+
+
+
+

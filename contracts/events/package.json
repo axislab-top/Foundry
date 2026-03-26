@@ -1,0 +1,55 @@
+{
+  "name": "@contracts/events",
+  "version": "1.0.0",
+  "description": "服务间共享事件类型定义",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": ["contracts", "events", "typescript"],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "files": [
+    "dist",
+    "*.ts"
+  ],
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

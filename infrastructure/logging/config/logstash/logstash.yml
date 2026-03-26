@@ -1,0 +1,68 @@
+# Logstash 主配置文件
+
+http.host: "0.0.0.0"
+http.port: 9600
+
+# 管道配置路径
+path.config: /usr/share/logstash/pipeline
+
+# 日志级别
+log.level: info
+
+# 性能设置
+pipeline.workers: 2
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+
+# 监控设置
+monitoring.enabled: true
+monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# 队列设置
+queue.type: memory
+queue.max_bytes: 1gb
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

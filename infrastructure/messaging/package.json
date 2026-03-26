@@ -1,0 +1,44 @@
+{
+  "name": "@service/messaging",
+  "version": "1.0.0",
+  "description": "消息队列抽象层 - 支持 RabbitMQ、Redis Streams、Kafka",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rimraf dist",
+    "lint": "eslint src --ext .ts",
+    "test": "jest"
+  },
+  "keywords": [
+    "messaging",
+    "rabbitmq",
+    "kafka",
+    "redis",
+    "message-queue",
+    "event-bus"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "dependencies": {
+    "@contracts/events": "workspace:*",
+    "@nestjs/common": "^10.3.0",
+    "amqplib": "^0.10.3",
+    "@service/logging": "workspace:*",
+    "reflect-metadata": "^0.1.13"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.4",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "@service/logging": "workspace:*"
+  }
+}
+
+
+

@@ -1,0 +1,56 @@
+{
+  "name": "api-service",
+  "id": "api-service-1",
+  "tags": ["api", "http", "v1"],
+  "address": "localhost",
+  "port": 3000,
+  "meta": {
+    "version": "1.0.0",
+    "environment": "production"
+  },
+  "check": {
+    "type": "http",
+    "http": "http://localhost:3000/health",
+    "interval": "10s",
+    "timeout": "3s",
+    "deregisterCriticalServiceAfter": "30s"
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

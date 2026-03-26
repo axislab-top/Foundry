@@ -1,0 +1,176 @@
+openapi: 3.0.3
+info:
+  title: Logging Service
+  description: 日志服务的 OpenAPI 规范
+  version: 1.0.0
+  contact:
+    name: Logging Support
+
+servers:
+  - url: http://localhost:3001/api
+    description: 本地开发环境
+  - url: https://logging.example.com/api
+    description: 生产环境
+
+tags:
+  - name: Health
+    description: 健康检查接口
+  - name: Logs
+    description: 日志查询接口（待实现）
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: 健康检查
+      description: 检查日志服务的健康状态
+      operationId: healthCheck
+      responses:
+        '200':
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /logs:
+    get:
+      tags:
+        - Logs
+      summary: 查询日志
+      description: 查询日志记录（待实现）
+      operationId: queryLogs
+      parameters:
+        - name: service
+          in: query
+          description: 服务名称
+          schema:
+            type: string
+        - name: level
+          in: query
+          description: 日志级别
+          schema:
+            type: string
+            enum: [error, warn, info, debug, verbose]
+        - name: startTime
+          in: query
+          description: 开始时间
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          description: 结束时间
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePaginatedLogs'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, error, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        service:
+          type: string
+
+    LogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        service:
+          type: string
+        level:
+          type: string
+          enum: [error, warn, info, debug, verbose]
+        message:
+          type: string
+        metadata:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    PaginatedLogs:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogEntry'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
+
+    ApiResponsePaginatedLogs:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/PaginatedLogs'
+        timestamp:
+          type: string
+          format: date-time
+
+    ApiErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: integer
+            message:
+              type: string
+            details:
+              type: object
+            timestamp:
+              type: string
+              format: date-time
+            path:
+              type: string
+        timestamp:
+          type: string
+          format: date-time

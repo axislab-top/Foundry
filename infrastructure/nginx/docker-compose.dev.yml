@@ -1,0 +1,53 @@
+# Nginx 开发环境配置覆盖
+# 使用方式: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  nginx:
+    ports:
+      # 开发环境暴露所有端口
+      - "80:80"
+      - "443:443"
+    environment:
+      - TZ=Asia/Shanghai
+      - NGINX_ENV=development
+    # 开发环境可以挂载更多配置用于调试
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+      # 开发环境可以启用详细日志
+      # - ./logs:/var/log/nginx:rw
+    # 开发环境不限制资源
+    deploy: {}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

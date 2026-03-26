@@ -1,0 +1,77 @@
+# PostgreSQL 测试环境配置覆盖
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+version: '3.8'
+
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"  # 测试环境使用不同端口
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-test_password}
+      POSTGRES_DB: ${POSTGRES_DB:-service_db_test}
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data  # 测试环境使用独立数据卷
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    # 测试环境使用最小配置
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=50
+
+volumes:
+  postgres-test-data:
+    driver: local
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

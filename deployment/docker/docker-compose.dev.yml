@@ -1,0 +1,257 @@
+# 服务部署 Docker Compose 配置 - 开发环境
+# 包含所有核心服务的统一部署配置（开发环境）
+# 
+# 使用方式：
+# docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# 或直接使用：docker-compose -f docker-compose.dev.yml up -d
+
+services:
+  # PostgreSQL - 数据库服务（开发环境）
+  postgres:
+    extends:
+      file: ../../infrastructure/postgres/docker-compose.yml
+      service: postgres
+    container_name: service-postgres-dev
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/postgres/.env
+    # 应用开发环境配置
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-service_db_dev}
+
+  # Grafana Loki - 日志聚合系统（开发环境）
+  loki:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: loki
+    container_name: service-loki-dev
+    networks:
+      - service-network
+    environment:
+      - LOG_RETENTION_HOURS=${LOG_RETENTION_HOURS:-24}
+
+  # Promtail - 日志收集代理（开发环境）
+  promtail:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: promtail
+    container_name: service-promtail-dev
+    networks:
+      - service-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ../../infrastructure/logging/config/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ../../infrastructure/logging/logs:/var/log/apps:ro
+
+  # Grafana - 日志可视化（开发环境）
+  grafana:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: grafana
+    container_name: service-grafana-dev
+    networks:
+      - service-network
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=true
+
+  # Redis - 缓存服务（开发环境）
+  redis:
+    image: redis:7-alpine
+    container_name: service-redis-dev
+    restart: unless-stopped
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/redis/.env
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+      - ../../infrastructure/redis/data:/data/backup:rw
+      - ../../infrastructure/redis/config/redis.dev.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Consul - 服务发现和配置管理（开发环境）
+  consul:
+    extends:
+      file: ../../infrastructure/consul/docker-compose.yml
+      service: consul
+    container_name: service-consul-dev
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/consul/.env
+    environment:
+      - CONSUL_DEV_MODE=true
+      - CONSUL_ACL_ENABLE=false
+      - CONSUL_LOG_LEVEL=DEBUG
+    command: >
+      consul agent
+      -dev
+      -ui
+      -client=0.0.0.0
+      -datacenter=${CONSUL_DATACENTER:-dc1}
+      -log-level=DEBUG
+    profiles: []
+
+  # API Service - NestJS API 服务（开发环境）
+  api-service:
+    environment:
+      # 开发环境覆盖配置
+      - NODE_ENV=development
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_DATABASE=${DB_DATABASE:-service_db_dev}
+      - DB_SYNCHRONIZE=${DB_SYNCHRONIZE:-true}
+      - DB_LOGGING=${DB_LOGGING:-true}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-refresh-secret-key-change-in-production}
+      - SWAGGER_ENABLED=true
+      - SWAGGER_PATH=api-docs
+      - CORS_ORIGIN=*
+      - METRICS_ENABLED=true
+      # 开发环境可以使用本地存储
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_BASE_PATH=/app/storage
+      - STORAGE_LOCAL_BASE_URL=/api/files
+
+  # Gateway Service - NestJS 网关服务（开发环境）
+  # 引用 apps/gateway/docker-compose.yml，并应用开发环境配置
+  # 注意：需要同时使用 apps/gateway/docker-compose.dev.yml 来应用环境特定配置
+  # 使用方式：docker-compose -f docker-compose.yml -f docker-compose.dev.yml -f ../../apps/gateway/docker-compose.dev.yml up -d
+  gateway-service:
+    extends:
+      file: ../../apps/gateway/docker-compose.yml
+      service: gateway-service
+    container_name: service-gateway-dev
+    networks:
+      - service-network
+    environment:
+      # 开发环境覆盖配置
+      - NODE_ENV=development
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-refresh-secret-key-change-in-production}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-15m}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      - JWT_ISSUER=${JWT_ISSUER:-service-gateway}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-service-api}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      # 数据库配置
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_DATABASE=${DB_DATABASE:-gateway_db}
+      - DB_SYNCHRONIZE=${DB_SYNCHRONIZE:-true}
+      - DB_LOGGING=${DB_LOGGING:-false}
+      # Redis 配置
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      # 加密配置
+      - ENCRYPTION_ADAPTER=${ENCRYPTION_ADAPTER:-aes}
+      - AES_KEY=${AES_KEY:-}
+      - AES_ALGORITHM=${AES_ALGORITHM:-aes-256-gcm}
+      - AES_KEY_LENGTH=${AES_KEY_LENGTH:-32}
+      # 服务地址配置
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      # 限流配置
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-1000}
+      # 防重放攻击配置（开发环境可以禁用）
+      - REPLAY_ATTACK_ENABLED=${REPLAY_ATTACK_ENABLED:-false}
+      # CSRF 保护配置（开发环境可以禁用）
+      - CSRF_ENABLED=${CSRF_ENABLED:-false}
+      # CORS 配置
+      - CORS_ORIGIN=*
+      # Consul 配置（开发环境）
+      - CONSUL_ENABLED=${CONSUL_ENABLED:-false}
+      - CONSUL_HOST=${CONSUL_HOST:-consul}
+      - CONSUL_PORT=${CONSUL_PORT:-8500}
+      # 服务注册配置
+      - SERVICE_NAME=${SERVICE_NAME:-gateway-service}
+      - SERVICE_ADDRESS=${SERVICE_ADDRESS:-gateway-service}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+        required: false
+      api-service:
+        condition: service_healthy
+      webhooks-service:
+        condition: service_healthy
+      worker-service:
+        condition: service_healthy
+      logging-service:
+        condition: service_healthy
+
+  # Nginx - 负载均衡器和反向代理（开发环境）
+  # 注意：需要同时使用 infrastructure/nginx/docker-compose.dev.yml
+  # 使用方式：docker-compose -f docker-compose.yml -f docker-compose.dev.yml -f ../../infrastructure/nginx/docker-compose.dev.yml up -d nginx
+  nginx:
+    extends:
+      file: ../../infrastructure/nginx/docker-compose.yml
+      service: nginx
+    container_name: service-nginx-dev
+    networks:
+      - service-network
+    depends_on:
+      - gateway-service
+
+volumes:
+  postgres-data:
+    driver: local
+  loki-data:
+    driver: local
+  grafana-data:
+    driver: local
+  redis-data:
+    driver: local
+  consul-data:
+    driver: local
+  consul-config:
+    driver: local
+  nginx-logs:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  rabbitmq-logs:
+    driver: local
+
+networks:
+  service-network:
+    driver: bridge
+  # 定义被 extends 引用的网络别名，都指向 service-network
+  # Docker Compose 需要这些网络定义存在，但我们让服务使用 service-network
+  postgres-network:
+    driver: bridge
+  logging-network:
+    driver: bridge
+  redis-network:
+    driver: bridge
+  gateway-network:
+    driver: bridge
+  messaging-network:
+    driver: bridge
+
+

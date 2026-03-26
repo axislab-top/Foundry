@@ -1,0 +1,46 @@
+{
+  "name": "Service",
+  "version": "1.0.0",
+  "description": "NestJS Microservices Platform",
+  "main": "index.js",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --concurrency=16",
+    "start": "turbo run start",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "infra:start": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml up -d",
+    "infra:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml down",
+    "infra:restart": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml restart",
+    "infra:status": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml ps",
+    "infra:logs": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml logs -f",
+    "infra:prod:start": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.prod.yml up -d",
+    "infra:prod:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.prod.yml down",
+    "infra:test:start": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.test.yml up -d",
+    "infra:test:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.test.yml down",
+    "start:all": "pnpm infra:start",
+    "start:dev": "pnpm infra:start",
+    "start:dev:local": "pnpm infra:start && timeout /t 10 /nobreak >nul && pnpm dev",
+    "start:prod": "pnpm infra:prod:start && pnpm build && pnpm start",
+    "stop:all": "pnpm infra:stop",
+    "stop:dev:local": "taskkill /F /IM node.exe /FI \"WINDOWTITLE eq *turbo*\" 2>nul || exit 0",
+    "clean": "turbo run clean",
+    "clean:all": "pnpm clean && docker-compose -f deployment/docker/docker-compose.yml down -v",
+    "migrate:show": "cd infrastructure/migrations && pnpm run migrate:show",
+    "migrate:run": "cd infrastructure/migrations && pnpm run migrate:run",
+    "migrate:revert": "cd infrastructure/migrations && pnpm run migrate:revert",
+    "migrate:generate": "typeorm migration:generate"
+  },
+  "keywords": [
+    "nestjs",
+    "microservices"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.0",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "rimraf": "^6.1.2",
+    "turbo": "^2.7.3"
+  }
+}

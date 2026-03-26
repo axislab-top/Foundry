@@ -1,0 +1,203 @@
+# 服务部署 Docker Compose 配置 - 测试环境
+# 包含所有核心服务的统一部署配置（测试环境）
+# 
+# 使用方式：
+# docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+# 或直接使用：docker-compose -f docker-compose.test.yml up -d
+
+services:
+  # PostgreSQL - 数据库服务（测试环境）
+  postgres:
+    extends:
+      file: ../../infrastructure/postgres/docker-compose.yml
+      service: postgres
+    container_name: service-postgres-test
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/postgres/.env
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"  # 测试环境使用不同端口
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-test_password}
+      POSTGRES_DB: ${POSTGRES_DB:-service_db_test}
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data  # 测试环境使用独立数据卷
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Grafana Loki - 日志聚合系统（测试环境）
+  loki:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: loki
+    container_name: service-loki-test
+    networks:
+      - service-network
+    ports:
+      - "${LOKI_PORT:-3101}:3100"  # 测试环境使用不同端口
+    environment:
+      - LOG_RETENTION_HOURS=${LOG_RETENTION_HOURS:-12}  # 测试环境只保留 12 小时
+    volumes:
+      - loki-test-data:/loki  # 测试环境使用独立数据卷
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Promtail - 日志收集代理（测试环境）
+  promtail:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: promtail
+    container_name: service-promtail-test
+    networks:
+      - service-network
+    ports:
+      - "${PROMTAIL_PORT:-9081}:9080"  # 测试环境使用不同端口
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ../../infrastructure/logging/config/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ../../infrastructure/logging/logs:/var/log/apps:ro
+
+  # Grafana - 日志可视化（测试环境）
+  grafana:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: grafana
+    container_name: service-grafana-test
+    networks:
+      - service-network
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"  # 测试环境使用不同端口
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-test_admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-test-data:/var/lib/grafana
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Redis - 缓存服务（测试环境）
+  redis:
+    image: redis:7-alpine
+    container_name: service-redis-test
+    restart: unless-stopped
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/redis/.env
+    ports:
+      - "${REDIS_PORT:-6380}:6379"  # 测试环境使用不同端口
+    volumes:
+      - redis-test-data:/data  # 测试环境使用独立数据卷
+      - ../../infrastructure/redis/config/redis.dev.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-test_password}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres-test-data:
+    driver: local
+  loki-test-data:
+    driver: local
+  grafana-test-data:
+    driver: local
+  redis-test-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  rabbitmq-logs:
+    driver: local
+
+  # Gateway Service - NestJS 网关服务（测试环境）
+  # 引用 apps/gateway/docker-compose.yml，并应用测试环境配置
+  # 注意：需要同时使用 apps/gateway/docker-compose.test.yml 来应用环境特定配置
+  # 使用方式：docker-compose -f docker-compose.yml -f docker-compose.test.yml -f ../../apps/gateway/docker-compose.test.yml up -d
+  gateway-service:
+    extends:
+      file: ../../apps/gateway/docker-compose.yml
+      service: gateway-service
+    container_name: service-gateway-test
+    networks:
+      - service-network
+    environment:
+      # 测试环境覆盖配置
+      - NODE_ENV=test
+      - JWT_SECRET=${JWT_SECRET:-test-secret-key}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-test-refresh-secret-key}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-500}
+      - CORS_ORIGIN=*
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      - redis
+      - api-service
+      - webhooks-service
+      - worker-service
+      - logging-service
+
+networks:
+  service-network:
+    driver: bridge
+  # 定义被 extends 引用的网络别名，都指向 service-network
+  postgres-network:
+    driver: bridge
+  logging-network:
+    driver: bridge
+  redis-network:
+    driver: bridge
+  gateway-network:
+    driver: bridge
+  messaging-network:
+    driver: bridge
+
+

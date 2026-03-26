@@ -1,0 +1,216 @@
+# 日志基础设施栈 Docker Compose 配置
+# 提供日志存储和可视化基础设施
+# 
+# 包含两种方案：
+# 1. ELK 栈：Elasticsearch + Logstash + Kibana（推荐用于生产环境）
+# 2. Loki 栈：Loki + Promtail + Grafana（轻量级，适合开发环境）
+#
+# 使用方式：
+# - 启动 ELK 栈：docker-compose --profile elk up -d
+# - 启动 Loki 栈：docker-compose --profile loki up -d
+# - 启动全部：docker-compose up -d
+
+version: '3.8'
+
+services:
+  # ==================== ELK 栈 ====================
+  
+  # Elasticsearch - 日志存储和搜索引擎
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: logging-elasticsearch
+    restart: unless-stopped
+    profiles:
+      - elk
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+      - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+      - "${ELASTICSEARCH_TRANSPORT_PORT:-9300}:9300"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - logging-network
+
+  # Logstash - 日志处理和转发
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: logging-logstash
+    restart: unless-stopped
+    profiles:
+      - elk
+    environment:
+      - "LS_JAVA_OPTS=-Xmx256m -Xms256m"
+    volumes:
+      - ./config/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logs:/var/log/apps:ro
+    ports:
+      - "${LOGSTASH_BEATS_PORT:-5044}:5044"  # Beats 输入
+      - "${LOGSTASH_HTTP_PORT:-8080}:8080"   # HTTP 输入
+      - "${LOGSTASH_TCP_PORT:-5000}:5000"   # TCP 输入
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9600/_node/stats || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - logging-network
+
+  # Kibana - 日志可视化和查询界面
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: logging-kibana
+    restart: unless-stopped
+    profiles:
+      - elk
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=${KIBANA_ELASTICSEARCH_USERNAME:-}
+      - ELASTICSEARCH_PASSWORD=${KIBANA_ELASTICSEARCH_PASSWORD:-}
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+    volumes:
+      - kibana-data:/usr/share/kibana/data
+      - ./config/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - logging-network
+
+  # Filebeat - 日志收集器（可选，用于收集系统日志）
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: logging-filebeat
+    restart: unless-stopped
+    profiles:
+      - elk
+    user: root
+    volumes:
+      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logs:/var/log/apps:ro
+    depends_on:
+      - logstash
+    networks:
+      - logging-network
+
+  # ==================== Loki 栈 ====================
+
+  # Grafana Loki - 日志聚合系统
+  loki:
+    image: grafana/loki:latest
+    container_name: logging-loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    environment:
+      - LOG_RETENTION_HOURS=${LOG_RETENTION_HOURS:-168}
+    volumes:
+      - loki-data:/loki
+      - ./config/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - logging-network
+
+  # Promtail - 日志收集代理
+  promtail:
+    image: grafana/promtail:latest
+    container_name: logging-promtail
+    restart: unless-stopped
+    ports:
+      - "${PROMTAIL_PORT:-9080}:9080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./config/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./logs:/var/log/apps:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - logging-network
+
+  # Grafana - 日志可视化
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: logging-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-4000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=
+      # 禁用一些可能导致 DOM 冲突的特性
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./config/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - logging-network
+
+volumes:
+  # ELK 栈数据卷
+  elasticsearch-data:
+    driver: local
+  kibana-data:
+    driver: local
+  
+  # Loki 栈数据卷
+  loki-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  logging-network:
+    driver: bridge
+    name: logging-network
+
+

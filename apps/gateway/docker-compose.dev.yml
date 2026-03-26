@@ -1,0 +1,24 @@
+# Gateway Service - 开发环境配置覆盖
+# 开发环境使用更宽松的配置
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  gateway-service:
+    container_name: gateway-service-dev
+    environment:
+      - NODE_ENV=development
+      # JWT 配置（开发环境使用简单密钥）
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-refresh-secret-key-change-in-production}
+      # Redis 配置（使用 Docker 服务名）
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      # 服务地址配置（使用 Docker 服务名）
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      # 限流配置（开发环境更宽松）
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-1000}
+      # CORS 配置（开发环境允许所有来源）
+      - CORS_ORIGIN=*
+      - CORS_CREDENTIALS=true
+

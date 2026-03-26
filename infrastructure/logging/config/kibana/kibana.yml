@@ -1,0 +1,83 @@
+# Kibana 配置文件
+
+# 服务器设置
+server.name: kibana
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Elasticsearch 连接
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+elasticsearch.username: ${ELASTICSEARCH_USERNAME:-}
+elasticsearch.password: ${ELASTICSEARCH_PASSWORD:-}
+
+# 日志设置
+logging.appenders:
+  file:
+    type: file
+    fileName: /var/log/kibana/kibana.log
+    layout:
+      type: json
+
+# 国际化
+i18n.locale: "zh-CN"
+
+# 安全设置（开发环境）
+xpack.security.enabled: false
+xpack.encryptedSavedObjects.encryptionKey: "changeme-in-production"
+
+# 监控设置
+monitoring.ui.container.elasticsearch.enabled: true
+
+# 报告设置
+xpack.reporting.enabled: true
+
+# 画布设置
+xpack.canvas.enabled: true
+
+# 地图设置
+xpack.maps.enabled: true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

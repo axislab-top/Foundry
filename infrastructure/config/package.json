@@ -1,0 +1,59 @@
+{
+  "name": "@service/config",
+  "version": "1.0.0",
+  "description": "统一的配置管理模块，支持多种配置源（环境变量、文件、远程配置中心）",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "pnpm run clean && tsc",
+    "dev": "pnpm run clean && tsc --watch",
+    "clean": "node -e \"const fs = require('fs'); ['dist', 'build', 'types'].forEach(d => { try { fs.rmSync(d, { recursive: true, force: true }); } catch(e) {} });\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "config",
+    "configuration",
+    "env",
+    "file",
+    "consul",
+    "vault",
+    "validation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.27.0",
+  "dependencies": {
+    "joi": "^17.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  },
+  "optionalDependencies": {
+    "yaml": "^2.3.4"
+  },
+  "files": [
+    "dist",
+    "types",
+    "src"
+  ]
+}
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,103 @@
+# Consul Docker Compose 配置
+# Consul 服务发现和配置管理服务
+# 
+# 使用方式：
+# - 启动 Consul：docker-compose up -d
+# - 查看 Consul UI：http://localhost:8500
+# - 查看日志：docker-compose logs -f consul
+
+services:
+  consul:
+    image: consul:1.18
+    container_name: service-consul
+    restart: unless-stopped
+    networks:
+      - consul-network
+    ports:
+      - "${CONSUL_PORT:-8500}:8500"  # HTTP API
+      - "${CONSUL_DNS_PORT:-8600}:8600/udp"  # DNS
+      - "${CONSUL_GRPC_PORT:-8502}:8502"  # gRPC
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+      - CONSUL_CLIENT_INTERFACE=eth0
+      - CONSUL_DATACENTER=${CONSUL_DATACENTER:-dc1}
+      - CONSUL_DOMAIN=${CONSUL_DOMAIN:-consul}
+      - CONSUL_UI=${CONSUL_UI:-true}
+      - CONSUL_UI_CONFIG_DIR=/consul/ui-config
+      # ACL 配置（可选）
+      - CONSUL_ACL_ENABLE=${CONSUL_ACL_ENABLE:-false}
+      - CONSUL_ACL_DEFAULT_POLICY=${CONSUL_ACL_DEFAULT_POLICY:-allow}
+      # 开发模式（单节点）
+      - CONSUL_DEV_MODE=${CONSUL_DEV_MODE:-true}
+    command: >
+      consul agent
+      -server
+      -ui
+      -client=0.0.0.0
+      -bootstrap-expect=1
+      -datacenter=${CONSUL_DATACENTER:-dc1}
+      -data-dir=/consul/data
+      -config-dir=/consul/config
+      -log-level=${CONSUL_LOG_LEVEL:-INFO}
+    volumes:
+      - consul-data:/consul/data
+      - consul-config:/consul/config
+      - ./config:/consul/config:ro
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  consul-data:
+    driver: local
+  consul-config:
+    driver: local
+
+networks:
+  consul-network:
+    driver: bridge
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

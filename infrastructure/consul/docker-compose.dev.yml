@@ -1,0 +1,52 @@
+# Consul 开发环境配置
+# 单节点模式，适合开发环境
+
+services:
+  consul:
+    environment:
+      - CONSUL_DEV_MODE=true
+      - CONSUL_ACL_ENABLE=false
+    command: >
+      consul agent
+      -dev
+      -ui
+      -client=0.0.0.0
+      -datacenter=${CONSUL_DATACENTER:-dc1}
+      -log-level=DEBUG
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

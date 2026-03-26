@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "../dist/test",
+    "rootDir": ".",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "baseUrl": "..",
+    "paths": {
+      "@nestjs/testing": ["apps/api/node_modules/@nestjs/testing"],
+      "@nestjs/common": ["apps/api/node_modules/@nestjs/common"],
+      "@nestjs/core": ["apps/api/node_modules/@nestjs/core"],
+      "@nestjs/typeorm": ["apps/api/node_modules/@nestjs/typeorm"],
+      "typeorm": ["apps/api/node_modules/typeorm"],
+      "jest": ["apps/api/node_modules/jest"],
+      "@service/*": ["infrastructure/*/src"],
+      "@contracts/*": ["contracts/*/src"]
+    },
+    "types": ["node", "jest"],
+    "typeRoots": [
+      "../node_modules/@types",
+      "../apps/api/node_modules/@types"
+    ]
+  },
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
+

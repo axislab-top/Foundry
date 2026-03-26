@@ -1,0 +1,10 @@
+# Consul 测试环境配置
+# 单节点模式，适合测试环境
+
+services:
+  consul:
+    environment:
+      - CONSUL_DEV_MODE=true
+      - CONSUL_ACL_ENABLE=false
+      - CONSUL_LOG_LEVEL=WARN
+

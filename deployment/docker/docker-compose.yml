@@ -1,0 +1,389 @@
+# 服务部署 Docker Compose 配置
+# 包含所有核心服务的统一部署配置
+# 
+# 使用方式：
+# - 启动所有服务：docker-compose up -d
+# - 启动特定服务：docker-compose up -d postgres loki
+# - 查看服务状态：docker-compose ps
+# - 查看服务日志：docker-compose logs -f [service-name]
+
+services:
+  # PostgreSQL - 数据库服务
+  # 直接引用 infrastructure/postgres/docker-compose.yml 中的配置
+  postgres:
+    extends:
+      file: ../../infrastructure/postgres/docker-compose.yml
+      service: postgres
+    container_name: service-postgres
+    networks:
+      - service-network
+    # 使用 deployment 目录下的 .env 文件（如果存在）
+    env_file:
+      - ../../infrastructure/postgres/.env
+
+  # Grafana Loki - 日志聚合系统
+  # 直接引用 infrastructure/logging/docker-compose.yml 中的配置
+  # 使用 -f 参数合并：docker-compose -f docker-compose.yml -f ../../infrastructure/logging/docker-compose.yml up -d loki
+  # 或者使用 extends（需要移除 profiles）
+  loki:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: loki
+    container_name: service-loki
+    networks:
+      - service-network
+
+  # Promtail - 日志收集代理
+  promtail:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: promtail
+    container_name: service-promtail
+    networks:
+      - service-network
+    # 添加额外的日志目录挂载（会合并到继承的 volumes 中）
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ../../infrastructure/logging/config/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ../../infrastructure/logging/logs:/var/log/apps:ro
+      - ../../infrastructure/postgres/config/log:/var/log/postgres:ro
+
+  # Grafana - 日志可视化
+  grafana:
+    extends:
+      file: ../../infrastructure/logging/docker-compose.yml
+      service: grafana
+    container_name: service-grafana
+    networks:
+      - service-network
+
+  # RabbitMQ - 消息队列
+  rabbitmq:
+    extends:
+      file: ../../infrastructure/messaging/docker-compose.yml
+      service: rabbitmq
+    container_name: service-rabbitmq
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/messaging/.env
+    depends_on:
+      - postgres
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Redis - 缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: service-redis
+    restart: unless-stopped
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/redis/.env
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+      - ../../infrastructure/redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Consul - 服务发现和配置管理
+  # 可选服务，通过 CONSUL_ENABLED 环境变量控制
+  consul:
+    extends:
+      file: ../../infrastructure/consul/docker-compose.yml
+      service: consul
+    container_name: service-consul
+    networks:
+      - service-network
+    env_file:
+      - ../../infrastructure/consul/.env
+    # 使用 profiles 控制是否启动（可选）
+    # 启动方式：docker-compose --profile consul up -d consul
+    # 或设置环境变量 CONSUL_ENABLED=true 后直接启动
+    profiles:
+      - consul
+
+  # Logging Service - NestJS 日志服务
+  logging-service:
+    build:
+      context: ../../
+      dockerfile: apps/logging/Dockerfile
+    container_name: service-logging
+    restart: unless-stopped
+    networks:
+      - service-network
+    ports:
+      - "${LOGGING_SERVICE_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3001
+      - LOKI_URL=${LOKI_URL:-http://loki:3100}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-}
+    depends_on:
+      - loki
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Service - NestJS API 服务
+  api-service:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
+    container_name: service-api
+    restart: unless-stopped
+    networks:
+      - service-network
+    ports:
+      - "${API_SERVICE_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3000
+      # 数据库配置
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_DATABASE=${DB_DATABASE:-service_db}
+      - DB_SYNCHRONIZE=${DB_SYNCHRONIZE:-true}
+      - DB_LOGGING=${DB_LOGGING:-false}
+      # Redis 配置
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      - CACHE_ADAPTER_TYPE=${CACHE_ADAPTER_TYPE:-auto}
+      # JWT 配置
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-${JWT_SECRET}}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-15m}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      # 哈希配置
+      - HASHING_ADAPTER=${HASHING_ADAPTER:-bcrypt}
+      - BCRYPT_SALT_ROUNDS=${BCRYPT_SALT_ROUNDS:-10}
+      # 测试注入用户开关（仅本地/测试环境）
+      - TEST_AUTH_ENABLED=${TEST_AUTH_ENABLED:-true}
+      # 加密配置（可选，不设置则不启用加密）
+      - ENCRYPTION_ADAPTER=${ENCRYPTION_ADAPTER:-aes}
+      - AES_KEY=${AES_KEY:-}
+      # 存储配置
+      - STORAGE_TYPE=${STORAGE_TYPE:-local}
+      - STORAGE_LOCAL_BASE_PATH=${STORAGE_LOCAL_BASE_PATH:-./storage}
+      - STORAGE_LOCAL_BASE_URL=${STORAGE_LOCAL_BASE_URL:-/api/files}
+      # 监控配置
+      - METRICS_ADAPTER=${METRICS_ADAPTER:-prometheus}
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
+      # Swagger 配置
+      - SWAGGER_ENABLED=${SWAGGER_ENABLED:-true}
+      - SWAGGER_PATH=${SWAGGER_PATH:-api-docs}
+      # CORS 配置
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
+      # RabbitMQ 配置（如果需要消息队列）
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
+      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # 启动后60秒内不标记为不健康
+
+  # Gateway Service - NestJS 网关服务
+  # 直接引用 apps/gateway/docker-compose.yml 中的配置
+  gateway-service:
+    extends:
+      file: ../../apps/gateway/docker-compose.yml
+      service: gateway-service
+    container_name: service-gateway
+    networks:
+      - service-network
+    environment:
+      # 覆盖环境变量，使用Docker服务名而不是localhost
+      # 数据库配置
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_DATABASE=${GATEWAY_DB_DATABASE:-${DB_DATABASE:-gateway_db}}
+      - DB_SYNCHRONIZE=${DB_SYNCHRONIZE:-false}
+      - DB_LOGGING=${DB_LOGGING:-false}
+      # Redis 配置
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      # 服务地址配置
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
+      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+      - SERVICE_ADDRESS=${SERVICE_ADDRESS:-service-gateway}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api-service:
+        condition: service_healthy
+      webhooks-service:
+        condition: service_healthy
+      worker-service:
+        condition: service_healthy
+      logging-service:
+        condition: service_healthy
+
+  # Webhooks Service - NestJS Webhooks 服务
+  webhooks-service:
+    build:
+      context: ../../
+      dockerfile: apps/webhooks/Dockerfile
+    container_name: service-webhooks
+    restart: unless-stopped
+    networks:
+      - service-network
+    ports:
+      - "${WEBHOOKS_SERVICE_PORT:-3003}:3003"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3003
+      # 数据库配置
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_DATABASE=${WEBHOOKS_DB_DATABASE:-${DB_DATABASE:-service_db}}
+      - DB_SYNCHRONIZE=${DB_SYNCHRONIZE:-false}
+      - DB_LOGGING=${DB_LOGGING:-false}
+      # RabbitMQ 配置
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
+      - RABBITMQ_URI=${RABBITMQ_URI:-amqp://admin:admin123@rabbitmq:5672/}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3003/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # 启动后60秒内不标记为不健康
+
+  # Worker Service - NestJS Worker 服务
+  worker-service:
+    build:
+      context: ../../
+      dockerfile: apps/worker/Dockerfile
+    container_name: service-worker
+    restart: unless-stopped
+    networks:
+      - service-network
+    ports:
+      - "${WORKER_SERVICE_PORT:-3004}:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3004
+      # RabbitMQ 配置
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3004/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # 启动后60秒内不标记为不健康
+
+  # Nginx - 负载均衡器和反向代理
+  # 直接引用 infrastructure/nginx/docker-compose.yml 中的配置
+  nginx:
+    extends:
+      file: ../../infrastructure/nginx/docker-compose.yml
+      service: nginx
+    container_name: service-nginx
+    networks:
+      - service-network
+    depends_on:
+      gateway-service:
+        condition: service_healthy
+    # 注意: Nginx 的 volumes 和 ports 配置在 infrastructure/nginx/docker-compose.yml 中定义
+
+volumes:
+  postgres-data:
+    driver: local
+  loki-data:
+    driver: local
+  grafana-data:
+    driver: local
+  redis-data:
+    driver: local
+  consul-data:
+    driver: local
+  consul-config:
+    driver: local
+  nginx-logs:
+    driver: local
+  minio-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  rabbitmq-logs:
+    driver: local
+
+networks:
+  service-network:
+    driver: bridge
+  # 定义被 extends 引用的网络别名，都指向 service-network
+  postgres-network:
+    driver: bridge
+  logging-network:
+    driver: bridge
+  redis-network:
+    driver: bridge
+  gateway-network:
+    driver: bridge
+  messaging-network:
+    driver: bridge
+

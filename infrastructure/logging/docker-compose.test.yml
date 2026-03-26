@@ -1,0 +1,105 @@
+# 日志基础设施栈 - 测试环境配置覆盖
+# 测试环境使用 Loki 栈（轻量级，类似开发环境）
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.test.yml --profile loki up -d
+
+version: '3.8'
+
+services:
+  loki:
+    profiles: []  # 移除 profile
+    container_name: logging-loki-test
+    ports:
+      - "${LOKI_PORT:-3101}:3100"  # 测试环境使用不同端口
+    environment:
+      - LOG_RETENTION_HOURS=${LOG_RETENTION_HOURS:-12}  # 测试环境只保留 12 小时
+    volumes:
+      - loki-test-data:/loki  # 测试环境使用独立数据卷
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  promtail:
+    profiles: []  # 移除 profile
+    container_name: logging-promtail-test
+    ports:
+      - "${PROMTAIL_PORT:-9081}:9080"  # 测试环境使用不同端口
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./config/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./logs:/var/log/apps:ro
+
+  grafana:
+    profiles: []  # 移除 profile
+    container_name: logging-grafana-test
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"  # 测试环境使用不同端口
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-test_admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-test-data:/var/lib/grafana
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+volumes:
+  loki-test-data:
+    driver: local
+  grafana-test-data:
+    driver: local
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

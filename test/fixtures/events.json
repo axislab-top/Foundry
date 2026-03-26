@@ -1,0 +1,79 @@
+{
+  "userCreated": {
+    "eventId": "event-123",
+    "eventType": "user.created",
+    "aggregateId": "user-123",
+    "aggregateType": "user",
+    "occurredAt": "2024-01-01T00:00:00.000Z",
+    "version": 1,
+    "data": {
+      "userId": "user-123",
+      "username": "testuser",
+      "email": "test@example.com",
+      "roles": ["user"],
+      "permissions": [],
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  },
+  "userUpdated": {
+    "eventId": "event-124",
+    "eventType": "user.updated",
+    "aggregateId": "user-123",
+    "aggregateType": "user",
+    "occurredAt": "2024-01-01T01:00:00.000Z",
+    "version": 1,
+    "data": {
+      "userId": "user-123",
+      "username": "testuser",
+      "email": "updated@example.com",
+      "updatedAt": "2024-01-01T01:00:00.000Z"
+    }
+  },
+  "userDeleted": {
+    "eventId": "event-125",
+    "eventType": "user.deleted",
+    "aggregateId": "user-123",
+    "aggregateType": "user",
+    "occurredAt": "2024-01-01T02:00:00.000Z",
+    "version": 1,
+    "data": {
+      "userId": "user-123",
+      "deletedAt": "2024-01-01T02:00:00.000Z"
+    }
+  },
+  "loginSuccess": {
+    "eventId": "event-126",
+    "eventType": "auth.login.success",
+    "aggregateId": "user-123",
+    "aggregateType": "auth",
+    "occurredAt": "2024-01-01T03:00:00.000Z",
+    "version": 1,
+    "data": {
+      "userId": "user-123",
+      "email": "test@example.com",
+      "ipAddress": "127.0.0.1",
+      "userAgent": "test-agent"
+    }
+  },
+  "loginFailed": {
+    "eventId": "event-127",
+    "eventType": "auth.login.failed",
+    "aggregateId": null,
+    "aggregateType": "auth",
+    "occurredAt": "2024-01-01T04:00:00.000Z",
+    "version": 1,
+    "data": {
+      "email": "test@example.com",
+      "reason": "invalid_credentials",
+      "ipAddress": "127.0.0.1"
+    }
+  }
+}
+
+
+
+
+
+
+
+

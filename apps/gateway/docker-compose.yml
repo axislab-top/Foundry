@@ -1,0 +1,84 @@
+# Gateway Service Docker Compose 配置
+# 网关服务的基础 Docker Compose 配置
+# 
+# 使用方式：
+# - 单独启动：docker-compose up -d
+# - 开发环境：docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# - 生产环境：docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# - 测试环境：docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+services:
+  gateway-service:
+    build:
+      context: ../../
+      dockerfile: apps/gateway/Dockerfile
+    container_name: gateway-service
+    restart: unless-stopped
+    networks:
+      - gateway-network
+    ports:
+      - "${GATEWAY_SERVICE_PORT:-3002}:3002"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3002
+      # JWT 配置
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-15m}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-change-me-in-production}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      # Redis 配置
+      - REDIS_HOST=${REDIS_HOST:-localhost}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      # 服务地址配置
+      - API_SERVICE_URL=${API_SERVICE_URL:-http://localhost:3000}
+      - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://localhost:3003}
+      - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://localhost:3004}
+      - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://localhost:3001}
+      # 限流配置
+      - RATE_LIMIT_TTL=${RATE_LIMIT_TTL:-60}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS=${RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS:-false}
+      # HTTP 配置
+      - HTTP_TIMEOUT=${HTTP_TIMEOUT:-30000}
+      # CORS 配置
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
+      # Consul 配置（可选）
+      - CONSUL_ENABLED=${CONSUL_ENABLED:-false}
+      - CONSUL_HOST=${CONSUL_HOST:-consul}
+      - CONSUL_PORT=${CONSUL_PORT:-8500}
+      - CONSUL_SECURE=${CONSUL_SECURE:-false}
+      - CONSUL_TOKEN=${CONSUL_TOKEN:-}
+      - CONSUL_DATACENTER=${CONSUL_DATACENTER:-dc1}
+      - CONSUL_CONFIG_PREFIX=${CONSUL_CONFIG_PREFIX:-config/}
+      # 服务注册配置
+      - SERVICE_NAME=${SERVICE_NAME:-gateway-service}
+      - SERVICE_ADDRESS=${SERVICE_ADDRESS:-gateway-service}
+      - SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+      # 安全配置
+      - HASHING_ADAPTER=${HASHING_ADAPTER:-bcrypt}
+      - BCRYPT_SALT_ROUNDS=${BCRYPT_SALT_ROUNDS:-10}
+      - ARGON2_MEMORY_COST=${ARGON2_MEMORY_COST:-65536}
+      - ARGON2_TIME_COST=${ARGON2_TIME_COST:-3}
+      - ARGON2_PARALLELISM=${ARGON2_PARALLELISM:-4}
+      - ENCRYPTION_ADAPTER=${ENCRYPTION_ADAPTER:-aes}
+      - AES_KEY=${AES_KEY:-}
+      - CSRF_ENABLED=${CSRF_ENABLED:-true}
+      - CSRF_SECRET=${CSRF_SECRET:-${JWT_SECRET}}
+    depends_on:
+      consul:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # 启动后60秒内不标记为不健康
+
+networks:
+  gateway-network:
+    driver: bridge
+

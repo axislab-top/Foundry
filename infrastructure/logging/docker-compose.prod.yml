@@ -1,0 +1,91 @@
+# 日志基础设施栈 - 生产环境配置覆盖
+# 生产环境使用 ELK 栈（完整功能）
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.prod.yml --profile elk up -d
+
+version: '3.8'
+
+services:
+  elasticsearch:
+    profiles: []  # 移除 profile，生产环境默认启动 ELK
+    ports:
+      - "127.0.0.1:${ELASTICSEARCH_PORT:-9200}:9200"  # 生产环境只绑定本地
+      - "127.0.0.1:${ELASTICSEARCH_TRANSPORT_PORT:-9300}:9300"
+    environment:
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"  # 生产环境使用更多内存
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  logstash:
+    profiles: []
+    ports:
+      - "127.0.0.1:${LOGSTASH_BEATS_PORT:-5044}:5044"
+      - "127.0.0.1:${LOGSTASH_HTTP_PORT:-8080}:8080"
+      - "127.0.0.1:${LOGSTASH_TCP_PORT:-5000}:5000"
+    environment:
+      - "LS_JAVA_OPTS=-Xmx512m -Xms512m"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  kibana:
+    profiles: []
+    ports:
+      - "127.0.0.1:${KIBANA_PORT:-5601}:5601"
+
+  filebeat:
+    profiles: []
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

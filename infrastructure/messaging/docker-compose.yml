@@ -1,0 +1,54 @@
+# RabbitMQ 消息队列 Docker Compose 配置
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: service-rabbitmq
+    restart: unless-stopped
+    hostname: rabbitmq
+    networks:
+      - messaging-network
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      # 管理插件配置
+      RABBITMQ_MANAGEMENT_SSL_ENABLED: "false"
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"      # AMQP 端口
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"  # Management UI 端口
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - rabbitmq-logs:/var/log/rabbitmq
+      - ./config/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./config/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 标签
+    labels:
+      - "service=rabbitmq"
+      - "component=messaging"
+
+volumes:
+  rabbitmq-data:
+    driver: local
+  rabbitmq-logs:
+    driver: local
+
+networks:
+  messaging-network:
+    driver: bridge
+
+
+
+
+

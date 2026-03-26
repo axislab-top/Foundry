@@ -1,0 +1,73 @@
+# 日志基础设施栈 - 开发环境配置覆盖
+# 开发环境使用 Loki 栈（轻量级）
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.dev.yml --profile loki up -d
+
+version: '3.8'
+
+services:
+  loki:
+    profiles: []  # 移除 profile，开发环境默认启动
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    environment:
+      - LOG_RETENTION_HOURS=${LOG_RETENTION_HOURS:-24}  # 开发环境只保留 24 小时
+    volumes:
+      - loki-data:/loki
+
+  promtail:
+    profiles: []  # 移除 profile
+    ports:
+      - "${PROMTAIL_PORT:-9080}:9080"
+
+  grafana:
+    profiles: []  # 移除 profile
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=true  # 开发环境允许注册
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

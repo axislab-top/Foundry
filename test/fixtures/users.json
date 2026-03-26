@@ -1,0 +1,60 @@
+{
+  "validUser": {
+    "id": "user-123",
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "password123",
+    "roles": ["user"],
+    "permissions": [],
+    "enabled": true
+  },
+  "adminUser": {
+    "id": "user-456",
+    "username": "admin",
+    "email": "admin@example.com",
+    "password": "admin123",
+    "roles": ["admin", "user"],
+    "permissions": ["read:all", "write:all"],
+    "enabled": true
+  },
+  "disabledUser": {
+    "id": "user-789",
+    "username": "disabled",
+    "email": "disabled@example.com",
+    "password": "password123",
+    "roles": ["user"],
+    "permissions": [],
+    "enabled": false
+  },
+  "users": [
+    {
+      "id": "user-1",
+      "username": "user1",
+      "email": "user1@example.com",
+      "roles": ["user"],
+      "enabled": true
+    },
+    {
+      "id": "user-2",
+      "username": "user2",
+      "email": "user2@example.com",
+      "roles": ["user"],
+      "enabled": true
+    },
+    {
+      "id": "user-3",
+      "username": "user3",
+      "email": "user3@example.com",
+      "roles": ["user"],
+      "enabled": true
+    }
+  ]
+}
+
+
+
+
+
+
+
+

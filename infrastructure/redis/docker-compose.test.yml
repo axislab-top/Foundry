@@ -1,0 +1,72 @@
+# Redis 测试环境配置覆盖
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+version: '3.8'
+
+services:
+  redis:
+    ports:
+      - "${REDIS_PORT:-6380}:6379"  # 测试环境使用不同端口
+    volumes:
+      - redis-test-data:/data  # 测试环境使用独立数据卷
+      - ./config/redis.dev.conf:/usr/local/etc/redis/redis.conf:ro  # 测试环境使用开发配置
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-test_password}
+    # 测试环境使用较小的资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+volumes:
+  redis-test-data:
+    driver: local
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

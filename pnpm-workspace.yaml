@@ -1,0 +1,7 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'infrastructure/*'
+  - 'tooling/*'
+  - 'contracts/types'
+  - 'contracts/events'

@@ -1,0 +1,63 @@
+# Redis Docker Compose 配置
+# 提供 Redis 缓存服务
+#
+# 使用方式：
+# - 启动服务：docker-compose up -d
+# - 停止服务：docker-compose down
+# - 查看日志：docker-compose logs -f redis
+# - 使用环境配置：docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+version: '3.8'
+
+services:
+  # Redis - 缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s  # 启动后20秒内不标记为不健康
+    networks:
+      - redis-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,container"
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  redis-network:
+    driver: bridge
+    name: redis-network
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
