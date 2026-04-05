@@ -3,6 +3,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { UsersService } from '../users/users.service.js';
 import { MessagingService } from '@service/messaging';
+import { TenantContextService } from '@service/tenant';
 import { createMockMessagingService, createMockUser } from '../../../test/utils/mock-factories.js';
 
 jest.mock('../users/users.service.js', () => ({
@@ -18,6 +19,12 @@ describe('AuthService', () => {
     validateUserCredentials: jest.fn(),
   };
 
+  const mockTenantContext = {
+    getCompanyId: jest.fn().mockReturnValue(undefined),
+    setCompanyId: jest.fn(),
+    runWithCompanyId: jest.fn((_companyId: string, cb: () => unknown) => cb()),
+  };
+
   beforeEach(async () => {
     const mockMessagingService = createMockMessagingService();
 
@@ -31,6 +38,10 @@ describe('AuthService', () => {
         {
           provide: MessagingService,
           useValue: mockMessagingService,
+        },
+        {
+          provide: TenantContextService,
+          useValue: mockTenantContext,
         },
       ],
     }).compile();

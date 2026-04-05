@@ -1,6 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { API_RPC_CLIENT, WEBHOOKS_RPC_CLIENT } from './rpc.constants.js';
+import { RpcConnectionService } from './rpc-connection.service.js';
+import { RMQ_NEST_SOCKET_OPTIONS } from '@service/messaging';
 
 @Global()
 @Module({
@@ -10,7 +12,8 @@ import { API_RPC_CLIENT, WEBHOOKS_RPC_CLIENT } from './rpc.constants.js';
         name: API_RPC_CLIENT,
         useFactory: async () => {
           const rmqUrl =
-            process.env.RMQ_URL || 'amqp://guest:guest@localhost:5672';
+            process.env.RMQ_URL ||
+            'amqp://admin:admin123@localhost:5672';
           const queue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
 
           return {
@@ -20,6 +23,7 @@ import { API_RPC_CLIENT, WEBHOOKS_RPC_CLIENT } from './rpc.constants.js';
               queue,
               queueOptions: { durable: true },
               prefetchCount: Number(process.env.GW_RMQ_PREFETCH ?? 10),
+              socketOptions: { ...RMQ_NEST_SOCKET_OPTIONS },
             },
           };
         },
@@ -28,7 +32,8 @@ import { API_RPC_CLIENT, WEBHOOKS_RPC_CLIENT } from './rpc.constants.js';
         name: WEBHOOKS_RPC_CLIENT,
         useFactory: async () => {
           const rmqUrl =
-            process.env.RMQ_URL || 'amqp://guest:guest@localhost:5672';
+            process.env.RMQ_URL ||
+            'amqp://admin:admin123@localhost:5672';
           const queue =
             process.env.WEBHOOKS_RMQ_RPC_QUEUE || 'webhooks-rpc-queue';
 
@@ -39,12 +44,14 @@ import { API_RPC_CLIENT, WEBHOOKS_RPC_CLIENT } from './rpc.constants.js';
               queue,
               queueOptions: { durable: true },
               prefetchCount: Number(process.env.GW_RMQ_PREFETCH ?? 10),
+              socketOptions: { ...RMQ_NEST_SOCKET_OPTIONS },
             },
           };
         },
       },
     ]),
   ],
+  providers: [RpcConnectionService],
   exports: [ClientsModule],
 })
 export class RpcModule {}

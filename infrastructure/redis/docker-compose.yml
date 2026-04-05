@@ -19,7 +19,8 @@ services:
       - .env
     command: redis-server /usr/local/etc/redis/redis.conf
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # 仅绑定宿主机回环，避免 IPv6/端口转发层抖动导致 ECONNRESET
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
       - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro

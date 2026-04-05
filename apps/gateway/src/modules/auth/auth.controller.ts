@@ -86,6 +86,26 @@ export class AuthController {
     }
   }
 
+  /**
+   * 管理员登录（仅允许管理员角色）。
+   */
+  @Post('admin/login')
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    maxRequests: 5,
+    skipSuccessfulRequests: false,
+  })
+  @ApiOperation({ summary: '管理员登录', description: '使用邮箱和密码登录，返回 JWT 令牌。仅允许 admin/superadmin 账号登录。' })
+  @ApiBody({ type: LoginDto })
+  @ApiResponse({ status: 200, description: '登录成功，返回访问令牌和刷新令牌' })
+  @ApiResponse({ status: 401, description: '凭证无效或权限不足' })
+  @ApiResponse({ status: 429, description: '请求过于频繁' })
+  async adminLogin(@Body() loginDto: LoginDto) {
+    return this.authService.adminLogin(loginDto);
+  }
+
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Public()

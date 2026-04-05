@@ -1,5 +1,7 @@
 # 项目已实现功能清单（实现侧代码梳理）
 
+> **按业务域拆分的功能说明**（多租户、组织、Agent、协作、记忆、任务、计费等）见 [`docs/features/README.md`](../features/README.md)。本文档以 **HTTP 路由与部分 Worker 订阅** 的逐条列举为主，适合联调验收时对照。
+
 本文档基于仓库 `apps/*` 的 NestJS 代码入口与各模块 Controller/Service/Listener 实现，对“当前项目落地了哪些功能”做一次实现层面的归纳总结。
 
 > 说明：本文“实现/未实现”的判断以代码中实际暴露的入口（Controller 路由、消息订阅、核心 Service 逻辑）为准；部分业务处理函数内部可能仍包含 `TODO` 占位。
@@ -8,12 +10,13 @@
 
 ## 1. 仓库整体形态
 
-- Monorepo：`pnpm-workspace.yaml` 指向 `apps/*`、`packages/*`、`contracts/*`、`infrastructure/*`、`tooling/*`
+- Monorepo：`pnpm-workspace.yaml` 指向 `apps/*`、`packages/*`、`packages/core/task`、`contracts/*`、`infrastructure/*`、`tooling/*`
 - 核心服务（HTTP + 异步）：
-  - `apps/api`：业务 API（文件/用户/认证/OAuth/健康）
-  - `apps/gateway`：API Gateway（鉴权、路由转发、管理接口、观测与安全中间件）
+  - `apps/api`：业务 API（文件/用户/认证/OAuth/健康/任务与运行记录等）
+  - `apps/gateway`：API Gateway（鉴权、路由转发、管理接口、观测与安全中间件、`X-Run-Id` 生成与透传）
   - `apps/webhooks`：Webhook 配置管理与接收/转发
-  - `apps/worker`：异步消息订阅处理（登录/用户事件等）
+  - `apps/worker`：异步消息订阅处理（登录/用户事件等）+ **Temporal 触发的内部心跳入口**（见下文 M1）
+  - `apps/temporal-worker`：Temporal 工作流与活动（公司心跳扇出等），通过 HTTP 调用现有 Worker/API
   - `apps/logging`：独立日志服务（接收、处理、存储、查询）
 - Infra/治理：
   - `turbo`：构建与任务编排（根目录 `package.json`/`turbo.json`）
@@ -266,7 +269,58 @@ worker 以队列订阅为主（不依赖 HTTP Controller）：
 
 ---
 
-## 7. 重要“未完全确认/待补充”的点
+## 7. M1：可运行数字公司竖切（任务运行记录、DAG、Temporal、董事会视图）
+
+以下对应《执行计划》M1 在代码中的落地点；Postgres 为运行记录真源（ClickHouse 等 OLAP 属后续里程碑）。
+
+### 7.1 数据模型与迁移（Postgres）
+
+- 迁移：`infrastructure/postgres/migrations/1770400000000_AddTaskRunsDependenciesAndRunId.ts`
+  - 表 `task_runs`：单次编排/心跳运行的元数据（`run_id`、触发源、Temporal workflow id、状态、时间戳、`metadata` 等）
+  - 表 `task_dependencies`：任务依赖边（支持 DAG 校验）
+  - `task_execution_logs.run_id`：可选关联到某次 run
+  - 任务状态枚举扩展：`awaiting_approval`（与治理阶段对齐的入口状态）
+
+### 7.2 `apps/api`：TaskRun、RPC、执行日志
+
+- `TaskRunService`：`tasks.run.start` / `tasks.run.complete` / `tasks.run.fail`、`tasks.runs.list`（Query 可选 `taskId`，按 `task_execution_logs` 关联筛选 run）、`dashboard.boardRunSummary`（RPC 入口见 `tasks.rpc.controller.ts`）
+- `TasksService.listDependencyEdges`：`tasks.dependencies.list`；`TaskExecutionService.listExecutionLogsGroupedByRun`：`tasks.executionLogs.groupedByRun`（GET `/v1/tasks/:id/execution-logs/grouped`）
+- `TaskExecutionService.appendLog`：支持可选 `runId`；列表查询可按 `runId` 过滤
+- `TasksService`：创建/更新任务时维护依赖行；依赖环检测与进入 `in_progress` 前的依赖完成校验（共享逻辑见 `@foundry/task-core`）
+
+### 7.3 `apps/gateway`：`runId` 与对外路由
+
+- `request-id.middleware`（及相关链路）：请求若无 `X-Run-Id` 则生成 UUID，并回写响应头；转发下游时注入 `x-run-id`（见 `base-proxy.service`）
+- 静态路由示例：`GET /v1/dashboard/board-runs`、`GET /v1/task-runs`（支持 `taskId`）、`GET /v1/tasks/dependencies`、`GET /v1/tasks/:id/execution-logs/grouped`（具体路径以 `routes.config.ts` 为准）；RPC 模式在 `rpc-patterns.config.ts` 中注册
+
+### 7.4 `apps/worker`：Temporal 对齐与互斥心跳
+
+- 环境变量：`TASK_HEARTBEAT_SOURCE=nest_timer|temporal`（`temporal` 时 Nest 定时心跳不再发 tick，避免双触发）
+- `WORKER_INTERNAL_API_SECRET` + `POST /api/internal/temporal/company-heartbeat`：`X-Internal-Auth` 鉴权，活动内驱动 `tasks.run.*` 与现有 `autonomous` 心跳链路
+
+### 7.5 Temporal 基础设施与应用
+
+- Docker：`deployment/docker/docker-compose.temporal.yml`（建议 `--profile temporal` 与主 compose 合并使用）
+- `apps/temporal-worker`：`HeartbeatFanout` 等工作流与活动；README 说明 bundle、地址与 schedule 引导脚本
+
+### 7.6 共享包 `@foundry/task-core`
+
+- 路径：`packages/core/task` — 任务/运行相关字符串联合类型与 `dependencyGraphHasCycle` 等纯函数；`pnpm --filter @foundry/task-core run test` 运行 DAG 单测
+
+### 7.7 管理端「董事会 / 运行」视图
+
+- `admin-system`：公司详情 **董事会视图** Tab（`@xyflow/react`：父子实线 + DAG 依赖橙色虚线；点击节点筛选 runs、拉取按 run 分组的执行日志）；Cypress：`cypress/e2e/board-room.cy.ts`（拦截 API 全链路）、`board-room-smoke.cy.ts`
+
+### 7.8 契约与测试
+
+- **Pact（worker → API，HTTP shim）**：合并后的契约文件 `contracts/pact/pacts/foundry-worker-foundry-api.json`（须提交）；CI 在 `pnpm test` 之后执行 `pnpm test:pact`（根脚本，等同 `@service/api` 的 `test:pact`；`PACT_DO_NOT_TRACK=true`）。日常单测通过 `jest.config.cjs` 的 `testPathIgnorePatterns` 排除 `test/pact/`，Pact 使用 `jest.pact.config.cjs`。
+- **更新契约**：`pnpm --filter @service/api run pact:generate`（内部 `PACT_GENERATE=1`，再提交 JSON）。可选 Broker：设置 `PACT_BROKER_BASE_URL`、`PACT_BROKER_TOKEN`、`GITHUB_SHA` 或 `PACT_PROVIDER_VERSION` 后由 `provider.verify.spec.ts` 上报校验结果。
+- 根目录另有人读 JSON 样例：`contracts/pact/tasks-run-start.contract.json`、`contracts/pact/tasks-execution-log-append.contract.json`（非 CI 所用文件）。
+- API Jest：`jest.config.cjs` 含 `@foundry/task-core` 的 `moduleNameMapper`；勿与已删除的重复 `jest.config.js` 并存
+
+---
+
+## 8. 重要“未完全确认/待补充”的点
 
 1. `apps/gateway` 的 `SignatureMiddleware` / `ReplayAttackMiddleware` / `CsrfProtectionMiddleware` / `IpFilterMiddleware` 已在 `apps/gateway/src/app.module.ts` 挂载，并对“未携带对应 header 的请求”做了自动跳过。建议在联调阶段用真实请求验证：签名校验、nonce 防重放、以及 CSRF token 校验是否符合预期。
 
@@ -274,7 +328,7 @@ worker 以队列订阅为主（不依赖 HTTP Controller）：
 
 ---
 
-## 8. 建议你接下来怎么用这份清单
+## 9. 建议你接下来怎么用这份清单
 
 - 如果你要做“功能验收”，可以以本文档中的 Controller 路由为基准逐个联调
 - 如果你要做“安全验收”，需要重点确认 `gateway` 安全中间件是否真正挂载生效，并核对 Header 约定（`Signature`/`X-Timestamp`/`X-Nonce`/`X-Api-Secret` 等）

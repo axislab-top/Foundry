@@ -8,6 +8,7 @@
     "dev": "turbo run dev --concurrency=16",
     "start": "turbo run start",
     "test": "turbo run test",
+    "test:pact": "pnpm --filter @service/api run test:pact",
     "lint": "turbo run lint",
     "infra:start": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml up -d",
     "infra:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml down",
@@ -29,7 +30,13 @@
     "migrate:show": "cd infrastructure/migrations && pnpm run migrate:show",
     "migrate:run": "cd infrastructure/migrations && pnpm run migrate:run",
     "migrate:revert": "cd infrastructure/migrations && pnpm run migrate:revert",
-    "migrate:generate": "typeorm migration:generate"
+    "migrate:generate": "typeorm migration:generate",
+    "diagnose:user-path": "node scripts/diagnose-foundry-user-path.mjs",
+    "benchmark:ceo-llm": "node scripts/benchmark-ceo-breakdown-llm.mjs",
+    "e2e:collaboration": "node scripts/e2e-collaboration-login-flow.mjs",
+    "e2e:collaboration:journey": "node scripts/e2e-collaboration-user-journey.mjs",
+    "import:agency-agents": "pnpm --filter @service/api run import:agency-agents",
+    "sync:agency-names-zh": "pnpm --filter @service/api run sync:agency-names-zh"
   },
   "keywords": [
     "nestjs",
@@ -39,7 +46,6 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.0",
   "devDependencies": {
-    "@types/axios": "^0.14.4",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.27",
     "rimraf": "^6.1.2",

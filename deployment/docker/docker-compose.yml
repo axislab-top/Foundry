@@ -87,7 +87,7 @@ services:
     env_file:
       - ../../infrastructure/redis/.env
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
       - ../../infrastructure/redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -205,6 +205,9 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
       - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
       - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+      - API_RMQ_RPC_QUEUE=${API_RMQ_RPC_QUEUE:-api-rpc-queue}
+      - API_RMQ_RPC_QUEUE_AUTONOMOUS=${API_RMQ_RPC_QUEUE_AUTONOMOUS:-api-rpc-autonomous-queue}
+      - API_RMQ_AUTONOMOUS_PREFETCH=${API_RMQ_AUTONOMOUS_PREFETCH:-5}
     depends_on:
       postgres:
         condition: service_healthy
@@ -249,8 +252,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      api-service:
         condition: service_healthy
       webhooks-service:
         condition: service_healthy
@@ -316,12 +317,20 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3004
-      # RabbitMQ 配置
+      # RabbitMQ：与 api-service / gateway 一致，显式 RMQ_URL 避免仅依赖 RABBITMQ_* 时分叉
       - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
       - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
       - RABBITMQ_USER=${RABBITMQ_USER:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
       - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
+      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+      - API_RMQ_RPC_QUEUE=${API_RMQ_RPC_QUEUE:-api-rpc-queue}
+      - API_RMQ_RPC_QUEUE_AUTONOMOUS=${API_RMQ_RPC_QUEUE_AUTONOMOUS:-api-rpc-autonomous-queue}
+      - WORKER_API_RMQ_RPC_QUEUE=${WORKER_API_RMQ_RPC_QUEUE:-${API_RMQ_RPC_QUEUE_AUTONOMOUS:-api-rpc-autonomous-queue}}
+      - WORKER_API_RPC_TIMEOUT_MS=${WORKER_API_RPC_TIMEOUT_MS:-120000}
+      # 协作 @CEO 调 OpenAI/Anthropic；跨境/慢网易报 Request timed out，默认 5 分钟
+      - WORKER_COLLAB_LLM_TIMEOUT_MS=${WORKER_COLLAB_LLM_TIMEOUT_MS:-300000}
+      - TASK_HEARTBEAT_MAX_COMPANIES_PER_TICK=${TASK_HEARTBEAT_MAX_COMPANIES_PER_TICK:-20}
     depends_on:
       postgres:
         condition: service_healthy

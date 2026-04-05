@@ -5,7 +5,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { ErrorResponse } from '../interfaces/error-response.interface.js';
 import { ErrorCode, ErrorMessages } from '../error-codes.js';
 

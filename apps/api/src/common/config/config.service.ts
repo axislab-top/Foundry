@@ -10,7 +10,11 @@ import {
   StorageConfig,
   StorageType,
   ApiConfig,
+  MemoryConfig,
 } from './interfaces/config.interface.js';
+import fs from 'node:fs/promises';
+
+type DepartmentZhMap = Record<string, string>;
 
 /**
  * 配置服务
@@ -20,6 +24,8 @@ import {
 @Injectable()
 export class ConfigService {
   private configManager: ConfigManager;
+  private cachedDeptZhMap: DepartmentZhMap | null = null;
+  private cachedDeptZhMapLoadedAt = 0;
 
   constructor(@Inject('CONFIG_MANAGER') configManager: ConfigManager) {
     this.configManager = configManager;
@@ -73,6 +79,11 @@ export class ConfigService {
     };
   }
 
+  /** Gateway/API 经 Redis Pub/Sub 推送协作消息（需与 Gateway 使用同一 Redis） */
+  isCollaborationRedisNotifyEnabled(): boolean {
+    return this.configManager.get<boolean>('COLLAB_REDIS_NOTIFY', true);
+  }
+
   /**
    * 获取监控配置
    */
@@ -111,6 +122,60 @@ export class ConfigService {
       origin: origin === '*' ? '*' : origin.split(','),
       credentials: this.configManager.get<boolean>('CORS_CREDENTIALS', true),
     };
+  }
+
+  /**
+   * Memory / RAG 嵌入配置
+   */
+  getMemoryConfig(): MemoryConfig {
+    return {
+      openaiApiKey: this.configManager.get<string>('OPENAI_API_KEY'),
+      openaiBaseUrl: this.configManager.get<string>(
+        'OPENAI_BASE_URL',
+        'https://api.openai.com/v1',
+      ),
+      embeddingModel: this.configManager.get<string>(
+        'MEMORY_EMBEDDING_MODEL',
+        'text-embedding-3-small',
+      ),
+      embeddingDimensions: this.configManager.get<number>(
+        'MEMORY_EMBEDDING_DIMENSIONS',
+        1536,
+      ),
+      ragQueryTimeoutMs: this.configManager.get<number>(
+        'MEMORY_RAG_QUERY_TIMEOUT_MS',
+        280,
+      ),
+      hybridVectorWeight: this.configManager.get<number>(
+        'MEMORY_HYBRID_VECTOR_WEIGHT',
+        0.72,
+      ),
+      hybridFullTextSearch: this.configManager.get<boolean>(
+        'MEMORY_HYBRID_FULLTEXT',
+        true,
+      ),
+      ragMinScore: this.configManager.get<number>('MEMORY_RAG_MIN_SCORE', 0),
+      embeddingDailyCap: this.configManager.get<number>(
+        'MEMORY_EMBEDDING_DAILY_CAP',
+        0,
+      ),
+      summaryDailyCap: this.configManager.get<number>(
+        'MEMORY_SUMMARY_DAILY_CAP',
+        0,
+      ),
+    };
+  }
+
+  isSessionMemoryEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_SESSION_MEMORY', true);
+  }
+
+  isMemoryConsolidationEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_MEMORY_CONSOLIDATION', false);
+  }
+
+  getMemoryConsolidationWindowMessages(): number {
+    return this.configManager.get<number>('MEMORY_CONSOLIDATION_WINDOW_MESSAGES', 50);
   }
 
   /**
@@ -185,7 +250,44 @@ export class ConfigService {
       http: this.getHttpConfig(),
       cors: this.getCorsConfig(),
       storage: this.getStorageConfig(),
+      memory: this.getMemoryConfig(),
     };
+  }
+
+  /**
+   * 部门英文/别名 -> 中文展示名映射
+   * - 优先 DEPARTMENT_ZH_MAP_JSON（JSON 字符串）
+   * - 其次 DEPARTMENT_ZH_MAP_PATH（JSON 文件路径）
+   * - 否则返回空对象（由业务层使用默认映射/兜底）
+   *
+   * 为避免频繁 IO，带短缓存（默认 30s）。
+   */
+  async getDepartmentZhMap(): Promise<DepartmentZhMap> {
+    const now = Date.now();
+    if (this.cachedDeptZhMap && now - this.cachedDeptZhMapLoadedAt < 30_000) {
+      return this.cachedDeptZhMap;
+    }
+
+    const rawJson = this.configManager.get<string>('DEPARTMENT_ZH_MAP_JSON', '').trim();
+    if (rawJson) {
+      const parsed = JSON.parse(rawJson) as DepartmentZhMap;
+      this.cachedDeptZhMap = parsed ?? {};
+      this.cachedDeptZhMapLoadedAt = now;
+      return this.cachedDeptZhMap;
+    }
+
+    const path = this.configManager.get<string>('DEPARTMENT_ZH_MAP_PATH', '').trim();
+    if (path) {
+      const file = await fs.readFile(path, 'utf8');
+      const parsed = JSON.parse(file) as DepartmentZhMap;
+      this.cachedDeptZhMap = parsed ?? {};
+      this.cachedDeptZhMapLoadedAt = now;
+      return this.cachedDeptZhMap;
+    }
+
+    this.cachedDeptZhMap = {};
+    this.cachedDeptZhMapLoadedAt = now;
+    return this.cachedDeptZhMap;
   }
 }
 

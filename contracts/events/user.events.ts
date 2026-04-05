@@ -18,6 +18,7 @@ export interface UserCreatedEvent extends BaseEvent {
     roles: string[];
     permissions: string[];
     createdAt: string;
+    companyId?: string;
   };
 }
 
@@ -29,6 +30,7 @@ export interface UserUpdatedEvent extends BaseEvent {
   aggregateType: 'user';
   data: {
     userId: string;
+    companyId?: string;
     changes: {
       username?: string;
       email?: string;
@@ -49,6 +51,7 @@ export interface UserDeletedEvent extends BaseEvent {
   data: {
     userId: string;
     deletedAt: string;
+    companyId?: string;
   };
 }
 
@@ -64,6 +67,7 @@ export interface UserLoggedInEvent extends BaseEvent {
     loginAt: string;
     ipAddress?: string;
     userAgent?: string;
+    companyId?: string;
   };
 }
 
@@ -78,6 +82,7 @@ export interface UserRoleChangedEvent extends BaseEvent {
     oldRoles: string[];
     newRoles: string[];
     changedAt: string;
+    companyId?: string;
   };
 }
 

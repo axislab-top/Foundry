@@ -9,6 +9,7 @@ import { CacheModule } from './common/cache/cache.module.js';
 import { SecurityModule } from './common/security/security.module.js';
 import { ExceptionsModule } from './common/exceptions/exceptions.module.js';
 import { TracingModule } from './common/tracing/tracing.module.js';
+import { TracingMiddleware } from './common/tracing/middleware/tracing.middleware.js';
 import { InterceptorsModule } from './common/interceptors/interceptors.module.js';
 import { MonitoringModule } from './common/monitoring/monitoring.module.js';
 import { ResilienceModule } from './common/resilience/resilience.module.js';
@@ -18,6 +19,13 @@ import { HealthModule } from './health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { RoutingModule } from './modules/routing/routing.module.js';
 import { ApiKeyModule } from './modules/api-key/api-key.module.js';
+import { LlmKeysModule } from './modules/llm-keys/llm-keys.module.js';
+import { LlmProvidersModule } from './modules/llm-providers/llm-providers.module.js';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
+import { SkillsModule } from './modules/skills/skills.module.js';
+import { AlertsModule } from './modules/alerts/alerts.module.js';
+import { AdminNotifyModule } from './modules/admin-notify/admin-notify.module.js';
+import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module.js';
 import { IpFilterModule } from './modules/ip-filter/ip-filter.module.js';
 import { RateLimitingModule } from './modules/rate-limiting/rate-limiting.module.js';
 import { CircuitBreakerModule } from './modules/circuit-breaker/circuit-breaker.module.js';
@@ -26,6 +34,7 @@ import { ReplayAttackMiddleware } from './common/security/middleware/replay-atta
 import { CsrfProtectionMiddleware } from './common/security/middleware/csrf.middleware.js';
 import { IpFilterMiddleware } from './modules/ip-filter/middleware/ip-filter.middleware.js';
 import { RpcModule } from './common/rpc/rpc.module.js';
+import { CollaborationWsModule } from './modules/collaboration/collaboration-ws.module.js';
 
 /**
  * 应用根模块
@@ -65,12 +74,21 @@ import { RpcModule } from './common/rpc/rpc.module.js';
     RoutingModule,
     // API密钥模块
     ApiKeyModule,
+    LlmKeysModule,
+    LlmProvidersModule,
+    MarketplaceModule,
+    SkillsModule,
+    AlertsModule,
     // IP过滤模块
     IpFilterModule,
     // 限流模块
     RateLimitingModule,
     // 断路器模块
     CircuitBreakerModule,
+    // 实时协作 WebSocket
+    CollaborationWsModule,
+    AdminNotifyModule,
+    AdminDashboardModule,
   ],
 })
 export class AppModule implements NestModule {
@@ -78,6 +96,7 @@ export class AppModule implements NestModule {
     // 安全能力按 header 是否出现进行“条件校验”，避免影响纯 JWT 调用链路
     consumer
       .apply(
+        TracingMiddleware,
         SignatureMiddleware,
         ReplayAttackMiddleware,
         CsrfProtectionMiddleware,

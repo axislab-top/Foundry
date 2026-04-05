@@ -23,9 +23,11 @@ import {
   ApiParam,
   ApiHeader,
 } from '@nestjs/swagger';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { WebhookService } from './services/webhook.service.js';
-import { CreateWebhookDto, UpdateWebhookDto, QueryWebhookDto } from './dto/index.js';
+import { CreateWebhookDto } from './dto/create-webhook.dto.js';
+import { UpdateWebhookDto } from './dto/update-webhook.dto.js';
+import { QueryWebhookDto } from './dto/query-webhook.dto.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { Permissions } from '../../common/decorators/permissions.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';

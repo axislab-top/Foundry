@@ -21,6 +21,7 @@ export {
 export { MessagingModule } from './nestjs/messaging.module.js';
 export { MessagingService } from './nestjs/messaging.service.js';
 export { MESSAGING_ADAPTER, MESSAGING_CONFIG } from './nestjs/messaging.constants.js';
+export { RMQ_NEST_SOCKET_OPTIONS } from './nestjs/rmq-nest-socket-options.js';
 
 // 装饰器导出
 export { PublishEvent } from './decorators/publish-event.decorator.js';

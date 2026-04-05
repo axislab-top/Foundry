@@ -44,6 +44,8 @@ export class CsrfProtectionMiddleware implements NestMiddleware {
       '/metrics',
       '/api/auth/login',
       '/auth/login',
+      '/api/auth/admin/login',
+      '/auth/admin/login',
       '/api/auth/register',
       '/auth/register',
       '/api/auth/refresh',

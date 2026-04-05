@@ -5,6 +5,7 @@
 
 export * from './shared.js';
 export * from './api-service.js';
+export * from './company-industry.js';
 
 
 

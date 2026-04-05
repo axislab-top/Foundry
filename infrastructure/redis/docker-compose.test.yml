@@ -6,7 +6,7 @@ version: '3.8'
 services:
   redis:
     ports:
-      - "${REDIS_PORT:-6380}:6379"  # 测试环境使用不同端口
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"  # 测试环境使用不同端口
     volumes:
       - redis-test-data:/data  # 测试环境使用独立数据卷
       - ./config/redis.dev.conf:/usr/local/etc/redis/redis.conf:ro  # 测试环境使用开发配置

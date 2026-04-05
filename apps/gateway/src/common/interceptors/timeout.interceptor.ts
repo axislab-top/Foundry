@@ -19,7 +19,9 @@ export class TimeoutInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const httpConfig = this.configService.getHttpConfig();
-    const timeoutMs = httpConfig.timeout || 30000;
+    const httpMs = httpConfig.timeout || 30000;
+    // 与 RoutingService 中 RPC 超时下限一致，避免「下游 RPC 仍可调 60s」但入口 HTTP 30s 先 408
+    const timeoutMs = Math.max(httpMs, this.configService.getApiRpcMinTimeoutMs());
 
     return next.handle().pipe(
       timeout(timeoutMs),

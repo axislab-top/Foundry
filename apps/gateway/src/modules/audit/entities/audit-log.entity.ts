@@ -11,6 +11,7 @@ import {
  */
 @Entity('audit_logs')
 @Index(['userId'])
+@Index(['companyId'])
 @Index(['service'])
 @Index(['method', 'path'])
 @Index(['statusCode'])
@@ -33,6 +34,12 @@ export class AuditLog {
    */
   @Column({ type: 'uuid', nullable: true, name: 'user_id' })
   userId: string | null;
+
+  /**
+   * 公司ID（租户上下文）
+   */
+  @Column({ type: 'uuid', nullable: true, name: 'company_id' })
+  companyId: string | null;
 
   /**
    * API密钥ID（如果有）

@@ -26,9 +26,11 @@ module.exports = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^@service/logging$': '<rootDir>/../../../infrastructure/logging/src/index.ts',
+    '^@service/config$': '<rootDir>/../../../test/mocks/service-config.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   preset: 'ts-jest',
-  setupFilesAfterEnv: ['<rootDir>/../../test/setup/jest-setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/../../../test/setup/jest-setup.js'],
 };
 

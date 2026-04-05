@@ -143,6 +143,40 @@ describe('RoutingService', () => {
 
       expect(result.data).toEqual(mockResponse.data);
       expect(apiRpcProxyService.send).toHaveBeenCalled();
+      const call = apiRpcProxyService.send.mock.calls[0];
+      expect(call[1]).toEqual(
+        expect.objectContaining({
+          actor: expect.objectContaining({
+            id: 'user-1',
+            companyId: undefined,
+          }),
+        }),
+      );
+      expect(call[1]).not.toHaveProperty('companyId');
+    });
+
+    it('should include companyId in rpc payload when header is present', async () => {
+      const method = 'GET';
+      const path = '/v1/users';
+      dynamicRoutesService.findRoute.mockReturnValue(null as any);
+      apiRpcProxyService.send.mockResolvedValue({ items: [] });
+
+      await service.route(method, path, {
+        user: { id: 'user-1', roles: ['admin'], permissions: [] },
+        query: {},
+        headers: { 'x-company-id': 'company-rpc' },
+      });
+
+      const call = apiRpcProxyService.send.mock.calls[0];
+      expect(call[1]).toEqual(
+        expect.objectContaining({
+          companyId: 'company-rpc',
+          actor: expect.objectContaining({
+            id: 'user-1',
+            companyId: 'company-rpc',
+          }),
+        }),
+      );
     });
 
     it('should use dynamic route if found', async () => {

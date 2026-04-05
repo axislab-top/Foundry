@@ -8,7 +8,8 @@ export default defineConfig({
     outDir: 'dist',
   },
   server: {
-    port: 3100,
+    host: '0.0.0.0',
+    port: Number(process.env.ADMIN_SYSTEM_PORT ?? 3105),
     proxy: {
       '/api': {
         target: 'http://localhost:3002',

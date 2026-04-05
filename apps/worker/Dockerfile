@@ -16,12 +16,15 @@ COPY tooling ./tooling
 RUN npm install -g pnpm@10.27.0
 
 # 安装依赖并构建（先构建依赖模块，再构建 Worker）
+# @service/ai、@service/tenant 为 workspace 源码包，必须在镜像内 tsc，否则 dist 缺失会导致 runtime require 无导出
 RUN pnpm install --frozen-lockfile \
     && pnpm --filter @contracts/events build \
     && pnpm --filter @service/config build \
     && pnpm --filter @service/logging build \
     && pnpm --filter @service/monitoring build \
     && pnpm --filter @service/messaging build \
+    && pnpm --filter @service/ai build \
+    && pnpm --filter @service/tenant build \
     && pnpm --filter @service/worker build
 
 # 生产镜像
@@ -50,6 +53,8 @@ COPY --from=builder /app/infrastructure/config/dist ./infrastructure/config/dist
 COPY --from=builder /app/infrastructure/logging/dist ./infrastructure/logging/dist
 COPY --from=builder /app/infrastructure/monitoring/dist ./infrastructure/monitoring/dist
 COPY --from=builder /app/infrastructure/messaging/dist ./infrastructure/messaging/dist
+COPY --from=builder /app/infrastructure/ai/dist ./infrastructure/ai/dist
+COPY --from=builder /app/infrastructure/tenant/dist ./infrastructure/tenant/dist
 
 WORKDIR /app/apps/worker
 

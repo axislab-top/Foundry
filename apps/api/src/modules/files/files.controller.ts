@@ -22,7 +22,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { StorageService } from './storage/storage.service.js';
 import { UploadFileDto } from './dto/upload-file.dto.js';
 import { ListFilesDto } from './dto/list-files.dto.js';

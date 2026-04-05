@@ -2,7 +2,7 @@
  * 请求ID中间件测试
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { RequestIdMiddleware } from './request-id.middleware.js';
 
 describe('RequestIdMiddleware', () => {

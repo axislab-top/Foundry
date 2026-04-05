@@ -56,7 +56,8 @@ export class MessageQueueAdapterFactory {
       username: process.env.RABBITMQ_USER || 'admin',
       password: process.env.RABBITMQ_PASSWORD || 'admin123',
       vhost: process.env.RABBITMQ_VHOST || '/',
-      uri: process.env.RABBITMQ_URI,
+      /** 与 apps/api、gateway 的 RMQ_URL 对齐，避免只配了 RMQ_URL 时事件总线仍按零散变量（或默认 guest）连接 */
+      uri: process.env.RMQ_URL || process.env.RABBITMQ_URI,
       prefetchCount: parseInt(
         process.env.RABBITMQ_PREFETCH_COUNT || '10',
         10,

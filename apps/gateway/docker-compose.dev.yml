@@ -12,7 +12,8 @@ services:
       # Redis 配置（使用 Docker 服务名）
       - REDIS_HOST=${REDIS_HOST:-redis}
       # 服务地址配置（使用 Docker 服务名）
-      - API_SERVICE_URL=${API_SERVICE_URL:-http://api-service:3000}
+      # gateway-service running in docker must reach your local api-service (host machine)
+      - API_SERVICE_URL=http://host.docker.internal:3000
       - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
       - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
       - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}

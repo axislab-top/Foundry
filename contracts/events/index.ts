@@ -6,6 +6,16 @@
 export * from './base-event.js';
 export * from './user.events.js';
 export * from './auth.events.js';
+export * from './company.events.js';
+export * from './organization.events.js';
+export * from './agent.events.js';
+export * from './skill.events.js';
+export * from './collaboration.events.js';
+export * from './memory.events.js';
+export * from './task.events.js';
+export * from './billing.events.js';
+export * from './autonomous.events.js';
+export * from './template.events.js';
 
 
 

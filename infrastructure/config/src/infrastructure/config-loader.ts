@@ -40,7 +40,7 @@ export class ConfigLoader {
       case ConfigAdapterType.CONSUL:
         // 动态导入 Consul 适配器（可选依赖）
         try {
-          // @ts-expect-error - @service/consul is an optional runtime dependency
+          // @ts-ignore - @service/consul is an optional runtime dependency
           const { ConsulConfigAdapter } = await import('@service/consul');
           if (!config.options || !('host' in config.options)) {
             throw new Error('Consul adapter requires host option');

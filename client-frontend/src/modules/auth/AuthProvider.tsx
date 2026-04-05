@@ -1,15 +1,10 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import { AuthResult, AuthUser, LoginPayload, RegisterPayload, authApi } from '../../services/authApi';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { LoginPayload, RegisterPayload, authApi } from '../../services/authApi';
+import { authSession, toAuthState, type AuthSessionState } from '../../services/authSession';
+import { companySession } from '../../services/companySession';
 import { ApiError } from '../../services/apiClient';
 
-interface AuthState {
-  user: AuthUser | null;
-  accessToken: string | null;
-  refreshToken: string | null;
-  expiresIn: number | null;
-}
-
-interface AuthContextValue extends AuthState {
+interface AuthContextValue extends AuthSessionState {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (payload: LoginPayload) => Promise<void>;
@@ -20,13 +15,13 @@ interface AuthContextValue extends AuthState {
 
 const AUTH_STORAGE_KEY = 'client_auth_state';
 
-const parseStoredState = (): AuthState => {
+const parseStoredState = (): AuthSessionState => {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) {
       return { user: null, accessToken: null, refreshToken: null, expiresIn: null };
     }
-    const parsed = JSON.parse(raw) as Partial<AuthState>;
+    const parsed = JSON.parse(raw) as Partial<AuthSessionState>;
     return {
       user: parsed.user ?? null,
       accessToken: parsed.accessToken ?? null,
@@ -38,34 +33,45 @@ const parseStoredState = (): AuthState => {
   }
 };
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const persistState = (state: AuthState) => {
-  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
+const persistState = (s: AuthSessionState) => {
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(s));
 };
 
 const clearPersistedState = () => {
   localStorage.removeItem(AUTH_STORAGE_KEY);
 };
 
-const toAuthState = (result: AuthResult): AuthState => ({
-  user: result.user,
-  accessToken: result.accessToken,
-  refreshToken: result.refreshToken,
-  expiresIn: result.expiresIn,
-});
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<AuthState>(() => parseStoredState());
+  const [state, setState] = useState<AuthSessionState>(() => {
+    const initial = parseStoredState();
+    authSession.hydrate(initial);
+    companySession.init();
+    return initial;
+  });
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    return authSession.subscribe(() => {
+      setState(authSession.getState());
+      const s = authSession.getState();
+      if (s.accessToken && s.user) {
+        persistState(s);
+      }
+    });
+  }, []);
 
   const login = async (payload: LoginPayload) => {
     setIsLoading(true);
     try {
       const result = await authApi.login(payload);
       const nextState = toAuthState(result);
-      setState(nextState);
+      authSession.setState(nextState);
       persistState(nextState);
+      if (result.user.companyId) {
+        companySession.setCompanyId(result.user.companyId);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -76,8 +82,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const result = await authApi.register(payload);
       const nextState = toAuthState(result);
-      setState(nextState);
+      authSession.setState(nextState);
       persistState(nextState);
+      if (result.user.companyId) {
+        companySession.setCompanyId(result.user.companyId);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -86,15 +95,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     setIsLoading(true);
     try {
-      if (state.refreshToken) {
-        await authApi.logout(state.refreshToken);
+      const rt = authSession.getRefreshToken();
+      if (rt) {
+        await authApi.logout(rt);
       }
     } catch {
-      // Ignore logout network/server failures and clear local auth state anyway.
+      /* ignore */
     } finally {
-      const emptyState = { user: null, accessToken: null, refreshToken: null, expiresIn: null };
-      setState(emptyState);
+      authSession.clear();
       clearPersistedState();
+      companySession.setCompanyId(null);
       setIsLoading(false);
     }
   };
@@ -110,6 +120,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (typeof firstDetail === 'string') {
           return firstDetail;
         }
+      }
+      const errObj = error.payload?.error as { message?: string } | undefined;
+      if (errObj && typeof errObj === 'object' && typeof errObj.message === 'string') {
+        return errObj.message;
       }
       return error.message || 'Request failed';
     }
@@ -142,3 +156,4 @@ export const useAuth = (): AuthContextValue => {
   }
   return context;
 };
+

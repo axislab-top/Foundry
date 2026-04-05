@@ -1,0 +1,173 @@
+{
+  "consumer": {
+    "name": "foundry-worker"
+  },
+  "interactions": [
+    {
+      "description": "RPC tasks.executionLog.append (HTTP shim)",
+      "providerState": "tenant and admin for pact",
+      "request": {
+        "body": {
+          "actor": {
+            "id": "660e8400-e29b-41d4-a716-446655440001",
+            "roles": [
+              "admin"
+            ]
+          },
+          "companyId": "550e8400-e29b-41d4-a716-446655440000",
+          "data": {
+            "message": "pact",
+            "runId": "770e8400-e29b-41d4-a716-446655440002",
+            "stepType": "heartbeat"
+          },
+          "id": "880e8400-e29b-41d4-a716-446655440003"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "$.body.actor.id": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          },
+          "$.body.actor.roles": {
+            "match": "type",
+            "min": 1
+          },
+          "$.body.companyId": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          },
+          "$.body.data.message": {
+            "match": "type"
+          },
+          "$.body.data.runId": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          },
+          "$.body.id": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          }
+        },
+        "method": "POST",
+        "path": "/__pact/rpc/tasks.executionLog.append"
+      },
+      "response": {
+        "body": {
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "stepType": "heartbeat",
+          "taskId": "880e8400-e29b-41d4-a716-446655440003"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "$.body.createdAt": {
+            "match": "type"
+          },
+          "$.body.id": {
+            "match": "type"
+          },
+          "$.body.stepType": {
+            "match": "type"
+          },
+          "$.body.taskId": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "RPC tasks.run.start (HTTP shim)",
+      "providerState": "tenant and admin for pact",
+      "request": {
+        "body": {
+          "actor": {
+            "id": "660e8400-e29b-41d4-a716-446655440001",
+            "roles": [
+              "admin"
+            ]
+          },
+          "companyId": "550e8400-e29b-41d4-a716-446655440000",
+          "triggerSource": "manual"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "$.body.actor.id": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          },
+          "$.body.actor.roles": {
+            "match": "type",
+            "min": 1
+          },
+          "$.body.companyId": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          }
+        },
+        "method": "POST",
+        "path": "/__pact/rpc/tasks.run.start"
+      },
+      "response": {
+        "body": {
+          "companyId": "550e8400-e29b-41d4-a716-446655440000",
+          "costEstimate": null,
+          "errorSummary": null,
+          "finishedAt": null,
+          "id": "770e8400-e29b-41d4-a716-446655440002",
+          "metadata": null,
+          "startedAt": "2026-01-01T00:00:00.000Z",
+          "status": "running",
+          "temporalRunId": null,
+          "temporalWorkflowId": null,
+          "triggerSource": "manual"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "$.body.companyId": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          },
+          "$.body.id": {
+            "match": "regex",
+            "regex": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+          },
+          "$.body.startedAt": {
+            "match": "type"
+          },
+          "$.body.status": {
+            "match": "type"
+          },
+          "$.body.triggerSource": {
+            "match": "type"
+          }
+        },
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "13.2.0"
+    },
+    "pactRust": {
+      "ffi": "0.4.22",
+      "models": "1.2.3"
+    },
+    "pactSpecification": {
+      "version": "2.0.0"
+    }
+  },
+  "provider": {
+    "name": "foundry-api"
+  }
+}

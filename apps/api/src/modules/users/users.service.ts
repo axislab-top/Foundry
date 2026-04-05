@@ -16,6 +16,7 @@ import { QueryUserDto } from './dto/query-user.dto.js';
 import { CacheService } from '../../common/cache/cache.service.js';
 import { SecurityService } from '../../common/security/security.service.js';
 import { MessagingService } from '@service/messaging';
+import { TenantContextService } from '@service/tenant';
 import { ErrorCode } from '../../common/exceptions/error-codes.js';
 import type { IPaginatedResult, IUserInfo } from './interfaces/user.interface.js';
 import type {
@@ -40,6 +41,7 @@ export class UsersService {
     private readonly cacheService: CacheService,
     private readonly securityService: SecurityService,
     private readonly messagingService: MessagingService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   /**
@@ -93,6 +95,7 @@ export class UsersService {
 
     // 发布用户创建事件
     try {
+      const companyId = this.tenantContext.getCompanyId();
       const event: UserCreatedEvent = {
         eventId: randomUUID(),
         eventType: 'user.created',
@@ -100,6 +103,7 @@ export class UsersService {
         aggregateType: 'user',
         occurredAt: new Date().toISOString(),
         version: 1,
+        companyId,
         data: {
           userId: saved.id,
           username: saved.username,
@@ -107,6 +111,7 @@ export class UsersService {
           roles: saved.roles || [],
           permissions: saved.permissions || [],
           createdAt: saved.createdAt.toISOString(),
+          companyId,
         },
       };
 
@@ -182,6 +187,7 @@ export class UsersService {
 
     // 发布用户创建事件
     try {
+      const companyId = this.tenantContext.getCompanyId();
       const event: UserCreatedEvent = {
         eventId: randomUUID(),
         eventType: 'user.created',
@@ -189,6 +195,7 @@ export class UsersService {
         aggregateType: 'user',
         occurredAt: new Date().toISOString(),
         version: 1,
+        companyId,
         data: {
           userId: saved.id,
           username: saved.username,
@@ -196,6 +203,7 @@ export class UsersService {
           roles: saved.roles || [],
           permissions: saved.permissions || [],
           createdAt: saved.createdAt.toISOString(),
+          companyId,
         },
       };
 
@@ -235,7 +243,7 @@ export class UsersService {
     } = queryDto;
 
     // 构建缓存键
-    const cacheKey = `${this.CACHE_PREFIX}list:${JSON.stringify(queryDto)}`;
+    const cacheKey = `${this.getTenantCachePrefix()}list:${JSON.stringify(queryDto)}`;
 
     // 尝试从缓存获取
     const cached = await this.cacheService.get<IPaginatedResult<User>>(
@@ -407,7 +415,7 @@ export class UsersService {
    * 根据ID查询单个用户
    */
   async findOne(id: string): Promise<User> {
-    const cacheKey = `${this.CACHE_PREFIX}${id}`;
+    const cacheKey = `${this.getTenantCachePrefix()}${id}`;
 
     // 尝试从缓存获取
     const cached = await this.cacheService.get<User>(cacheKey);
@@ -450,6 +458,19 @@ export class UsersService {
     });
 
     return result;
+  }
+
+  /**
+   * 查找是否存在指定角色的用户（仅用于默认管理员等初始化逻辑）
+   */
+  async findFirstByRole(role: string): Promise<User | null> {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.deletedAt IS NULL')
+      .andWhere('user.roles @> :roles', { roles: JSON.stringify([role]) })
+      .getOne();
+
+    return user;
   }
 
   /**
@@ -583,10 +604,12 @@ export class UsersService {
     });
 
     // 返回用户信息（不包含密码）
+    const companyId = this.tenantContext.getCompanyId();
     const userInfo = {
       id: user.id,
       username: user.username,
       email: user.email,
+      companyId,
       roles: user.roles,
       permissions: user.permissions,
     };
@@ -652,6 +675,7 @@ export class UsersService {
 
     // 发布用户更新事件
     try {
+      const companyId = this.tenantContext.getCompanyId();
       const event: UserUpdatedEvent = {
         eventId: randomUUID(),
         eventType: 'user.updated',
@@ -659,8 +683,10 @@ export class UsersService {
         aggregateType: 'user',
         occurredAt: new Date().toISOString(),
         version: 1,
+        companyId,
         data: {
           userId: updated.id,
+          companyId,
           changes: {
             username: changes.username,
             email: changes.email,
@@ -706,6 +732,7 @@ export class UsersService {
 
     // 发布用户删除事件
     try {
+      const companyId = this.tenantContext.getCompanyId();
       const event: UserDeletedEvent = {
         eventId: randomUUID(),
         eventType: 'user.deleted',
@@ -713,9 +740,11 @@ export class UsersService {
         aggregateType: 'user',
         occurredAt: new Date().toISOString(),
         version: 1,
+        companyId,
         data: {
           userId,
           deletedAt: new Date().toISOString(),
+          companyId,
         },
       };
 
@@ -740,7 +769,7 @@ export class UsersService {
    * 清除单个用户的缓存
    */
   private async clearCache(id: string): Promise<void> {
-    await this.cacheService.delete(`${this.CACHE_PREFIX}${id}`);
+    await this.cacheService.delete(`${this.getTenantCachePrefix()}${id}`);
   }
 
   /**
@@ -749,6 +778,11 @@ export class UsersService {
   private async clearListCache(): Promise<void> {
     // 简化处理：可以记录缓存键列表，或者使用通配符删除
     // 这里暂时不做处理，让缓存自然过期
+  }
+
+  private getTenantCachePrefix(): string {
+    const companyId = this.tenantContext.getCompanyId() || 'global';
+    return `company:${companyId}:${this.CACHE_PREFIX}`;
   }
 }
 

@@ -1,5 +1,11 @@
 import { Injectable, Inject, Optional } from '@nestjs/common';
-import { IStorageAdapter, StorageType, FileInfo, UploadOptions, ListOptions } from '../interfaces/storage.interface.js';
+import type {
+  IStorageAdapter,
+  StorageType,
+  FileInfo,
+  UploadOptions,
+  ListOptions,
+} from '../interfaces/storage.interface.js';
 import { ConfigService } from '../../../common/config/config.service.js';
 
 /**

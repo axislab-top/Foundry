@@ -17,9 +17,9 @@ export class ProxyController {
 
   /**
    * 代理所有 HTTP 请求
-   * 捕获所有路径的请求并转发到相应的后端服务
+   * 最佳实践：只代理“网关需要转发的业务前缀”，避免拦截 admin/health/metrics 等本地控制器路由
    */
-  @All('*')
+  @All(['/v1/*', '/auth/*', '/webhooks/*', '/worker/*'])
   async proxy(@Req() req: Request, @Res() res: Response) {
     try {
       // 获取请求方法和路径
@@ -30,6 +30,11 @@ export class ProxyController {
         path = path.substring(4); // 移除 '/api'
       } else if (path === '/api') {
         path = '/';
+      }
+
+      // 归一化：去掉末尾多余的 '/'，避免路由匹配因尾斜杠失败
+      if (path.length > 1) {
+        path = path.replace(/\/+$/, '');
       }
 
       // 使用路由服务转发请求

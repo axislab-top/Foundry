@@ -25,6 +25,7 @@ export interface IUserInfo {
   id: string;
   username: string;
   email: string;
+  companyId?: string;
   roles: string[];
   permissions: string[];
 }

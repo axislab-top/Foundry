@@ -42,6 +42,7 @@ RUN pnpm install --frozen-lockfile \
     && pnpm --filter @service/monitoring build \
     && pnpm --filter @service/security build \
     && pnpm --filter @service/messaging build \
+    && pnpm --filter @service/tenant build \
     && pnpm --filter @service/api build
 
 # 生产镜像
@@ -88,6 +89,7 @@ COPY --from=builder /app/infrastructure/logging/dist ./infrastructure/logging/di
 COPY --from=builder /app/infrastructure/monitoring/dist ./infrastructure/monitoring/dist
 COPY --from=builder /app/infrastructure/security/dist ./infrastructure/security/dist
 COPY --from=builder /app/infrastructure/messaging/dist ./infrastructure/messaging/dist
+COPY --from=builder /app/infrastructure/tenant/dist ./infrastructure/tenant/dist
 
 WORKDIR /app/apps/api
 

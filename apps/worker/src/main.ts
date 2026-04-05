@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { AppModule } from './app.module';
+import { AppModule } from './app.module.js';
 import { createLogger, LogLevel } from '@service/logging';
 import { ConfigService } from './common/config/config.service.js';
 

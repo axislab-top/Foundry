@@ -12,6 +12,15 @@ export class RequestIdMiddleware implements NestMiddleware {
     const requestId = req.headers['x-request-id'] as string || randomUUID();
     req.headers['x-request-id'] = requestId;
     res.setHeader('X-Request-Id', requestId);
+
+    const runIdHeader = req.headers['x-run-id'] as string | undefined;
+    const runId =
+      typeof runIdHeader === 'string' && runIdHeader.trim().length > 0
+        ? runIdHeader.trim()
+        : randomUUID();
+    req.headers['x-run-id'] = runId;
+    res.setHeader('X-Run-Id', runId);
+
     next();
   }
 }

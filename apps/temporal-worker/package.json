@@ -1,0 +1,24 @@
+{
+  "name": "@service/temporal-worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:workflows": "node ./scripts/bundle-workflows.mjs",
+    "build": "pnpm run build:workflows && tsc -p tsconfig.json",
+    "start": "node dist/run.js",
+    "dev": "pnpm run build:workflows && tsx src/run.ts",
+    "schedule:bootstrap": "tsx src/schedule-bootstrap.ts",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@temporalio/client": "^1.11.7",
+    "@temporalio/worker": "^1.11.7",
+    "@temporalio/workflow": "^1.11.7"
+  },
+  "devDependencies": {
+    "rimraf": "^6.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.3.3"
+  }
+}

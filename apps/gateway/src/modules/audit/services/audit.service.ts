@@ -44,6 +44,7 @@ export class AuditService {
       const auditLog = this.auditLogRepository.create({
         requestId: request.requestId,
         userId: request.user?.id || null,
+        companyId: this.extractCompanyId(request),
         apiKeyId: request.apiKey?.keyId || null,
         service,
         method: request.method,
@@ -70,6 +71,7 @@ export class AuditService {
    */
   async query(options: {
     userId?: string;
+    companyId?: string;
     apiKeyId?: string;
     service?: string;
     method?: string;
@@ -82,6 +84,7 @@ export class AuditService {
   }): Promise<{ items: AuditLog[]; total: number; page: number; pageSize: number }> {
     const {
       userId,
+      companyId,
       apiKeyId,
       service,
       method,
@@ -96,6 +99,7 @@ export class AuditService {
     const where: FindOptionsWhere<AuditLog> = {};
 
     if (userId) where.userId = userId;
+    if (companyId) where.companyId = companyId;
     if (apiKeyId) where.apiKeyId = apiKeyId;
     if (service) where.service = service;
     if (method) where.method = method.toUpperCase();
@@ -223,6 +227,16 @@ export class AuditService {
       request.connection?.remoteAddress ||
       null
     );
+  }
+
+  private extractCompanyId(request: any): string | null {
+    const value =
+      request?.companyId ||
+      request?.headers?.['x-company-id'] ||
+      request?.headers?.['X-Company-Id'] ||
+      request?.user?.companyId ||
+      null;
+    return typeof value === 'string' ? value : null;
   }
 }
 

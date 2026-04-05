@@ -5,6 +5,16 @@ import { createLogger, LogLevel } from '@service/logging';
 import { ConfigService } from './common/config/config.service.js';
 import express from 'express';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { RMQ_NEST_SOCKET_OPTIONS } from '@service/messaging';
+
+function readBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return defaultValue;
+  const v = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(v)) return true;
+  if (['0', 'false', 'no', 'off'].includes(v)) return false;
+  return defaultValue;
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -51,6 +61,7 @@ async function bootstrap() {
     process.env.RABBITMQ_URI ||
     'amqp://admin:admin123@rabbitmq:5672/';
   const rmqQueue = process.env.WEBHOOKS_RMQ_RPC_QUEUE || 'webhooks-rpc-queue';
+  const rpcNoAck = readBooleanEnv('WEBHOOKS_RMQ_RPC_NOACK', true);
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
@@ -58,7 +69,9 @@ async function bootstrap() {
       queue: rmqQueue,
       queueOptions: { durable: true },
       prefetchCount: Number(process.env.WEBHOOKS_RMQ_PREFETCH ?? 10),
-      noAck: false,
+      noAck: rpcNoAck,
+      socketOptions: { ...RMQ_NEST_SOCKET_OPTIONS },
+      maxConnectionAttempts: -1,
     },
   });
   await app.startAllMicroservices();
@@ -79,6 +92,11 @@ async function bootstrap() {
     environment: appConfig.nodeEnv,
     level: logLevel,
   });
+  if (!rpcNoAck) {
+    logger.warn(
+      'WEBHOOKS_RMQ_RPC_NOACK=false detected. For Nest RPC request/reply handlers, prefer noAck=true unless you implement manual ack handling.',
+    );
+  }
 
   await app.listen(appConfig.port);
   

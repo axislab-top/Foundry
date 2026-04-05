@@ -1,15 +1,17 @@
-# PostgreSQL Docker Compose 配置
-# 提供 PostgreSQL 数据库服务
+# PostgreSQL Docker Compose ??
+# ?? PostgreSQL ?????
 #
-# 使用方式：
-# - 启动服务：docker-compose up -d
-# - 停止服务：docker-compose down
-# - 查看日志：docker-compose logs -f postgres
+# ?????
+# - ?????docker-compose up -d
+# - ?????docker-compose down
+# - ?????docker-compose logs -f postgres
+#
+# MemoryModule ?? pgvector????????????????? Postgres ?? vector ????????
+# ?? postgres:18-alpine ?? pgvector???? pgvector ??????????? /var/lib/postgresql??????????
 
 version: '3.8'
 
 services:
-  # PostgreSQL - 数据库服务
   postgres:
     image: postgres:18-alpine
     container_name: postgres
@@ -39,7 +41,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s  # 启动后30秒内不标记为不健康
+      start_period: 30s
     networks:
       - postgres-network
     logging:
@@ -56,4 +58,3 @@ volumes:
 networks:
   postgres-network:
     driver: bridge
-

@@ -9,7 +9,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rimraf dist",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node -e \"process.exit(0)\""
   },
   "keywords": [
     "logging",

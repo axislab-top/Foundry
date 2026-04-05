@@ -92,6 +92,52 @@ export class ConfigService {
   }
 
   /**
+   * Socket.IO Redis Adapter 使用的连接配置。
+   * 未设置 REDIS_URL 时可用 SOCKET_IO_REDIS_DB 覆盖默认 REDIS_DB，避免与业务缓存键混在同一 DB。
+   */
+  getRedisConfigForSocketIoAdapter(): RedisConfig {
+    const base = this.getRedisConfig();
+    if (base.url?.trim()) {
+      return base;
+    }
+    const socketDb = this.configManager.get<number | undefined>(
+      'SOCKET_IO_REDIS_DB',
+    );
+    if (socketDb !== undefined && socketDb !== null) {
+      return { ...base, db: socketDb };
+    }
+    return base;
+  }
+
+  /** 与 API 共用 Redis Pub/Sub 推送协作消息（需同一 Redis） */
+  isCollaborationRedisNotifyEnabled(): boolean {
+    return this.configManager.get<boolean>('COLLAB_REDIS_NOTIFY', true);
+  }
+
+  /**
+   * 是否启用 Socket.IO Redis Adapter（多实例横向扩展时建议 true）。
+   * SOCKET_IO_REDIS_ADAPTER: true | false | auto — auto 表示启用，连接失败时由 main 决定是否回退。
+   */
+  getSocketIoRedisAdapterMode(): 'on' | 'off' | 'auto' {
+    const raw = (
+      this.configManager.get<string>('SOCKET_IO_REDIS_ADAPTER') ?? 'auto'
+    ).toLowerCase();
+    if (raw === 'true' || raw === '1' || raw === 'on') return 'on';
+    if (raw === 'false' || raw === '0' || raw === 'off') return 'off';
+    return 'auto';
+  }
+
+  /**
+   * Redis Adapter 连接失败时是否回退到内存适配器（单实例可用，多实例会分裂房间）。
+   */
+  isSocketIoRedisAdapterFallbackEnabled(): boolean {
+    return this.configManager.get<boolean>(
+      'SOCKET_IO_REDIS_ADAPTER_FALLBACK',
+      true,
+    );
+  }
+
+  /**
    * 获取服务地址配置
    */
   getServicesConfig(): ServicesConfig {
@@ -130,6 +176,22 @@ export class ConfigService {
         false,
       ),
     };
+  }
+
+  /**
+   * Nest RMQ → API/Webhooks 的 ClientProxy 超时下限（与各路由 rpcTimeoutMs 取 max）。
+   * 同时用于 TimeoutInterceptor，避免入口 HTTP 仍按 HTTP_TIMEOUT（如 30s）在 RPC 完成前 408。
+   */
+  getApiRpcMinTimeoutMs(): number {
+    const explicit = this.configManager.get<number | undefined>(
+      'GATEWAY_API_RPC_MIN_TIMEOUT_MS',
+    );
+    if (typeof explicit === 'number' && !Number.isNaN(explicit) && explicit >= 0) {
+      return explicit;
+    }
+    const nodeEnv = this.configManager.get<string>('NODE_ENV', 'development');
+    // 开发环境默认给 20s：足够覆盖正常抖动，同时避免前端卡住 120s 才失败。
+    return nodeEnv === 'production' ? 0 : 20_000;
   }
 
   /**

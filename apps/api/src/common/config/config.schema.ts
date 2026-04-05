@@ -43,6 +43,7 @@ export const configSchema = Joi.object({
   REDIS_PASSWORD: Joi.string().allow('').optional(),
   REDIS_DB: Joi.number().default(0),
   REDIS_URL: Joi.string().optional(),
+  COLLAB_REDIS_NOTIFY: Joi.boolean().default(true),
 
   // 监控配置
   METRICS_ADAPTER: Joi.string()
@@ -54,6 +55,9 @@ export const configSchema = Joi.object({
 
   // HTTP 配置
   HTTP_TIMEOUT: Joi.number().default(30000), // HTTP 请求超时（毫秒）
+  // RMQ RPC 队列确认策略（Nest request/reply 推荐 noAck=true，避免未手动 ack 导致消费槽位泄漏）
+  API_RMQ_RPC_NOACK: Joi.boolean().default(true),
+  API_RMQ_RPC_AUTONOMOUS_NOACK: Joi.boolean().default(true),
 
   // CORS 配置
   CORS_ORIGIN: Joi.string().default('*'),
@@ -95,6 +99,25 @@ export const configSchema = Joi.object({
   STORAGE_OSS_REGION: Joi.string().optional(),
   STORAGE_OSS_BUCKET_NAME: Joi.string().optional(),
   STORAGE_OSS_ENDPOINT: Joi.string().optional(),
+
+  // Memory / embeddings（OpenAI 兼容 API，未配置 KEY 时使用确定性本地向量）
+  OPENAI_API_KEY: Joi.string().allow('').optional(),
+  OPENAI_BASE_URL: Joi.string().default('https://api.openai.com/v1'),
+  MEMORY_EMBEDDING_MODEL: Joi.string().default('text-embedding-3-small'),
+  MEMORY_EMBEDDING_DIMENSIONS: Joi.number().valid(1536).default(1536),
+  MEMORY_RAG_QUERY_TIMEOUT_MS: Joi.number().min(50).default(280),
+  MEMORY_HYBRID_VECTOR_WEIGHT: Joi.number().min(0).max(1).default(0.72),
+  MEMORY_HYBRID_FULLTEXT: Joi.boolean().default(true),
+  MEMORY_RAG_MIN_SCORE: Joi.number().min(0).max(1).default(0),
+  MEMORY_EMBEDDING_DAILY_CAP: Joi.number().min(0).default(0),
+  MEMORY_SUMMARY_DAILY_CAP: Joi.number().min(0).default(0),
+  ENABLE_SESSION_MEMORY: Joi.boolean().default(true),
+  ENABLE_MEMORY_CONSOLIDATION: Joi.boolean().default(false),
+  MEMORY_CONSOLIDATION_WINDOW_MESSAGES: Joi.number().integer().min(10).max(500).default(50),
+
+  // Org design / department mapping
+  DEPARTMENT_ZH_MAP_JSON: Joi.string().allow('').optional().description('JSON string map: { "engineering": "工程部", ... }'),
+  DEPARTMENT_ZH_MAP_PATH: Joi.string().allow('').optional().description('Path to JSON file with department zh map'),
 });
 
 

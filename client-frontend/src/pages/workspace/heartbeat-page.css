@@ -1,0 +1,66 @@
+.heartbeat-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.heartbeat-kpi-label {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.heartbeat-kpi-value {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.heartbeat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.heartbeat-headline {
+  margin: 0 0 8px;
+  line-height: 1.7;
+}
+
+.heartbeat-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heartbeat-status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.heartbeat-status-row:last-child {
+  border-bottom: 0;
+}
+
+.heartbeat-hotspot {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.heartbeat-hotspot:last-child {
+  border-bottom: 0;
+}
+
+@media (max-width: 1200px) {
+  .heartbeat-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .heartbeat-grid {
+    grid-template-columns: 1fr;
+  }
+}

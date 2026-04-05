@@ -21,7 +21,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "lib": ["ES2022"],
-    "types": ["node"],
+    "types": ["node", "jest"],
     "typeRoots": ["../../node_modules/@types", "./node_modules/@types", "./src/types"]
   },
   "include": ["src/**/*", "src/types/**/*.d.ts"],

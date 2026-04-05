@@ -94,6 +94,11 @@ jobs:
       - name: Run unit tests
         run: pnpm test
 
+      - name: Pact provider verification
+        env:
+          PACT_DO_NOT_TRACK: 'true'
+        run: pnpm test:pact
+
       - name: Upload coverage
         if: always()
         uses: codecov/codecov-action@v3

@@ -157,16 +157,20 @@ export class AuthService {
         throw exception;
       }
 
-      // 处理网络错误或其他连接错误
-      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
-        const exception = new UnauthorizedException({
-          code: ErrorCode.AUTH_LOGIN_FAILED,
+      // 下游服务不可达/超时应返回 503，而不是登录失败 401
+      if (
+        error.code === 'ECONNREFUSED' ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ENOTFOUND' ||
+        error.code === 'ECONNABORTED'
+      ) {
+        throw new ServiceUnavailableException({
+          code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
           message: 'Service temporarily unavailable',
         });
-        throw exception;
       }
 
-      // 如果是其他 HTTP 错误（4xx），转换为 UnauthorizedException（因为这是登录失败）
+      // 其他 4xx 视为登录失败
       if (errorResponse?.status && typeof errorResponse.status === 'number' && errorResponse.status >= 400 && errorResponse.status < 500) {
         const exception = new UnauthorizedException({
           code: ErrorCode.AUTH_LOGIN_FAILED,
@@ -175,14 +179,42 @@ export class AuthService {
         throw exception;
       }
 
-      // 如果无法确定错误类型，默认抛出 UnauthorizedException（登录失败）
-      // 重新抛出其他未预期的错误（会被 AllExceptionsFilter 捕获）
-      const exception = new UnauthorizedException({
-        code: ErrorCode.AUTH_LOGIN_FAILED,
-        message: errorMessage || 'Login failed',
-      });
-      throw exception;
+      // 5xx 或未知错误按服务不可用处理，避免误导为凭证错误
+      if (
+        (typeof errorResponse?.status === 'number' && errorResponse.status >= 500) ||
+        !errorResponse
+      ) {
+        throw new ServiceUnavailableException({
+          code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+          message: errorMessage || 'Service temporarily unavailable',
+        });
+      }
+
+      throw error;
     }
+  }
+
+  /**
+   * 管理员登录（仅允许 admin/superadmin 角色账号登录）。
+   * 该入口用于 admin-system，不影响通用用户登录（/auth/login）。
+   */
+  async adminLogin(loginDto: LoginDto): Promise<AuthResult> {
+    const result = await this.login(loginDto);
+    const userRoles = Array.isArray(result.user?.roles) ? result.user.roles : [];
+
+    const allowedAdminRoles = ['admin', 'superadmin'];
+    const hasAllowedRole = allowedAdminRoles.some((r) =>
+      userRoles.includes(r),
+    );
+
+    if (!hasAllowedRole) {
+      throw new UnauthorizedException({
+        code: ErrorCode.AUTH_INSUFFICIENT_PERMISSIONS,
+        message: 'Only admin accounts can login',
+      });
+    }
+
+    return result;
   }
 
   /**

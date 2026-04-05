@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { RolesGuard } from './roles.guard.js';
 import { PermissionsGuard } from './permissions.guard.js';
+import { TenantGuard } from '@service/tenant';
 
 /**
  * 守卫模块
@@ -12,6 +13,7 @@ import { PermissionsGuard } from './permissions.guard.js';
 @Module({
   providers: [
     JwtAuthGuard,
+    TenantGuard,
     RolesGuard,
     PermissionsGuard,
     {
@@ -24,10 +26,14 @@ import { PermissionsGuard } from './permissions.guard.js';
     },
     {
       provide: APP_GUARD,
+      useClass: TenantGuard,
+    },
+    {
+      provide: APP_GUARD,
       useClass: PermissionsGuard,
     },
   ],
-  exports: [JwtAuthGuard, RolesGuard, PermissionsGuard],
+  exports: [JwtAuthGuard, RolesGuard, TenantGuard, PermissionsGuard],
 })
 export class GuardsModule {}
 

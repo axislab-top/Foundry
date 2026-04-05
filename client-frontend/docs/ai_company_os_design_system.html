@@ -1,0 +1,1017 @@
+
+<style>
+:root {
+  --brand-dark: #0A0F1E;
+  --brand-mid: #111827;
+  --brand-accent: #6366F1;
+  --brand-accent2: #22D3EE;
+  --brand-accent3: #F472B6;
+  --sidebar-w: 220px;
+  --nav-h: 52px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 780px;
+  background: var(--color-background-tertiary);
+  border-radius: var(--border-radius-lg);
+  border: 0.5px solid var(--color-border-tertiary);
+  overflow: hidden;
+}
+
+.topnav {
+  height: var(--nav-h);
+  background: var(--color-background-primary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.logo {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.logo-dot {
+  width: 22px; height: 22px;
+  background: var(--brand-accent);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.logo-dot svg { width: 13px; height: 13px; }
+
+.company-switcher {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-background-secondary);
+  transition: background 0.15s;
+  margin-left: 8px;
+}
+.company-switcher:hover { background: var(--color-background-tertiary); }
+.company-avatar {
+  width: 20px; height: 20px; border-radius: 5px;
+  background: linear-gradient(135deg, #6366F1, #22D3EE);
+  display: inline-block;
+}
+.caret { color: var(--color-text-tertiary); font-size: 10px; }
+
+.nav-spacer { flex: 1; }
+.nav-actions { display: flex; align-items: center; gap: 8px; }
+.nav-btn {
+  width: 32px; height: 32px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-tertiary);
+  background: transparent;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.nav-btn:hover { background: var(--color-background-secondary); }
+.user-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: linear-gradient(135deg, #F472B6, #6366F1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 500; color: #fff;
+  cursor: pointer;
+}
+.badge-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #22C55E;
+  border: 1.5px solid var(--color-background-primary);
+  position: absolute;
+  bottom: 0; right: 0;
+}
+.user-wrap { position: relative; }
+
+.body-row {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--color-background-primary);
+  border-right: 0.5px solid var(--color-border-tertiary);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+.sidebar-section {
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+.sidebar-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 8px 4px;
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+  transition: background 0.12s, color 0.12s;
+  position: relative;
+}
+.sidebar-item:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+.sidebar-item.active {
+  background: var(--color-background-info);
+  color: var(--color-text-info);
+  font-weight: 500;
+}
+.sidebar-icon { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.8; }
+.sidebar-item.active .sidebar-icon { opacity: 1; }
+.sidebar-badge {
+  margin-left: auto;
+  font-size: 11px;
+  background: var(--color-background-danger);
+  color: var(--color-text-danger);
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-weight: 500;
+}
+.sidebar-div { height: 0.5px; background: var(--color-border-tertiary); margin: 8px 12px; }
+
+.main-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  background: var(--color-background-primary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 0 14px;
+  height: 40px;
+  display: flex; align-items: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tab:hover { color: var(--color-text-primary); }
+.tab.active { color: var(--color-text-info); border-bottom-color: #6366F1; font-weight: 500; }
+
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.kpi-card {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg);
+  padding: 14px 16px;
+}
+.kpi-label {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-bottom: 6px;
+}
+.kpi-value {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.kpi-delta {
+  font-size: 12px;
+  color: var(--color-text-success);
+}
+.kpi-delta.down { color: var(--color-text-danger); }
+
+.chart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.panel {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-lg);
+  padding: 16px;
+}
+.panel-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 14px;
+}
+.panel-subtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 14px;
+  margin-top: -10px;
+}
+
+.mini-chart {
+  height: 100px;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.bar {
+  flex: 1;
+  border-radius: 3px 3px 0 0;
+  background: var(--color-background-info);
+  transition: background 0.2s;
+  cursor: pointer;
+}
+.bar:hover { background: #6366F1; }
+.bar.accent { background: #6366F1; }
+
+.agent-list { display: flex; flex-direction: column; gap: 8px; }
+.agent-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-tertiary);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.agent-row:hover { background: var(--color-background-secondary); }
+.agent-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 500; color: #fff;
+  flex-shrink: 0;
+}
+.agent-info { flex: 1; min-width: 0; }
+.agent-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+.agent-role { font-size: 11px; color: var(--color-text-tertiary); }
+.agent-status {
+  font-size: 11px; padding: 2px 7px;
+  border-radius: 10px; font-weight: 500;
+}
+.status-active { background: var(--color-background-success); color: var(--color-text-success); }
+.status-idle { background: var(--color-background-secondary); color: var(--color-text-tertiary); }
+.status-busy { background: var(--color-background-warning); color: var(--color-text-warning); }
+
+.ceo-card {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-info);
+  border-radius: var(--border-radius-lg);
+  padding: 16px;
+  display: flex; gap: 12px;
+}
+.ceo-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, #6366F1, #22D3EE);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: #fff; font-weight: 500;
+}
+.ceo-message { flex: 1; }
+.ceo-label { font-size: 11px; color: var(--color-text-info); font-weight: 500; margin-bottom: 4px; }
+.ceo-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; }
+.typing-dots { display: inline-flex; gap: 3px; margin-left: 4px; vertical-align: middle; }
+.typing-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--color-text-info);
+  animation: bounce 1.2s infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+.section-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.task-list { display: flex; flex-direction: column; gap: 6px; }
+.task-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-tertiary);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.task-item:hover { background: var(--color-background-secondary); }
+.task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.task-name { font-size: 13px; color: var(--color-text-primary); flex: 1; }
+.task-pct { font-size: 12px; color: var(--color-text-secondary); }
+.task-risk {
+  font-size: 11px; padding: 2px 7px;
+  border-radius: 10px;
+}
+.risk-high { background: var(--color-background-danger); color: var(--color-text-danger); }
+.risk-med { background: var(--color-background-warning); color: var(--color-text-warning); }
+
+.progress-bar {
+  height: 4px;
+  background: var(--color-border-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #6366F1;
+}
+
+.quick-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.qa-btn {
+  padding: 7px 14px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-background-primary);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: background 0.12s;
+}
+.qa-btn:hover { background: var(--color-background-secondary); }
+.qa-btn.primary {
+  background: #6366F1;
+  color: #fff;
+  border-color: #6366F1;
+}
+.qa-btn.primary:hover { background: #4F46E5; }
+
+.module-tabs {
+  display: flex; gap: 2px;
+  margin-bottom: 4px;
+}
+.module-chip {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  border: 0.5px solid transparent;
+  transition: all 0.12s;
+}
+.module-chip:hover { color: var(--color-text-primary); }
+.module-chip.active {
+  background: var(--color-background-info);
+  color: var(--color-text-info);
+  border-color: var(--color-border-info);
+  font-weight: 500;
+}
+
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.page-title {
+  font-size: 16px; font-weight: 500; color: var(--color-text-primary);
+}
+</style>
+
+<div class="app-shell">
+  <div class="topnav">
+    <div class="logo">
+      <div class="logo-dot">
+        <svg viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="#fff" stroke-width="1.5"/><circle cx="7" cy="7" r="2" fill="#fff"/></svg>
+      </div>
+      OrgOS
+    </div>
+    <div class="company-switcher">
+      <span class="company-avatar"></span>
+      Acme Corp
+      <span class="caret">▾</span>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button class="nav-btn" title="notifications">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1a5 5 0 0 0-5 5v2.5L2 10h12l-1-1.5V6a5 5 0 0 0-5-5zM6.5 13a1.5 1.5 0 0 0 3 0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+      <button class="nav-btn" title="search">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.2"/><path d="m10 10 3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="user-wrap">
+        <div class="user-avatar">AL</div>
+        <div class="badge-dot"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="body-row">
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">主导航</div>
+        <div class="sidebar-item active" onclick="showPage('dashboard')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+          仪表盘
+        </div>
+        <div class="sidebar-item" onclick="showPage('org')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="13" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3M8 8l-5 2M8 8l5 2" stroke="currentColor" stroke-width="1.2"/></svg>
+          组织结构
+        </div>
+        <div class="sidebar-item" onclick="showPage('agents')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Agent 管理
+          <span class="sidebar-badge">3</span>
+        </div>
+        <div class="sidebar-item" onclick="showPage('collab')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v8H9l-3 2V11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          协作中心
+          <span class="sidebar-badge">12</span>
+        </div>
+        <div class="sidebar-item" onclick="showPage('tasks')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          任务中心
+        </div>
+      </div>
+
+      <div class="sidebar-div"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">知识与治理</div>
+        <div class="sidebar-item" onclick="showPage('memory')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="5" rx="5" ry="3" stroke="currentColor" stroke-width="1.2"/><path d="M3 5v6c0 1.7 2.2 3 5 3s5-1.3 5-3V5" stroke="currentColor" stroke-width="1.2"/><path d="M3 8.5c0 1.7 2.2 3 5 3s5-1.3 5-3" stroke="currentColor" stroke-width="1.2"/></svg>
+          记忆与知识库
+        </div>
+        <div class="sidebar-item" onclick="showPage('billing')">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M1 7h14" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="10.5" r="0.8" fill="currentColor"/></svg>
+          费用与治理
+        </div>
+      </div>
+
+      <div class="sidebar-div"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">工作区</div>
+        <div class="sidebar-item">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Heartbeat 日报
+        </div>
+        <div class="sidebar-item">
+          <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h9M2 12h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          审计日志
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div id="page-dashboard" class="content-area">
+        <div class="page-header">
+          <div>
+            <div class="page-title">公司仪表盘</div>
+          </div>
+          <div class="quick-actions">
+            <button class="qa-btn" onclick="sendPrompt('帮我下达一个新的战略目标')">+ 新战略</button>
+            <button class="qa-btn primary">查看 Heartbeat</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">任务完成率</div>
+            <div class="kpi-value">78%</div>
+            <div class="kpi-delta">↑ 12% 较上周</div>
+            <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:78%"></div></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">预算使用率</div>
+            <div class="kpi-value">$2.4k</div>
+            <div class="kpi-delta down">↑ 预算剩余 $5.6k</div>
+            <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:30%; background:#22D3EE"></div></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Agent 活跃度</div>
+            <div class="kpi-value">9/12</div>
+            <div class="kpi-delta">3 空闲 · 0 故障</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">今日消息</div>
+            <div class="kpi-value">347</div>
+            <div class="kpi-delta">↑ 89 未读</div>
+          </div>
+        </div>
+
+        <div class="ceo-card">
+          <div class="ceo-avatar">CEO</div>
+          <div class="ceo-message">
+            <div class="ceo-label">CEO 主动建议</div>
+            <div class="ceo-text">基于过去48小时的数据，市场部任务延迟风险较高，建议将 Agent-Marketing-02 的优先级提升。同时发现产品路线图与销售目标存在轻微偏差
+              <span class="typing-dots"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-row">
+          <div class="panel">
+            <div class="panel-title">任务进度趋势（过去14天）</div>
+            <div class="mini-chart" id="bar-chart"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Agent 状态</div>
+            <div class="agent-list">
+              <div class="agent-row">
+                <div class="agent-avatar" style="background:#6366F1">CEO</div>
+                <div class="agent-info"><div class="agent-name">Alex (CEO)</div><div class="agent-role">首席执行官 · GPT-4o</div></div>
+                <span class="agent-status status-active">活跃</span>
+              </div>
+              <div class="agent-row">
+                <div class="agent-avatar" style="background:#0EA5E9">MKT</div>
+                <div class="agent-info"><div class="agent-name">Luna (市场)</div><div class="agent-role">市场总监 · Claude 3.5</div></div>
+                <span class="agent-status status-busy">忙碌</span>
+              </div>
+              <div class="agent-row">
+                <div class="agent-avatar" style="background:#10B981">ENG</div>
+                <div class="agent-info"><div class="agent-name">Max (工程)</div><div class="agent-role">技术负责人 · Claude 3</div></div>
+                <span class="agent-status status-active">活跃</span>
+              </div>
+              <div class="agent-row">
+                <div class="agent-avatar" style="background:#F59E0B">FIN</div>
+                <div class="agent-info"><div class="agent-name">Sam (财务)</div><div class="agent-role">CFO · Gemini Pro</div></div>
+                <span class="agent-status status-idle">空闲</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-row">
+          <div class="panel">
+            <div class="panel-title">进行中任务 · 风险预警</div>
+            <div class="task-list">
+              <div class="task-item">
+                <div class="task-dot" style="background:#F59E0B"></div>
+                <div class="task-name">Q4 营销活动策划</div>
+                <div class="task-pct">62%</div>
+                <span class="task-risk risk-med">延迟风险</span>
+              </div>
+              <div class="task-item">
+                <div class="task-dot" style="background:#EF4444"></div>
+                <div class="task-name">竞品分析报告</div>
+                <div class="task-pct">34%</div>
+                <span class="task-risk risk-high">超时</span>
+              </div>
+              <div class="task-item">
+                <div class="task-dot" style="background:#22C55E"></div>
+                <div class="task-name">产品路线图更新</div>
+                <div class="task-pct">91%</div>
+                <span class="task-risk" style="background:var(--color-background-success);color:var(--color-text-success)">顺利</span>
+              </div>
+              <div class="task-item">
+                <div class="task-dot" style="background:#6366F1"></div>
+                <div class="task-name">融资材料准备</div>
+                <div class="task-pct">18%</div>
+                <span class="task-risk" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">进行中</span>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">快捷操作</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button class="qa-btn" style="width:100%;justify-content:flex-start" onclick="sendPrompt('帮我下达一个战略目标')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                下达新战略目标 ↗
+              </button>
+              <button class="qa-btn" style="width:100%;justify-content:flex-start" onclick="sendPrompt('显示今天的Heartbeat总结')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 8l3-5 3 8 3-3 2 3 3-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                查看 Heartbeat 总结 ↗
+              </button>
+              <button class="qa-btn" style="width:100%;justify-content:flex-start" onclick="sendPrompt('打开主群聊')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v8H9l-3 2V11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                打开主群聊 ↗
+              </button>
+              <button class="qa-btn" style="width:100%;justify-content:flex-start" onclick="sendPrompt('分析当前预算使用情况')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 12l3-4 3 2 4-6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                分析预算使用 ↗
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-org" class="content-area" style="display:none">
+        <div class="page-header">
+          <div class="page-title">组织结构编辑器</div>
+          <div class="quick-actions">
+            <button class="qa-btn">应用模板</button>
+            <button class="qa-btn">变更历史</button>
+            <button class="qa-btn primary">保存变更</button>
+          </div>
+        </div>
+        <div class="panel" style="flex:1;min-height:480px;display:flex;flex-direction:column">
+          <div class="panel-title">React Flow 画布 · 层级组织树</div>
+          <div style="flex:1;position:relative;background:var(--color-background-tertiary);border-radius:var(--border-radius-md);overflow:hidden;min-height:420px">
+            <svg width="100%" height="100%" viewBox="0 0 700 420" style="position:absolute;top:0;left:0">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="var(--color-text-tertiary)" opacity="0.5"/>
+                </marker>
+              </defs>
+              <line x1="350" y1="70" x2="350" y2="130" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="350" y1="185" x2="180" y2="240" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="350" y1="185" x2="350" y2="240" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="350" y1="185" x2="520" y2="240" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="180" y1="295" x2="110" y2="350" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="180" y1="295" x2="200" y2="350" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="350" y1="295" x2="310" y2="350" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="350" y1="295" x2="390" y2="350" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="520" y1="295" x2="490" y2="350" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+              <line x1="520" y1="295" x2="560" y2="350" stroke="var(--color-border-secondary)" stroke-width="1" marker-end="url(#arrow)"/>
+
+              <rect x="280" y="20" width="140" height="50" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5"/>
+              <text x="350" y="42" text-anchor="middle" font-size="12" font-weight="500" fill="#4338CA">Board</text>
+              <text x="350" y="58" text-anchor="middle" font-size="11" fill="#6366F1">治理委员会</text>
+
+              <rect x="280" y="130" width="140" height="55" rx="8" fill="#E0F2FE" stroke="#0EA5E9" stroke-width="1.5"/>
+              <text x="350" y="153" text-anchor="middle" font-size="12" font-weight="500" fill="#0369A1">CEO Alex</text>
+              <text x="350" y="170" text-anchor="middle" font-size="11" fill="#0EA5E9">GPT-4o · 主脑</text>
+
+              <rect x="110" y="240" width="140" height="55" rx="6" fill="#F0FDF4" stroke="#22C55E" stroke-width="1"/>
+              <text x="180" y="263" text-anchor="middle" font-size="11" font-weight="500" fill="#166534">市场部</text>
+              <text x="180" y="280" text-anchor="middle" font-size="10" fill="#22C55E">Marketing Dept</text>
+
+              <rect x="280" y="240" width="140" height="55" rx="6" fill="#FFF7ED" stroke="#F59E0B" stroke-width="1"/>
+              <text x="350" y="263" text-anchor="middle" font-size="11" font-weight="500" fill="#92400E">产品部</text>
+              <text x="350" y="280" text-anchor="middle" font-size="10" fill="#F59E0B">Product Dept</text>
+
+              <rect x="450" y="240" width="140" height="55" rx="6" fill="#FDF4FF" stroke="#A855F7" stroke-width="1"/>
+              <text x="520" y="263" text-anchor="middle" font-size="11" font-weight="500" fill="#6B21A8">工程部</text>
+              <text x="520" y="280" text-anchor="middle" font-size="10" fill="#A855F7">Engineering</text>
+
+              <rect x="60" y="350" width="100" height="42" rx="5" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1"/>
+              <text x="110" y="368" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Luna</text>
+              <text x="110" y="382" text-anchor="middle" font-size="10" fill="var(--color-text-tertiary)">市场总监</text>
+
+              <rect x="170" y="350" width="80" height="42" rx="5" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1"/>
+              <text x="210" y="368" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Eva</text>
+              <text x="210" y="382" text-anchor="middle" font-size="10" fill="var(--color-text-tertiary)">增长</text>
+
+              <rect x="270" y="350" width="80" height="42" rx="5" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1"/>
+              <text x="310" y="368" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Iris</text>
+              <text x="310" y="382" text-anchor="middle" font-size="10" fill="var(--color-text-tertiary)">产品经理</text>
+
+              <rect x="360" y="350" width="80" height="42" rx="5" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1"/>
+              <text x="400" y="368" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Owen</text>
+              <text x="400" y="382" text-anchor="middle" font-size="10" fill="var(--color-text-tertiary)">分析师</text>
+
+              <rect x="450" y="350" width="80" height="42" rx="5" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1"/>
+              <text x="490" y="368" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Max</text>
+              <text x="490" y="382" text-anchor="middle" font-size="10" fill="var(--color-text-tertiary)">技术负责人</text>
+
+              <rect x="540" y="350" width="80" height="42" rx="5" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1"/>
+              <text x="580" y="368" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">Zoe</text>
+              <text x="580" y="382" text-anchor="middle" font-size="10" fill="var(--color-text-tertiary)">后端工程师</text>
+
+              <rect x="635" y="150" width="55" height="22" rx="4" fill="var(--color-background-secondary)" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>
+              <text x="662" y="165" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">拖拽编辑</text>
+              <rect x="635" y="180" width="55" height="22" rx="4" fill="var(--color-background-secondary)" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>
+              <text x="662" y="195" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">+ 添加节点</text>
+              <rect x="635" y="210" width="55" height="22" rx="4" fill="var(--color-background-secondary)" stroke="var(--color-border-tertiary)" stroke-width="0.5"/>
+              <text x="662" y="225" text-anchor="middle" font-size="10" fill="var(--color-text-secondary)">缩放 100%</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-agents" class="content-area" style="display:none">
+        <div class="page-header">
+          <div class="page-title">Agent 管理</div>
+          <div class="quick-actions">
+            <button class="qa-btn">浏览 Agent 商城</button>
+            <button class="qa-btn primary">+ 招聘 Agent</button>
+          </div>
+        </div>
+        <div class="module-tabs">
+          <span class="module-chip active">全部 Agent (12)</span>
+          <span class="module-chip">市场部 (3)</span>
+          <span class="module-chip">产品部 (4)</span>
+          <span class="module-chip">工程部 (5)</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+          <div class="panel" style="cursor:pointer">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <div class="agent-avatar" style="background:#6366F1;width:40px;height:40px;font-size:14px">CEO</div>
+              <div><div style="font-size:14px;font-weight:500;color:var(--color-text-primary)">Alex</div><div style="font-size:12px;color:var(--color-text-tertiary)">首席执行官</div></div>
+              <span class="agent-status status-active" style="margin-left:auto">活跃</span>
+            </div>
+            <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px">负责整体战略决策、任务分配与跨部门协调。拥有最高优先级与预算授权。</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="module-chip active" style="font-size:11px">战略规划</span>
+              <span class="module-chip" style="font-size:11px">任务分解</span>
+              <span class="module-chip" style="font-size:11px">风险识别</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--color-text-tertiary)">
+              <span>GPT-4o</span><span>消耗 $1.2k/月</span>
+            </div>
+          </div>
+          <div class="panel" style="cursor:pointer">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <div class="agent-avatar" style="background:#0EA5E9;width:40px;height:40px;font-size:14px">MKT</div>
+              <div><div style="font-size:14px;font-weight:500;color:var(--color-text-primary)">Luna</div><div style="font-size:12px;color:var(--color-text-tertiary)">市场总监</div></div>
+              <span class="agent-status status-busy" style="margin-left:auto">忙碌</span>
+            </div>
+            <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px">专注市场分析、内容策略与品牌传播。擅长多渠道营销活动策划。</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="module-chip" style="font-size:11px">内容创作</span>
+              <span class="module-chip" style="font-size:11px">数据分析</span>
+              <span class="module-chip" style="font-size:11px">SEO优化</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--color-text-tertiary)">
+              <span>Claude 3.5</span><span>消耗 $0.8k/月</span>
+            </div>
+          </div>
+          <div class="panel" style="cursor:pointer;border-style:dashed;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:160px">
+            <div style="width:40px;height:40px;border-radius:50%;border:1.5px dashed var(--color-border-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:20px">+</div>
+            <div style="font-size:13px;color:var(--color-text-secondary);font-weight:500">招聘新 Agent</div>
+            <div style="font-size:12px;color:var(--color-text-tertiary)">浏览 Agent 商城</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-collab" class="content-area" style="display:none;padding:0">
+        <div style="display:flex;height:100%">
+          <div style="width:200px;border-right:0.5px solid var(--color-border-tertiary);padding:12px 8px;flex-shrink:0">
+            <div style="font-size:11px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.06em;padding:0 8px 6px">频道</div>
+            <div class="sidebar-item active"># 主群聊</div>
+            <div class="sidebar-item"># 市场部群</div>
+            <div class="sidebar-item"># 产品讨论</div>
+            <div class="sidebar-item"># 工程部群</div>
+            <div style="margin-top:8px;font-size:11px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.06em;padding:0 8px 6px">任务群</div>
+            <div class="sidebar-item">Q4 营销策划</div>
+            <div class="sidebar-item">竞品分析</div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:12px 16px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;gap:8px">
+              <span style="font-size:14px;font-weight:500;color:var(--color-text-primary)"># 主群聊</span>
+              <span style="font-size:12px;color:var(--color-text-tertiary)">6 名成员在线</span>
+              <div style="margin-left:auto;display:flex;gap:-4px">
+                <div class="agent-avatar" style="background:#6366F1;width:24px;height:24px;font-size:9px;margin-left:-4px">A</div>
+                <div class="agent-avatar" style="background:#0EA5E9;width:24px;height:24px;font-size:9px;margin-left:-4px">L</div>
+                <div class="agent-avatar" style="background:#10B981;width:24px;height:24px;font-size:9px;margin-left:-4px">M</div>
+                <div class="agent-avatar" style="background:#F472B6;width:24px;height:24px;font-size:9px;margin-left:-4px">U</div>
+              </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;gap:10px">
+                <div class="agent-avatar" style="background:#6366F1;width:32px;height:32px;font-size:11px;flex-shrink:0">CEO</div>
+                <div>
+                  <div style="font-size:12px;font-weight:500;color:var(--color-text-primary)">Alex <span style="font-weight:400;color:var(--color-text-tertiary)">10:32</span></div>
+                  <div style="font-size:13px;color:var(--color-text-secondary);margin-top:2px;line-height:1.6">已完成本周战略回顾，Q4目标存在3个关键风险点。建议市场部优先处理用户增长漏斗的问题。</div>
+                  <div style="margin-top:8px;background:var(--color-background-warning);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px">
+                    <div style="font-size:12px;font-weight:500;color:var(--color-text-warning);margin-bottom:6px">需要审批 · Human-in-the-Loop</div>
+                    <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px">将市场部 Agent-02 的月预算从 $500 提升至 $800</div>
+                    <div style="display:flex;gap:8px">
+                      <button class="qa-btn primary" style="font-size:12px;padding:5px 12px">批准</button>
+                      <button class="qa-btn" style="font-size:12px;padding:5px 12px">拒绝</button>
+                      <button class="qa-btn" style="font-size:12px;padding:5px 12px">查看详情</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px">
+                <div class="agent-avatar" style="background:#0EA5E9;width:32px;height:32px;font-size:11px;flex-shrink:0">MKT</div>
+                <div>
+                  <div style="font-size:12px;font-weight:500;color:var(--color-text-primary)">Luna <span style="font-weight:400;color:var(--color-text-tertiary)">10:35</span></div>
+                  <div style="font-size:13px;color:var(--color-text-secondary);margin-top:2px;line-height:1.6">收到 @Alex，我已开始分析用户转化漏斗数据。初步发现注册到激活环节流失率达 42%，正在生成详细报告
+                    <span class="typing-dots"><span class="typing-dot" style="background:var(--color-text-tertiary)"></span><span class="typing-dot" style="background:var(--color-text-tertiary)"></span><span class="typing-dot" style="background:var(--color-text-tertiary)"></span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="padding:12px 16px;border-top:0.5px solid var(--color-border-tertiary)">
+              <div style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:10px 14px;display:flex;align-items:center;gap:8px">
+                <input type="text" placeholder="发送消息... (支持 @提及 / Markdown)" style="flex:1;background:transparent;border:none;outline:none;font-size:13px;color:var(--color-text-primary)"/>
+                <button class="qa-btn primary" style="padding:5px 12px;font-size:12px">发送</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-tasks" class="content-area" style="display:none">
+        <div class="page-header">
+          <div class="page-title">任务与自治中心</div>
+          <div class="quick-actions">
+            <button class="qa-btn" onclick="sendPrompt('帮我输入一个大目标让CEO来拆解')">+ 输入大目标 ↗</button>
+            <button class="qa-btn">甘特视图</button>
+            <button class="qa-btn">Kanban</button>
+          </div>
+        </div>
+        <div class="module-tabs">
+          <span class="module-chip active">公司级 (8)</span>
+          <span class="module-chip">市场部 (5)</span>
+          <span class="module-chip">产品部 (6)</span>
+          <span class="module-chip">工程部 (7)</span>
+        </div>
+        <div class="panel">
+          <div class="panel-title">任务列表</div>
+          <div class="task-list">
+            <div class="task-item">
+              <div class="task-dot" style="background:#6366F1"></div>
+              <div style="flex:1"><div class="task-name">完成 Series A 融资材料</div><div style="font-size:11px;color:var(--color-text-tertiary)">由 CEO Alex 分配 · 4个子任务</div></div>
+              <div class="task-pct">18%</div>
+              <div class="progress-bar" style="width:60px"><div class="progress-fill" style="width:18%"></div></div>
+              <span class="task-risk" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">进行中</span>
+            </div>
+            <div class="task-item">
+              <div class="task-dot" style="background:#22C55E"></div>
+              <div style="flex:1"><div class="task-name">Q4 产品路线图</div><div style="font-size:11px;color:var(--color-text-tertiary)">由 Iris 负责 · 7个子任务</div></div>
+              <div class="task-pct">91%</div>
+              <div class="progress-bar" style="width:60px"><div class="progress-fill" style="width:91%;background:#22C55E"></div></div>
+              <span class="task-risk" style="background:var(--color-background-success);color:var(--color-text-success)">接近完成</span>
+            </div>
+            <div class="task-item">
+              <div class="task-dot" style="background:#F59E0B"></div>
+              <div style="flex:1"><div class="task-name">竞品分析报告</div><div style="font-size:11px;color:var(--color-text-tertiary)">由 Luna 负责 · 截止 11/15</div></div>
+              <div class="task-pct">34%</div>
+              <div class="progress-bar" style="width:60px"><div class="progress-fill" style="width:34%;background:#F59E0B"></div></div>
+              <span class="task-risk risk-high">超时</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-memory" class="content-area" style="display:none">
+        <div class="page-header">
+          <div class="page-title">记忆与知识库</div>
+          <div class="quick-actions">
+            <button class="qa-btn">+ 上传文档</button>
+            <button class="qa-btn primary">RAG 测试</button>
+          </div>
+        </div>
+        <div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:10px 14px;display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="var(--color-text-tertiary)" stroke-width="1.2"/><path d="m10 10 3.5 3.5" stroke="var(--color-text-tertiary)" stroke-width="1.2" stroke-linecap="round"/></svg>
+          <input type="text" placeholder="搜索公司记忆..." style="flex:1;background:transparent;border:none;outline:none;font-size:13px;color:var(--color-text-primary)"/>
+        </div>
+        <div class="module-tabs">
+          <span class="module-chip active">公司级</span>
+          <span class="module-chip">部门级</span>
+          <span class="module-chip">Agent 级</span>
+          <span class="module-chip">文档库</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+          <div class="panel">
+            <div class="panel-title">近期记忆摘要</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="padding:8px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);font-size:12px;color:var(--color-text-secondary);line-height:1.6">
+                <span style="font-size:11px;color:var(--color-text-tertiary);display:block;margin-bottom:2px">2024-11-12 · CEO Alex</span>
+                Q4战略会议决定将重心转向企业客户。关键决策：提高客单价，减少SMB获客投入...
+              </div>
+              <div style="padding:8px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);font-size:12px;color:var(--color-text-secondary);line-height:1.6">
+                <span style="font-size:11px;color:var(--color-text-tertiary);display:block;margin-bottom:2px">2024-11-10 · Luna</span>
+                用户调研显示：70%用户最看重集成能力，其次是价格透明度...
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">文档摄入状态</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;font-size:12px;color:var(--color-text-primary)">竞品分析.pdf</div>
+                <span style="font-size:11px;color:var(--color-text-success)">已完成</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;font-size:12px;color:var(--color-text-primary)">Q4战略规划.docx</div>
+                <div style="flex:1;display:flex;align-items:center;gap:6px">
+                  <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:67%"></div></div>
+                  <span style="font-size:11px;color:var(--color-text-secondary)">67%</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;font-size:12px;color:var(--color-text-primary)">用户访谈录音.mp3</div>
+                <span style="font-size:11px;color:var(--color-text-warning)">排队中</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-billing" class="content-area" style="display:none">
+        <div class="page-header">
+          <div class="page-title">费用与治理中心</div>
+          <div class="quick-actions">
+            <button class="qa-btn">设置预算</button>
+            <button class="qa-btn">审计日志</button>
+            <button class="qa-btn primary">导出报告</button>
+          </div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">本月总费用</div>
+            <div class="kpi-value">$2,413</div>
+            <div class="kpi-delta">预算 $8,000 · 剩余 $5,587</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">最高消耗 Agent</div>
+            <div class="kpi-value">CEO</div>
+            <div class="kpi-delta">$1,240 · 占比 51%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">API 调用次数</div>
+            <div class="kpi-value">48.2k</div>
+            <div class="kpi-delta">↑ 12% 较上月</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">模型分布</div>
+            <div class="kpi-value">3种</div>
+            <div class="kpi-delta">GPT-4o / Claude / Gemini</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">各 Agent 费用明细</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="agent-row">
+              <div class="agent-avatar" style="background:#6366F1;width:28px;height:28px;font-size:11px">CEO</div>
+              <div class="agent-info"><div class="agent-name">Alex (CEO)</div><div class="agent-role">GPT-4o</div></div>
+              <div class="progress-bar" style="width:140px"><div class="progress-fill" style="width:80%"></div></div>
+              <div style="font-size:13px;font-weight:500;color:var(--color-text-primary);min-width:50px;text-align:right">$1,240</div>
+            </div>
+            <div class="agent-row">
+              <div class="agent-avatar" style="background:#0EA5E9;width:28px;height:28px;font-size:11px">MKT</div>
+              <div class="agent-info"><div class="agent-name">Luna (市场)</div><div class="agent-role">Claude 3.5</div></div>
+              <div class="progress-bar" style="width:140px"><div class="progress-fill" style="width:50%"></div></div>
+              <div style="font-size:13px;font-weight:500;color:var(--color-text-primary);min-width:50px;text-align:right">$620</div>
+            </div>
+            <div class="agent-row">
+              <div class="agent-avatar" style="background:#10B981;width:28px;height:28px;font-size:11px">ENG</div>
+              <div class="agent-info"><div class="agent-name">Max (工程)</div><div class="agent-role">Claude 3</div></div>
+              <div class="progress-bar" style="width:140px"><div class="progress-fill" style="width:30%"></div></div>
+              <div style="font-size:13px;font-weight:500;color:var(--color-text-primary);min-width:50px;text-align:right">$380</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const pages = ['dashboard','org','agents','collab','tasks','memory','billing'];
+const navItems = document.querySelectorAll('.sidebar-item');
+
+function showPage(id) {
+  pages.forEach(p => {
+    const el = document.getElementById('page-' + p);
+    if (el) el.style.display = p === id ? 'flex' : 'none';
+  });
+  navItems.forEach(item => {
+    item.classList.toggle('active', item.getAttribute('onclick') === `showPage('${id}')`);
+  });
+}
+
+const barData = [30,45,38,52,48,60,55,70,65,78,72,85,80,78];
+const chart = document.getElementById('bar-chart');
+if(chart) {
+  const max = Math.max(...barData);
+  barData.forEach((v, i) => {
+    const b = document.createElement('div');
+    b.className = 'bar' + (i === barData.length-1 ? ' accent' : '');
+    b.style.height = Math.round(v/max*100) + '%';
+    chart.appendChild(b);
+  });
+}
+</script>

@@ -31,6 +31,7 @@ services:
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_DB=${REDIS_DB:-0}
+      - COLLAB_REDIS_NOTIFY=${COLLAB_REDIS_NOTIFY:-true}
       # 服务地址配置
       - API_SERVICE_URL=${API_SERVICE_URL:-http://localhost:3000}
       - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://localhost:3003}

@@ -31,6 +31,10 @@ export class LoggingInterceptor implements NestInterceptor {
     const requestId = request.headers['x-request-id'] as string;
     const traceId = request.headers['x-trace-id'] as string;
     const spanId = request.headers['x-span-id'] as string;
+    const companyId =
+      request.companyId ||
+      request.headers['x-company-id'] ||
+      request.user?.companyId;
     const startTime = Date.now();
 
     // 记录请求信息（脱敏）
@@ -46,6 +50,7 @@ export class LoggingInterceptor implements NestInterceptor {
       requestId,
       traceId,
       spanId,
+      companyId,
       headers: maskedHeaders,
       body: maskedBody,
       query: maskedQuery,
@@ -69,6 +74,7 @@ export class LoggingInterceptor implements NestInterceptor {
             requestId,
             traceId,
             spanId,
+            companyId,
             statusCode,
             duration,
             responseBody: maskedResponseBody,
@@ -94,6 +100,15 @@ export class LoggingInterceptor implements NestInterceptor {
             ? this.dataMaskingService.maskObject(error.response)
             : {}),
         };
+        const errorMessage =
+          typeof errorResponse.message === 'string'
+            ? errorResponse.message
+            : this.safeStringify(errorResponse.message);
+
+        const errorDetails =
+          typeof errorResponse === 'string'
+            ? errorResponse
+            : this.safeStringify(errorResponse);
 
         logger.error('Request failed', {
           method,
@@ -102,9 +117,11 @@ export class LoggingInterceptor implements NestInterceptor {
           requestId,
           traceId,
           spanId,
+          companyId,
           statusCode,
           duration,
-          error: errorResponse,
+          error: errorMessage,
+          errorDetails,
           errorType: error?.constructor?.name,
           isHttpException: error instanceof HttpException,
           headersSent: response.headersSent,
@@ -117,6 +134,18 @@ export class LoggingInterceptor implements NestInterceptor {
         return throwError(() => error);
       }),
     );
+  }
+
+  /**
+   * Safe stringify for logging (avoid `[object Object]` in transports).
+   */
+  private safeStringify(value: unknown): string {
+    try {
+      if (typeof value === 'string') return value;
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
 
   /**

@@ -8,6 +8,10 @@ import type { UserUpdatedEvent } from '@contracts/events';
 import type { MessageContext } from '@service/messaging';
 import { createLogger, LogLevel } from '@service/logging';
 import { IdempotencyService } from '../../../common/idempotency/idempotency.service.js';
+import {
+  TenantContextService,
+  resolveCompanyIdFromEvent,
+} from '@service/tenant';
 
 @Injectable()
 export class UserUpdatedListener implements OnModuleInit {
@@ -19,6 +23,7 @@ export class UserUpdatedListener implements OnModuleInit {
   constructor(
     private readonly messagingService: MessagingService,
     private readonly idempotency: IdempotencyService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async onModuleInit() {
@@ -57,6 +62,17 @@ export class UserUpdatedListener implements OnModuleInit {
     event: UserUpdatedEvent,
     context: MessageContext,
   ): Promise<void> {
+    const companyId = resolveCompanyIdFromEvent(event);
+    if (companyId) {
+      return this.tenantContext.runWithCompanyId(companyId, async () => {
+        await this.processUserUpdated(event);
+      });
+    }
+
+    await this.processUserUpdated(event);
+  }
+
+  private async processUserUpdated(event: UserUpdatedEvent): Promise<void> {
     const ok = this.idempotency.markIfNew(
       `user.updated:${event.eventId}`,
       24 * 60 * 60_000,

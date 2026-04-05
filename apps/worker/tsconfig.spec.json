@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@service/*": ["../../infrastructure/*/src/index.ts"],
+      "@contracts/*": ["../../contracts/*/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

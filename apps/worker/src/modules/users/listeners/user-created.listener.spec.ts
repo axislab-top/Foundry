@@ -5,7 +5,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserCreatedListener } from './user-created.listener.js';
 import { MessagingService } from '@service/messaging';
+import { TenantContextService } from '@service/tenant';
 import type { UserCreatedEvent } from '@contracts/events';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service.js';
 
 describe('UserCreatedListener', () => {
   let listener: UserCreatedListener;
@@ -18,6 +20,14 @@ describe('UserCreatedListener', () => {
       isConnected: jest.fn(() => true),
       healthCheck: jest.fn(() => Promise.resolve(true)),
     };
+    const mockIdempotency = {
+      markIfNew: jest.fn(() => true),
+    };
+    const mockTenant = {
+      runWithCompanyId: jest.fn(async (_id: string | undefined, fn: () => Promise<void>) => {
+        await fn();
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -25,6 +35,14 @@ describe('UserCreatedListener', () => {
         {
           provide: MessagingService,
           useValue: mockMessagingService,
+        },
+        {
+          provide: IdempotencyService,
+          useValue: mockIdempotency,
+        },
+        {
+          provide: TenantContextService,
+          useValue: mockTenant,
         },
       ],
     }).compile();
@@ -47,6 +65,13 @@ describe('UserCreatedListener', () => {
         queue: 'user-created-queue',
         durable: true,
         prefetchCount: 10,
+        retry: {
+          enabled: true,
+          maxAttempts: 5,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 60_000,
+        },
       },
     );
   });

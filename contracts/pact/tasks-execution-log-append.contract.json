@@ -1,0 +1,25 @@
+{
+  "description": "tasks.executionLog.append RPC 最小契约（data 内嵌 AppendExecutionLogDto，含可选 runId）",
+  "pattern": "tasks.executionLog.append",
+  "request": {
+    "companyId": "uuid",
+    "actor": { "id": "uuid", "roles": ["admin"] },
+    "id": "uuid",
+    "data": {
+      "stepType": "string",
+      "message": "string | optional",
+      "runId": "uuid | optional",
+      "agentId": "uuid | optional",
+      "traceId": "string | optional",
+      "durationMs": "number | optional",
+      "billingUnits": "string | optional",
+      "outputSnapshot": "object | optional"
+    }
+  },
+  "response": {
+    "id": "uuid",
+    "taskId": "uuid",
+    "stepType": "string",
+    "createdAt": "iso8601"
+  }
+}

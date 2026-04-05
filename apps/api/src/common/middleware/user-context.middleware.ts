@@ -1,8 +1,12 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import type { UserInfo } from '../types/user.types.js';
+import { TENANT_HEADER_COMPANY_ID } from '@service/tenant';
 
-type UserContextRequest = Request & { user?: UserInfo };
+type UserContextRequest = Request & {
+  user?: UserInfo;
+  companyId?: string;
+};
 
 /**
  * 从 Gateway 注入的头部中解析用户信息，填充到 request.user
@@ -10,6 +14,13 @@ type UserContextRequest = Request & { user?: UserInfo };
 @Injectable()
 export class UserContextMiddleware implements NestMiddleware {
   use(req: UserContextRequest, _res: Response, next: NextFunction) {
+    const companyIdHeader = req.headers[TENANT_HEADER_COMPANY_ID] as
+      | string
+      | undefined;
+    if (typeof companyIdHeader === 'string' && companyIdHeader.trim()) {
+      req.companyId = companyIdHeader.trim();
+    }
+
     const encoded = req.headers['x-user-info'] as string | undefined;
 
     if (encoded) {
@@ -29,6 +40,12 @@ export class UserContextMiddleware implements NestMiddleware {
             roles: Array.isArray(parsed.roles) ? parsed.roles : undefined,
             permissions: Array.isArray(parsed.permissions)
               ? parsed.permissions
+              : undefined,
+            companyId:
+              req.companyId ||
+              (typeof parsed.companyId === 'string' ? parsed.companyId : undefined),
+            organizationNodeIds: Array.isArray(parsed.organizationNodeIds)
+              ? parsed.organizationNodeIds.filter((x: unknown) => typeof x === 'string')
               : undefined,
           };
         }

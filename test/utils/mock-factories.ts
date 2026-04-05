@@ -48,6 +48,7 @@ export function createMockConfigService(overrides: any = {}): jest.Mocked<Config
       webhooksServiceUrl: 'http://localhost:3003',
       workerServiceUrl: 'http://localhost:3004',
     })),
+    getApiRpcMinTimeoutMs: jest.fn(() => 0),
     ...overrides,
   } as any;
 }

@@ -28,6 +28,8 @@ export const configSchema = Joi.object({
 
   // HTTP 配置
   HTTP_TIMEOUT: Joi.number().default(30000),
+  // RMQ RPC 队列确认策略（Nest request/reply 推荐 noAck=true）
+  WEBHOOKS_RMQ_RPC_NOACK: Joi.boolean().default(true),
 
   // Consul 配置（可选）
   CONSUL_ENABLED: Joi.boolean().default(false),

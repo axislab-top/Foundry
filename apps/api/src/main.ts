@@ -11,6 +11,16 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor.js';
 import { createSwaggerConfig } from './common/swagger/swagger.config.js';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { RMQ_NEST_SOCKET_OPTIONS } from '@service/messaging';
+
+function readBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return defaultValue;
+  const v = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(v)) return true;
+  if (['0', 'false', 'no', 'off'].includes(v)) return false;
+  return defaultValue;
+}
 
 // Load .env before app bootstrap.
 const possibleEnvPaths = [
@@ -117,8 +127,19 @@ async function bootstrap() {
 
   // 连接 RMQ microservice（用于 Gateway ClientProxy）
   // 与 HTTP server 同进程运行：HTTP + RMQ 双协议（可灰度迁移与快速回滚）
-  const rmqUrl = process.env.RMQ_URL || 'amqp://guest:guest@localhost:5672';
+  const rmqUrl =
+    process.env.RMQ_URL || 'amqp://admin:admin123@localhost:5672';
   const rmqQueue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
+  const autonomousRmqQueue =
+    process.env.API_RMQ_RPC_QUEUE_AUTONOMOUS || 'api-rpc-autonomous-queue';
+  const interactiveNoAck = readBooleanEnv('API_RMQ_RPC_NOACK', true);
+  const autonomousNoAck = readBooleanEnv('API_RMQ_RPC_AUTONOMOUS_NOACK', true);
+  if (!interactiveNoAck || !autonomousNoAck) {
+    logger.warn(
+      `RMQ RPC noAck=false detected (interactive=${interactiveNoAck}, autonomous=${autonomousNoAck}). ` +
+        'For Nest RPC request/reply handlers, prefer noAck=true unless you have explicit manual ack handling.',
+    );
+  }
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
@@ -126,10 +147,31 @@ async function bootstrap() {
       queue: rmqQueue,
       queueOptions: { durable: true },
       prefetchCount: Number(process.env.API_RMQ_PREFETCH ?? 10),
-      noAck: false,
+      noAck: interactiveNoAck,
+      socketOptions: { ...RMQ_NEST_SOCKET_OPTIONS },
+      maxConnectionAttempts: -1,
+    },
+  });
+  // 自治/后台 RPC 专用队列：隔离 Worker 心跳/编排洪峰，避免挤占交互流量队列。
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: [rmqUrl],
+      queue: autonomousRmqQueue,
+      queueOptions: { durable: true },
+      prefetchCount: Number(process.env.API_RMQ_AUTONOMOUS_PREFETCH ?? 5),
+      noAck: autonomousNoAck,
+      socketOptions: { ...RMQ_NEST_SOCKET_OPTIONS },
+      maxConnectionAttempts: -1,
     },
   });
   await app.startAllMicroservices();
+  logger.info(
+    `RMQ RPC consumer ready queue=${rmqQueue} noAck=${interactiveNoAck} url=${rmqUrl.replace(/:[^:@]+@/, ':****@')}`,
+  );
+  logger.info(
+    `RMQ RPC consumer ready queue=${autonomousRmqQueue} noAck=${autonomousNoAck} url=${rmqUrl.replace(/:[^:@]+@/, ':****@')}`,
+  );
 
   // Swagger 文档配置
   // 严格的安全检查：仅在非生产环境且明确启用时显示 Swagger

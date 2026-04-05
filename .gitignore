@@ -25,6 +25,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Vendored third-party content (e.g. agency-agents import)
+vendor/agency-agents/
+vendor/agency-agents-zh/
+
 # Node modules
 node_modules/
 

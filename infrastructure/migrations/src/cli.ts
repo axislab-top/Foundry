@@ -5,13 +5,49 @@
  * 基于TypeORM提供迁移功能
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import { DataSource } from 'typeorm';
 import { createDataSource } from './data-source.js';
 import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/** 从仓库内常见 .env 注入 process.env（不覆盖已有环境变量） */
+function loadEnvFiles(): void {
+  const migrationsRoot = join(__dirname, '..');
+  const projectRoot = join(migrationsRoot, '..', '..');
+  const candidates = [
+    join(projectRoot, 'infrastructure', 'postgres', '.env'),
+    join(projectRoot, 'apps', 'api', '.env'),
+  ];
+  for (const p of candidates) {
+    if (!existsSync(p)) continue;
+    try {
+      const raw = readFileSync(p, 'utf8');
+      for (const line of raw.split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t || t.startsWith('#')) continue;
+        const eq = t.indexOf('=');
+        if (eq <= 0) continue;
+        const key = t.slice(0, eq).trim();
+        let val = t.slice(eq + 1).trim();
+        if (
+          (val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))
+        ) {
+          val = val.slice(1, -1);
+        }
+        if (process.env[key] === undefined || process.env[key] === '') {
+          process.env[key] = val;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 /**
  * 打印使用说明
@@ -99,6 +135,11 @@ async function runMigrations() {
     console.log('迁移完成');
   } catch (error: any) {
     console.error('运行迁移失败:', error.message);
+    if (String(error?.code) === 'ECONNREFUSED' || /ECONNREFUSED/i.test(String(error))) {
+      console.error(
+        '\n提示: 无法连接数据库。请先在本机启动 PostgreSQL（例如启动 Docker Desktop 后在 infrastructure/postgres 执行: docker compose up -d），再重试 pnpm run migrate:run。',
+      );
+    }
     if (error.stack) {
       console.error(error.stack);
     }
@@ -204,6 +245,8 @@ async function showMigrations() {
  * 主函数
  */
 async function main() {
+  loadEnvFiles();
+
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {

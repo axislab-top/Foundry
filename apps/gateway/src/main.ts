@@ -64,7 +64,8 @@ if (!envLoaded) {
 }
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, type INestApplication } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { createLogger, LogLevel } from '@service/logging';
@@ -81,6 +82,59 @@ import { HttpExceptionFilter } from './common/exceptions/filters/http-exception.
 import { AllExceptionsFilter } from './common/exceptions/filters/all-exceptions.filter.js';
 import { GatewayExceptionFilter } from './common/exceptions/filters/gateway-exception.filter.js';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard.js';
+import { RedisIoAdapter } from './common/websocket/redis-io.adapter.js';
+
+async function configureWebSocketAdapter(
+  app: INestApplication,
+  configService: ConfigService,
+): Promise<void> {
+  const mode = configService.getSocketIoRedisAdapterMode();
+  if (mode === 'off') {
+    app.useWebSocketAdapter(new IoAdapter(app));
+    return;
+  }
+
+  const redisCfg = configService.getRedisConfigForSocketIoAdapter();
+  const allowFallback = configService.isSocketIoRedisAdapterFallbackEnabled();
+  const redisIoAdapter = new RedisIoAdapter(app);
+
+  try {
+    await redisIoAdapter.connectToRedis(redisCfg);
+    app.useWebSocketAdapter(redisIoAdapter);
+    process.stderr.write(
+      '[Gateway] Socket.IO Redis adapter enabled (multi-instance scaling)\n',
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (mode === 'on' && !allowFallback) {
+      await redisIoAdapter.disconnectRedis().catch(() => undefined);
+      throw err;
+    }
+
+    if (mode === 'on' && allowFallback) {
+      process.stderr.write(
+        `[Gateway] Socket.IO Redis adapter failed (mode=on), falling back to in-memory: ${message}\n`,
+      );
+      await redisIoAdapter.disconnectRedis().catch(() => undefined);
+      app.useWebSocketAdapter(new IoAdapter(app));
+      return;
+    }
+
+    // auto
+    if (allowFallback) {
+      process.stderr.write(
+        `[Gateway] Socket.IO Redis adapter failed, falling back to in-memory: ${message}\n`,
+      );
+      await redisIoAdapter.disconnectRedis().catch(() => undefined);
+      app.useWebSocketAdapter(new IoAdapter(app));
+      return;
+    }
+
+    await redisIoAdapter.disconnectRedis().catch(() => undefined);
+    throw err;
+  }
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -93,7 +147,9 @@ async function bootstrap() {
   // 获取配置服务
   const configService = app.get(ConfigService);
   const appConfig = configService.getAppConfig();
-  
+
+  await configureWebSocketAdapter(app, configService);
+
   // 从环境变量读取日志级别，默认为 INFO
   const logLevelEnv = (process.env.LOG_LEVEL?.toLowerCase() || 'info') as LogLevel;
   const logLevel = Object.values(LogLevel).includes(logLevelEnv) 
@@ -233,4 +289,21 @@ async function bootstrap() {
   });
 }
 
-bootstrap();
+bootstrap().catch((reason: unknown) => {
+  const msg =
+    reason instanceof Error
+      ? `${reason.message}\n${reason.stack ?? ''}`
+      : typeof reason === 'object' && reason !== null
+        ? (() => {
+            try {
+              return JSON.stringify(reason, null, 2);
+            } catch {
+              return String(reason);
+            }
+          })()
+        : String(reason);
+  // eslint-disable-next-line no-console -- 启动失败时 Nest Logger 可能尚未完全就绪
+  console.error('[Gateway] Bootstrap failed:\n', msg);
+  process.exitCode = 1;
+  process.exit(1);
+});

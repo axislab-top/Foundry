@@ -1,0 +1,631 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  Building2, Search, Filter, Plus, MoreVertical, 
+  ChevronRight, Download, Eye, Edit3, Power, 
+  ShieldCheck, Users, CreditCard, History, 
+  MapPin, Mail, Phone, Globe, ExternalLink,
+  CheckCircle2, AlertCircle, Clock, X, LayoutGrid, List,
+  ChevronDown, ArrowUpRight, ArrowDownRight, Settings
+} from 'lucide-react';
+
+// --- 模拟常量数据 ---
+const COMPANY_TYPES = ['企业', '个人', '机构', '政府单位'];
+const STATUS_OPTIONS = ['Active', 'Paused', 'Archived'];
+const AUTH_STATUS = ['未提交', '待审核', '已通过', '已拒绝'];
+const PLANS = ['Free', 'Professional', 'Enterprise', 'Ultimate'];
+
+const MOCK_COMPANIES = [
+  { 
+    id: 'COMP-001', 
+    name: '智启 AI 实验室', 
+    shortName: '智启AI',
+    code: '91310115MA1K2L3J45',
+    type: '企业',
+    industry: '人工智能',
+    status: 'Active', 
+    authStatus: '已通过',
+    plan: 'Enterprise',
+    expireDate: '2025-12-31',
+    members: 45,
+    admin: { name: '张建国', email: 'zhang@zhiqi.ai', phone: '13800138000' },
+    address: '上海市浦东新区张江高科',
+    createdAt: '2023-10-12',
+    updatedAt: '2024-05-20',
+    budgetUsed: 65
+  },
+  { 
+    id: 'COMP-002', 
+    name: '灵犀创意矩阵', 
+    shortName: '灵犀创意',
+    code: '91310115MA7G8H9I0X',
+    type: '机构',
+    industry: '文化传媒',
+    status: 'Active', 
+    authStatus: '待审核',
+    plan: 'Professional',
+    expireDate: '2024-11-15',
+    members: 12,
+    admin: { name: '李思思', email: 'li@linxi.io', phone: '13911223344' },
+    address: '北京市朝阳区三里屯',
+    createdAt: '2024-01-05',
+    updatedAt: '2024-05-18',
+    budgetUsed: 82
+  },
+  { 
+    id: 'COMP-003', 
+    name: '极客先锋个人工作室', 
+    shortName: '极客先锋',
+    code: '-',
+    type: '个人',
+    industry: '软件开发',
+    status: 'Paused', 
+    authStatus: '已通过',
+    plan: 'Free',
+    expireDate: '2099-01-01',
+    members: 1,
+    admin: { name: '王极客', email: 'geek@gmail.com', phone: '15066778899' },
+    address: '杭州市西湖区',
+    createdAt: '2022-05-20',
+    updatedAt: '2024-02-10',
+    budgetUsed: 15
+  }
+];
+
+// --- 通用 UI 组件 ---
+const Badge = ({ children, variant = 'gray' }) => {
+  const styles = {
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+    orange: 'bg-orange-50 text-orange-700 border-orange-100',
+    red: 'bg-rose-50 text-rose-700 border-rose-100',
+    gray: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+  return <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${styles[variant]}`}>{children}</span>;
+};
+
+// --- 页面主组件 ---
+export default function App() {
+  const [view, setView] = useState('list'); // 'list' | 'create' | 'detail'
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'card'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('All');
+
+  // --- 列表页逻辑 ---
+  const filteredCompanies = useMemo(() => {
+    return MOCK_COMPANIES.filter(c => {
+      const matchSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.id.includes(searchQuery);
+      const matchStatus = filterStatus === 'All' || c.status === filterStatus;
+      return matchSearch && matchStatus;
+    });
+  }, [searchQuery, filterStatus]);
+
+  const handleViewDetail = (company) => {
+    setSelectedCompany(company);
+    setView('detail');
+  };
+
+  const handleEdit = (company) => {
+    setSelectedCompany(company);
+    setView('create'); // 复用创建页作为编辑页
+  };
+
+  // --- 子页面渲染 ---
+
+  // 1. 列表页内容
+  const renderList = () => (
+    <div className="space-y-6">
+      {/* 顶部工具栏 */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3 flex-1 min-w-[300px]">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="搜索公司名称、ID、管理员..." 
+              className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select 
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="All">所有状态</option>
+            <option value="Active">已启用</option>
+            <option value="Paused">已停用</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-slate-100 p-1 rounded-lg mr-2">
+            <button 
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-md ${viewMode === 'table' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}
+            >
+              <List size={16} />
+            </button>
+            <button 
+              onClick={() => setViewMode('card')}
+              className={`p-1.5 rounded-md ${viewMode === 'card' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </div>
+          <button className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50">
+            <Download size={16} /> 导出 CSV
+          </button>
+          <button 
+            onClick={() => { setSelectedCompany(null); setView('create'); }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-md shadow-blue-600/20"
+          >
+            <Plus size={18} /> 新建公司
+          </button>
+        </div>
+      </div>
+
+      {/* 表格视图 */}
+      {viewMode === 'table' ? (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-medium">
+              <tr>
+                <th className="px-6 py-4 font-semibold">公司名称 / ID</th>
+                <th className="px-6 py-4 font-semibold">主体类型</th>
+                <th className="px-6 py-4 font-semibold">认证状态</th>
+                <th className="px-6 py-4 font-semibold">套餐</th>
+                <th className="px-6 py-4 font-semibold">成员</th>
+                <th className="px-6 py-4 font-semibold">状态</th>
+                <th className="px-6 py-4 font-semibold text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filteredCompanies.map(c => (
+                <tr key={c.id} className="hover:bg-slate-50/80 transition-colors group">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 font-bold">
+                        {c.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-800">{c.name}</p>
+                        <p className="text-[10px] font-mono text-slate-400">{c.id}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-slate-600">{c.type}</td>
+                  <td className="px-6 py-4">
+                    <Badge variant={c.authStatus === '已通过' ? 'green' : c.authStatus === '待审核' ? 'orange' : 'gray'}>
+                      {c.authStatus}
+                    </Badge>
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="text-slate-700 font-medium">{c.plan}</p>
+                    <p className="text-[10px] text-slate-400">至 {c.expireDate}</p>
+                  </td>
+                  <td className="px-6 py-4 font-mono text-slate-600">{c.members}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full ${c.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                      <span className="text-xs font-medium">{c.status === 'Active' ? '运行中' : '已停用'}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleViewDetail(c)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="查看"><Eye size={16} /></button>
+                      <button onClick={() => handleEdit(c)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="编辑"><Edit3 size={16} /></button>
+                      <button className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors" title="禁用"><Power size={16} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredCompanies.length === 0 && (
+            <div className="py-20 text-center">
+              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-300">
+                <Search size={24} className="text-slate-300" />
+              </div>
+              <h3 className="text-slate-800 font-bold">未找到匹配的公司</h3>
+              <p className="text-slate-500 text-sm mt-1">请尝试更换搜索词或筛选条件</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredCompanies.map(c => (
+            <div key={c.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-5 border-b border-slate-50">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 text-xl font-black">
+                    {c.name.charAt(0)}
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <Badge variant={c.status === 'Active' ? 'green' : 'gray'}>{c.status}</Badge>
+                    <Badge variant="blue">{c.plan}</Badge>
+                  </div>
+                </div>
+                <h4 className="font-bold text-slate-800 text-lg leading-tight">{c.name}</h4>
+                <p className="text-xs text-slate-400 mt-1 font-mono">{c.id} | {c.industry}</p>
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-y-4 gap-x-2">
+                <div>
+                  <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">主联系人</p>
+                  <p className="text-sm font-medium text-slate-700 truncate">{c.admin.name}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">资源消耗</p>
+                  <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                    <div className="bg-blue-500 h-full" style={{ width: `${c.budgetUsed}%` }}></div>
+                  </div>
+                </div>
+                <div className="col-span-2">
+                   <p className="text-[10px] uppercase text-slate-400 font-bold tracking-wider mb-1">地址</p>
+                   <p className="text-xs text-slate-600 truncate">{c.address}</p>
+                </div>
+              </div>
+              <div className="p-3 bg-slate-50 flex gap-2">
+                <button onClick={() => handleViewDetail(c)} className="flex-1 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg hover:border-blue-300 hover:text-blue-600 transition-all">详情</button>
+                <button onClick={() => handleEdit(c)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100"><Edit3 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // 2. 创建/编辑页面内容
+  const renderCreateForm = () => (
+    <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <div>
+            <h2 className="text-xl font-black text-slate-800">{selectedCompany ? '编辑公司资料' : '创建新公司主体'}</h2>
+            <p className="text-sm text-slate-500 mt-1">请填写详细的基础信息与管理配置，创建后将自动记录审计日志。</p>
+          </div>
+          <button onClick={() => setView('list')} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={20} /></button>
+        </div>
+
+        <div className="p-8 space-y-8">
+          {/* 基础信息 */}
+          <section>
+            <div className="flex items-center gap-2 mb-6 border-l-4 border-blue-600 pl-3">
+              <h3 className="font-bold text-slate-800">基础资料</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">公司全称 <span className="text-rose-500">*</span></label>
+                <input 
+                  type="text" 
+                  defaultValue={selectedCompany?.name}
+                  placeholder="例如：北京某某科技有限公司" 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">公司简称</label>
+                <input 
+                  type="text" 
+                  defaultValue={selectedCompany?.shortName}
+                  placeholder="例如：某某科技" 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">主体类型 <span className="text-rose-500">*</span></label>
+                {/* 修复点: 使用 defaultValue 而不是在 option 上使用 selected */}
+                <select 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  defaultValue={selectedCompany?.type || COMPANY_TYPES[0]}
+                >
+                  {COMPANY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">注册号 / 信用代码</label>
+                <input 
+                  type="text" 
+                  defaultValue={selectedCompany?.code}
+                  placeholder="18 位社会统一信用代码" 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none font-mono"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* 联系人信息 */}
+          <section>
+            <div className="flex items-center gap-2 mb-6 border-l-4 border-emerald-500 pl-3">
+              <h3 className="font-bold text-slate-800">管理员信息</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">姓名 <span className="text-rose-500">*</span></label>
+                <input 
+                  type="text" 
+                  defaultValue={selectedCompany?.admin?.name}
+                  placeholder="管理员姓名" 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">工作邮箱 <span className="text-rose-500">*</span></label>
+                <input 
+                  type="email" 
+                  defaultValue={selectedCompany?.admin?.email}
+                  placeholder="email@company.com" 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">手机号</label>
+                <input 
+                  type="tel" 
+                  defaultValue={selectedCompany?.admin?.phone}
+                  placeholder="138xxxx...." 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* 初始化配置 */}
+          <section className="bg-slate-50 p-6 rounded-xl border border-slate-100">
+            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Settings size={18} /> 初始化管理配置</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">默认订阅套餐</label>
+                {/* 修复点: 使用 defaultValue 而不是在 option 上使用 selected */}
+                <select 
+                  className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  defaultValue={selectedCompany?.plan || PLANS[0]}
+                >
+                  {PLANS.map(p => <option key={p} value={p}>{p} Plan</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">初始 Token 额度</label>
+                <input type="number" placeholder="5,000,000" className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none" />
+              </div>
+              <div className="col-span-full flex items-center gap-3">
+                <input type="checkbox" id="mfa" className="w-4 h-4 text-blue-600 rounded border-slate-300" />
+                <label htmlFor="mfa" className="text-sm text-slate-600">强制启用多因素认证 (MFA)</label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+          <button onClick={() => setView('list')} className="px-6 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-white transition-colors">取消</button>
+          <button onClick={() => setView('list')} className="px-8 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20 active:scale-95 transition-all">
+            {selectedCompany ? '保存变更' : '立即创建'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 3. 详情页内容
+  const renderDetail = () => {
+    const company = selectedCompany;
+    if (!company) return null;
+
+    return (
+      <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+        {/* 返回与快捷状态 */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setView('list')} className="p-2 hover:bg-white border border-transparent hover:border-slate-200 rounded-lg text-slate-500 transition-all">
+              <ChevronRight size={24} className="rotate-180" />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-black text-slate-800">{company.name}</h2>
+                <Badge variant={company.status === 'Active' ? 'green' : 'gray'}>{company.status}</Badge>
+              </div>
+              <p className="text-sm text-slate-500 font-mono">Company ID: {company.id}</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => handleEdit(company)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"><Edit3 size={16} /> 编辑</button>
+            <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors">停用该主体</button>
+          </div>
+        </div>
+
+        {/* 顶部概览卡片 */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: '当前套餐', value: company.plan, sub: `到期: ${company.expireDate}`, icon: CreditCard, color: 'text-blue-600' },
+            { label: '成员数', value: company.members, sub: '活跃用户: 8', icon: Users, color: 'text-indigo-600' },
+            { label: '认证状态', value: company.authStatus, sub: '已验证营业执照', icon: ShieldCheck, color: 'text-emerald-600' },
+            { label: '创建时间', value: company.createdAt, sub: `最后更新: ${company.updatedAt}`, icon: Clock, color: 'text-slate-600' },
+          ].map((stat, i) => (
+            <div key={i} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`p-2 rounded-lg bg-slate-50 ${stat.color}`}><stat.icon size={18} /></div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{stat.label}</span>
+              </div>
+              <p className="text-xl font-black text-slate-800">{stat.value}</p>
+              <p className="text-[10px] text-slate-500 mt-1">{stat.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* 标签页导航 */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex border-b border-slate-100 overflow-x-auto no-scrollbar">
+            {['概览资料', '成员管理', '订阅计费', '认证资料', '审计日志'].map((tab, idx) => (
+              <button key={tab} className={`px-6 py-4 text-sm font-bold transition-all whitespace-nowrap ${idx === 0 ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-800'}`}>
+                {tab}
+              </button>
+            ))}
+          </div>
+          
+          <div className="p-8">
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-8">
+                   {/* 基础信息详情 */}
+                   <div>
+                      <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Building2 size={18} className="text-blue-500" /> 公司基础资料</h4>
+                      <div className="grid grid-cols-2 gap-y-6 gap-x-4 bg-slate-50/50 p-6 rounded-xl border border-slate-100">
+                         {[
+                           { l: '公司全称', v: company.name },
+                           { l: '公司简称', v: company.shortName },
+                           { l: '统一社会信用代码', v: company.code, mono: true },
+                           { l: '所属行业', v: company.industry },
+                           { l: '详细地址', v: company.address, full: true },
+                         ].map((item, i) => (
+                           <div key={i} className={item.full ? 'col-span-2' : ''}>
+                             <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">{item.l}</p>
+                             <p className={`text-sm font-medium text-slate-700 ${item.mono ? 'font-mono' : ''}`}>{item.v || '-'}</p>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* 管理员与联系方式 */}
+                   <div>
+                      <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Users size={18} className="text-emerald-500" /> 核心管理联系人</h4>
+                      <div className="flex items-center gap-6 bg-white p-6 rounded-xl border border-slate-200">
+                         <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-400 to-teal-500 flex items-center justify-center text-white text-2xl font-black">
+                           {company.admin.name.charAt(0)}
+                         </div>
+                         <div className="flex-1 grid grid-cols-2 gap-4">
+                            <div>
+                               <p className="text-sm font-bold text-slate-800">{company.admin.name}</p>
+                               <p className="text-xs text-slate-500">公司主管理员 (Super Admin)</p>
+                            </div>
+                            <div className="space-y-1">
+                               <div className="flex items-center gap-2 text-xs text-slate-600"><Mail size={14} /> {company.admin.email}</div>
+                               <div className="flex items-center gap-2 text-xs text-slate-600"><Phone size={14} /> {company.admin.phone}</div>
+                            </div>
+                         </div>
+                         <button className="text-blue-600 text-xs font-bold hover:underline">重置 MFA</button>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="space-y-6">
+                   {/* 资源使用卡片 */}
+                   <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl shadow-slate-200">
+                      <div className="flex justify-between items-center mb-6">
+                        <h4 className="font-bold text-sm text-slate-400 uppercase tracking-widest">资源用量</h4>
+                        <ArrowUpRight size={20} className="text-emerald-400" />
+                      </div>
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex justify-between text-xs mb-1.5">
+                            <span className="text-slate-400">Tokens (GPT-4o)</span>
+                            <span className="font-mono">65%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-emerald-500 h-full" style={{ width: '65%' }}></div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-xs mb-1.5">
+                            <span className="text-slate-400">存储空间</span>
+                            <span className="font-mono">22%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-blue-500 h-full" style={{ width: '22%' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                      <button className="w-full mt-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold transition-colors">调整配额</button>
+                   </div>
+
+                   {/* 最近动态 */}
+                   <div className="bg-white border border-slate-200 rounded-xl p-6">
+                      <h4 className="font-bold text-slate-800 mb-4 text-sm flex items-center justify-between">
+                         操作审计
+                         <button className="text-xs text-blue-600 hover:underline">全部</button>
+                      </h4>
+                      <div className="space-y-4">
+                         {[
+                           { action: '更新基础资料', time: '2小时前', user: 'Admin' },
+                           { action: '通过认证审核', time: '1天前', user: 'System' },
+                           { action: '续费 Enterprise 套餐', time: '3天前', user: 'Finance' },
+                         ].map((log, i) => (
+                           <div key={i} className="flex gap-3 relative pb-4 border-l-2 border-slate-50 pl-4 last:pb-0">
+                              <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-slate-200"></div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-700">{log.action}</p>
+                                <p className="text-[10px] text-slate-400">{log.time} · 操作人: {log.user}</p>
+                              </div>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6 md:p-8">
+      <div className="max-w-[1600px] mx-auto">
+        {/* 顶部面包屑导航 */}
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-400 mb-6">
+          <span className="hover:text-blue-600 cursor-pointer transition-colors">Admin System</span>
+          <ChevronRight size={14} />
+          <span className={`cursor-pointer transition-colors ${view === 'list' ? 'text-slate-800 font-bold' : 'hover:text-blue-600'}`} onClick={() => setView('list')}>Companies</span>
+          {view !== 'list' && (
+            <>
+              <ChevronRight size={14} />
+              <span className="text-slate-800 font-bold">{view === 'create' ? (selectedCompany ? '编辑' : '新建') : '主体详情'}</span>
+            </>
+          )}
+        </div>
+
+        {/* 主内容渲染 */}
+        {view === 'list' && (
+          <div className="animate-in fade-in duration-300">
+             <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                <div>
+                  <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">
+                    <Building2 className="text-blue-600" size={32} />
+                    公司主体管理
+                  </h1>
+                  <p className="text-slate-500 mt-2 text-sm max-w-2xl leading-relaxed">
+                    管理全平台 AI 公司主体。您可以审核入驻资料、配置资源套餐、监控运行健康度以及处理相关的合规风控。
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="text-right px-3 border-r border-slate-100">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">主体总数</p>
+                    <p className="text-lg font-black text-slate-800">1,284</p>
+                  </div>
+                  <div className="text-right px-3">
+                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">待审核</p>
+                    <p className="text-lg font-black text-orange-500">12</p>
+                  </div>
+                </div>
+             </div>
+             {renderList()}
+          </div>
+        )}
+
+        {view === 'create' && renderCreateForm()}
+        {view === 'detail' && renderDetail()}
+      </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slide-in-from-bottom { from { transform: translateY(10px); } to { transform: translateY(0); } }
+        @keyframes slide-in-from-right { from { transform: translateX(10px); } to { transform: translateX(0); } }
+        .animate-in { animation-fill-mode: both; }
+        .fade-in { animation-name: fade-in; }
+        .slide-in-from-bottom-4 { animation-name: slide-in-from-bottom; }
+        .slide-in-from-right-4 { animation-name: slide-in-from-right; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}} />
+    </div>
+  );
+}

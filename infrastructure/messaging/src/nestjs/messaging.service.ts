@@ -62,14 +62,52 @@ export class MessagingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 订阅消息
+   * 订阅消息。
+   * 未连接或订阅失败时返回 false（不抛错），与 {@link publish} 一致，避免 MQ 未就绪时拖垮应用启动。
    */
   async subscribe<T extends BaseEvent>(
     eventType: string,
     handler: MessageHandler<T>,
     options?: SubscribeOptions,
-  ): Promise<void> {
-    return this.adapter.subscribe(eventType, handler, options);
+  ): Promise<boolean> {
+    if (!this.isConnected()) {
+      console.warn(
+        'MessagingService: Not connected, subscription skipped:',
+        eventType,
+      );
+      return false;
+    }
+    try {
+      await this.adapter.subscribe(eventType, handler, options);
+      return true;
+    } catch (error: any) {
+      console.error(
+        'MessagingService: Failed to subscribe:',
+        eventType,
+        error?.message,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * 在 MQ 未就绪时周期性重试订阅，直到成功（每路调用独立定时器）。
+   */
+  subscribeWithBackoff<T extends BaseEvent>(
+    eventType: string,
+    handler: MessageHandler<T>,
+    options?: SubscribeOptions,
+  ): void {
+    void (async () => {
+      if (await this.subscribe(eventType, handler, options)) {
+        return;
+      }
+      const id = setInterval(async () => {
+        if (await this.subscribe(eventType, handler, options)) {
+          clearInterval(id);
+        }
+      }, 5000);
+    })();
   }
 
   /**

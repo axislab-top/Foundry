@@ -5,7 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { ErrorCode, ErrorMessages } from '../error-codes.js';
 import { BaseExceptionFilter } from './base-exception.filter.js';
 

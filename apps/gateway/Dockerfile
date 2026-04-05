@@ -15,8 +15,10 @@ COPY tooling ./tooling
 # 安装 pnpm
 RUN npm install -g pnpm@10.27.0
 
-# 安装依赖并构建
-RUN pnpm install --no-frozen-lockfile && pnpm --filter @service/gateway build
+# 安装依赖并构建（workspace 包须在镜像内 tsc，避免 tenant 等 dist 缺失）
+RUN pnpm install --no-frozen-lockfile \
+    && pnpm --filter @service/tenant build \
+    && pnpm --filter @service/gateway build
 
 # 生产镜像
 FROM node:20-alpine
@@ -46,6 +48,7 @@ RUN pnpm rebuild bcrypt || true
 # 从构建阶段复制应用和日志库的构建产物（覆盖可能存在的旧 dist）
 COPY --from=builder /app/apps/gateway/dist ./apps/gateway/dist
 COPY --from=builder /app/infrastructure/logging/dist ./infrastructure/logging/dist
+COPY --from=builder /app/infrastructure/tenant/dist ./infrastructure/tenant/dist
 
 WORKDIR /app/apps/gateway
 

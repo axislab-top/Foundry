@@ -106,6 +106,28 @@ export interface StorageConfig {
 /**
  * 完整配置接口
  */
+export interface MemoryConfig {
+  openaiApiKey?: string;
+  openaiBaseUrl: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  /** RAG SQL 执行超时（毫秒） */
+  ragQueryTimeoutMs: number;
+  /** 混合检索：向量得分权重（余弦），其余为关键词匹配权重 */
+  hybridVectorWeight: number;
+  /**
+   * 未显式传 keyword 时，用查询串走 PostgreSQL 全文 tsvector（与向量加权混合）。
+   * 依赖迁移 `content_search` GIN 索引。
+   */
+  hybridFullTextSearch: boolean;
+  /** 检索后按综合得分过滤（0=关闭） */
+  ragMinScore: number;
+  /** 单日 Embedding 调用上限（0=不限制） */
+  embeddingDailyCap: number;
+  /** 单日总结类 LLM 调用上限（0=不限制） */
+  summaryDailyCap: number;
+}
+
 export interface ApiConfig {
   app: AppConfig;
   database: DatabaseConfig;
@@ -114,6 +136,7 @@ export interface ApiConfig {
   http: HttpConfig;
   cors: CorsConfig;
   storage: StorageConfig;
+  memory: MemoryConfig;
 }
 
 

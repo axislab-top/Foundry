@@ -27,6 +27,7 @@ export function createSwaggerConfig(configService: ConfigService) {
     .addTag('oauth', '第三方登录')
     .addTag('files', '文件管理')
     .addTag('health', '健康检查')
+    .addTag('templates', '模板市场 / 一键创建公司')
     .setContact('API Team', '', 'api@example.com')
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')
     .addServer(`http://localhost:${appConfig.port}`, '本地开发环境')

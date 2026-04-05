@@ -11,6 +11,7 @@ import { MonitoringService } from '../../../common/monitoring/monitoring.service
 import { TracingService } from '../../../common/tracing/tracing.service.js';
 import { ErrorCode } from '../../../common/exceptions/error-codes.js';
 import { GatewayException } from '../../../common/exceptions/filters/gateway-exception.filter.js';
+import { resolveCompanyIdFromRequest } from '@service/tenant';
 
 /**
  * 基础代理服务
@@ -26,6 +27,56 @@ export class BaseProxyService {
     @Optional() private readonly monitoringService?: MonitoringService,
     @Optional() private readonly tracingService?: TracingService,
   ) {}
+
+  /**
+   * multipart / 原始二进制请求的 body 不会被 Express json/urlencoded 解析进 `req.body`，
+   * 仍留在 IncomingMessage 流上。此处必须把原请求流作为 axios data 转发，否则下游收到空 body → 400。
+   */
+  private buildProxyBodyConfig(originalRequest?: any): Pick<
+    AxiosRequestConfig,
+    'data' | 'maxBodyLength' | 'maxContentLength'
+  > {
+    if (!originalRequest) {
+      return { data: undefined };
+    }
+    const upper = String(originalRequest.method ?? 'GET').toUpperCase();
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(upper)) {
+      return { data: originalRequest.body };
+    }
+    const ct = String(originalRequest.headers?.['content-type'] ?? '').toLowerCase();
+    const useRawStream =
+      typeof originalRequest.pipe === 'function' &&
+      (ct.includes('multipart/form-data') || ct.includes('application/octet-stream'));
+    if (useRawStream) {
+      return {
+        data: originalRequest,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      };
+    }
+    return { data: originalRequest.body };
+  }
+
+  /**
+   * 流式转发时补齐长度相关头，避免 axios 与下游对 body 边界判断不一致。
+   */
+  private applyStreamLengthHeaders(
+    headers: Record<string, string>,
+    originalRequest?: any,
+    axiosData?: unknown,
+  ): void {
+    if (!originalRequest || axiosData !== originalRequest) {
+      return;
+    }
+    const cl = originalRequest.headers?.['content-length'];
+    if (cl) {
+      headers['content-length'] = Array.isArray(cl) ? cl[0] : String(cl);
+    }
+    const te = originalRequest.headers?.['transfer-encoding'];
+    if (te) {
+      headers['transfer-encoding'] = Array.isArray(te) ? te[0] : String(te);
+    }
+  }
 
   /**
    * 代理请求
@@ -51,16 +102,20 @@ export class BaseProxyService {
       fullRequestUrl: targetUrl,
     });
 
+    const bodyPart = this.buildProxyBodyConfig(originalRequest);
+    const headers: Record<string, string> = {
+      ...this.extractHeaders(originalRequest),
+      ...options.headers,
+    };
+    this.applyStreamLengthHeaders(headers, originalRequest, bodyPart.data);
+
     // 构建请求配置
     const axiosConfig: AxiosRequestConfig = {
       method: method.toLowerCase() as any,
       url: targetUrl,
       timeout: timeoutMs,
-      headers: {
-        ...this.extractHeaders(originalRequest),
-        ...options.headers,
-      },
-      data: originalRequest?.body,
+      headers,
+      ...bodyPart,
       params: originalRequest?.query,
     };
 
@@ -69,6 +124,7 @@ export class BaseProxyService {
       url: axiosConfig.url,
       hasHeaders: !!axiosConfig.headers,
       hasData: !!axiosConfig.data,
+      streamsRawRequest: bodyPart.data === originalRequest,
       hasParams: !!axiosConfig.params,
       timeout: axiosConfig.timeout,
     });
@@ -393,8 +449,10 @@ export class BaseProxyService {
         'accept',
         'user-agent',
         'x-request-id',
+        'x-run-id',
         'x-forwarded-for',
         'x-forwarded-proto',
+        'x-company-id',
       ];
 
       for (const header of importantHeaders) {
@@ -429,6 +487,14 @@ export class BaseProxyService {
         headers['x-user-info'] = encodedUser;
       } catch {
         // 编码失败时忽略，不阻断请求
+      }
+    }
+
+    // 租户上下文透传：若上游未明确传递，尝试从 user/query 中解析后补齐。
+    if (!headers['x-company-id']) {
+      const companyId = resolveCompanyIdFromRequest(request);
+      if (companyId) {
+        headers['x-company-id'] = companyId;
       }
     }
 

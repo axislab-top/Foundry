@@ -455,12 +455,20 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
     const {
       host = 'localhost',
       port = 5672,
-      username = 'guest',
-      password = 'guest',
+      /** 与 docker-compose / .env.shared 默认一致；避免遗漏 env 时误用 guest 触发 broker 拒绝 */
+      username = 'admin',
+      password = 'admin123',
       vhost = '/',
     } = this.options;
 
-    return `amqp://${username}:${password}@${host}:${port}${vhost}`;
+    const user = encodeURIComponent(username);
+    const pass = encodeURIComponent(password);
+    const vhostPath =
+      !vhost || vhost === '/'
+        ? '/'
+        : `/${encodeURIComponent(String(vhost).replace(/^\//, ''))}`;
+
+    return `amqp://${user}:${pass}@${host}:${port}${vhostPath}`;
   }
 
   /**

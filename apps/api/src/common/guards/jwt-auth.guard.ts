@@ -20,6 +20,13 @@ export class JwtAuthGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    // 微服务 RPC 不经 HTTP 中间件，无 req.user；身份由 Gateway 校验后通过 payload.actor 传入各 RpcController。
+    const ctxType =
+      typeof context.getType === 'function' ? context.getType() : 'http';
+    if (ctxType === 'rpc') {
+      return true;
+    }
+
     // 检查是否是公开路由
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),

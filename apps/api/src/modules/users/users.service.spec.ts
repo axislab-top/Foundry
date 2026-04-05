@@ -10,6 +10,7 @@ import { User } from './entities/user.entity.js';
 import { CacheService } from '../../common/cache/cache.service.js';
 import { SecurityService } from '../../common/security/security.service.js';
 import { MessagingService } from '@service/messaging';
+import { TenantContextService } from '@service/tenant';
 import { createMockCacheService, createMockSecurityService, createMockMessagingService, createMockUser } from '../../../test/utils/mock-factories.js';
 import { getMockRepositoryProvider } from '../../../test/utils/test-helpers.js';
 
@@ -19,6 +20,7 @@ describe('UsersService', () => {
   let cacheService: jest.Mocked<CacheService>;
   let messagingService: jest.Mocked<MessagingService>;
   let securityService: jest.Mocked<SecurityService>;
+  let tenantContext: jest.Mocked<TenantContextService>;
 
   beforeEach(async () => {
     const mockRepository = getMockRepositoryProvider<User>(User);
@@ -30,6 +32,9 @@ describe('UsersService', () => {
     };
     mockSecurityService.getHashingManager = jest.fn(() => hashingManager as any);
     const mockMessagingService = createMockMessagingService();
+    const mockTenantContext = {
+      getCompanyId: jest.fn().mockReturnValue('company-test'),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +55,10 @@ describe('UsersService', () => {
           provide: MessagingService,
           useValue: mockMessagingService,
         },
+        {
+          provide: TenantContextService,
+          useValue: mockTenantContext,
+        },
       ],
     }).compile();
 
@@ -58,6 +67,7 @@ describe('UsersService', () => {
     cacheService = module.get(CacheService);
     messagingService = module.get(MessagingService);
     securityService = module.get(SecurityService);
+    tenantContext = module.get(TenantContextService);
   });
 
   afterEach(() => {
@@ -106,6 +116,7 @@ describe('UsersService', () => {
         }),
       );
       expect(result).toEqual(savedUser);
+      expect(tenantContext.getCompanyId).toHaveBeenCalled();
     });
 
     it('should throw ConflictException if email already exists', async () => {
@@ -228,6 +239,21 @@ describe('UsersService', () => {
       repository.findOne.mockResolvedValue(null);
 
       await expect(service.findOne(userId)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should use tenant-prefixed cache key', async () => {
+      const userId = 'tenant-user-1';
+      const mockUser = createMockUser({ id: userId });
+
+      cacheService.get.mockResolvedValue(null);
+      repository.findOne.mockResolvedValue(mockUser as any);
+      cacheService.set.mockResolvedValue(undefined);
+
+      await service.findOne(userId);
+
+      expect(cacheService.get).toHaveBeenCalledWith(
+        'company:company-test:user:tenant-user-1',
+      );
     });
   });
 

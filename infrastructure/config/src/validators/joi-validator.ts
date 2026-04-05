@@ -4,12 +4,15 @@
 
 import { ConfigValidator, ValidationResult } from './validator.interface.js';
 import { ConfigObject } from '../types/index.js';
+import path from 'path';
 import { createRequire } from 'module';
 
 // 在模块加载时初始化 Joi
 let Joi: any;
 try {
-  const require = createRequire(import.meta.url);
+  // Avoid `import.meta.url` so Jest/ts-jest can compile this file under different TS module settings.
+  // Resolving from a dummy file in `process.cwd()` is sufficient for `require('joi')` which comes from node_modules.
+  const require = createRequire(path.join(process.cwd(), 'noop.js'));
   Joi = require('joi');
 } catch (error) {
   // Joi 可能未安装，将在使用时抛出错误

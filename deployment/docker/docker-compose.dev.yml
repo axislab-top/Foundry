@@ -67,8 +67,9 @@ services:
       - service-network
     env_file:
       - ../../infrastructure/redis/.env
+    # 映射到宿主机，便于本机直接运行的 Gateway / redis-cli 使用 localhost 连接（非容器内 redis 主机名）
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
       - ../../infrastructure/redis/data:/data/backup:rw
@@ -196,8 +197,6 @@ services:
       consul:
         condition: service_healthy
         required: false
-      api-service:
-        condition: service_healthy
       webhooks-service:
         condition: service_healthy
       worker-service:

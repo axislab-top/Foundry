@@ -1,5 +1,5 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { createLogger, LogLevel } from '@service/logging';
 
 const logger = createLogger({
@@ -17,6 +17,7 @@ export class LoggerMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
     const { method, url, ip } = req;
     const requestId = req.headers['x-request-id'] as string;
+    const runId = req.headers['x-run-id'] as string;
     const traceId = req.headers['x-trace-id'] as string;
     const spanId = req.headers['x-span-id'] as string;
 
@@ -25,6 +26,7 @@ export class LoggerMiddleware implements NestMiddleware {
       url,
       ip,
       requestId,
+      runId,
       traceId,
       spanId,
       timestamp: new Date().toISOString(),
@@ -37,6 +39,7 @@ export class LoggerMiddleware implements NestMiddleware {
         url,
         ip,
         requestId,
+        runId,
         traceId,
         spanId,
         statusCode: res.statusCode,

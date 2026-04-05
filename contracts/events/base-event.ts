@@ -13,6 +13,7 @@ export interface BaseEvent {
   aggregateType: string;
   occurredAt: string;
   version: number;
+  companyId?: string;
   metadata?: Record<string, any>;
 }
 

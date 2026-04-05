@@ -1,0 +1,974 @@
+
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0F1117;
+  --ink2:#3D4250;
+  --ink3:#8C91A0;
+  --ink4:#B8BCCA;
+  --page:#F7F6F3;
+  --surface:#FFFFFF;
+  --surface2:#F2F1EE;
+  --border:#E4E2DC;
+  --border2:#D0CDC5;
+  --accent:#1A56FF;
+  --accent-light:#EEF2FF;
+  --accent-mid:#C7D4FF;
+  --green:#0D8A5A;
+  --green-light:#E8F7F1;
+  --amber:#B45309;
+  --amber-light:#FEF3C7;
+  --red:#C0392B;
+  --red-light:#FEE2E2;
+  --r:10px;--r-lg:16px;--r-xl:22px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);
+  --shadow:0 4px 12px rgba(0,0,0,0.08),0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg:0 12px 32px rgba(0,0,0,0.1),0 4px 8px rgba(0,0,0,0.05);
+}
+body{font-family:'Geist',sans-serif;background:var(--page);color:var(--ink);min-height:700px;font-size:14px;line-height:1.5}
+
+/* ── TOPBAR ── */
+.topbar{
+  height:52px;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 24px;gap:16px;
+  position:sticky;top:0;z-index:50;
+}
+.logo{font-family:'Geist',sans-serif;font-weight:600;font-size:15px;color:var(--ink);letter-spacing:-0.02em;display:flex;align-items:center;gap:7px}
+.logo-mark{width:24px;height:24px;background:var(--ink);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.logo-mark svg{width:14px;height:14px}
+.topbar-quick{
+  margin-left:auto;display:flex;align-items:center;gap:8px;
+  padding:6px 12px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--surface2);cursor:pointer;
+  font-size:12px;color:var(--ink2);font-weight:500;
+  transition:all 0.15s;
+}
+.topbar-quick:hover{border-color:var(--accent);color:var(--accent)}
+.topbar-back{
+  display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink3);
+  cursor:pointer;padding:4px 8px;border-radius:6px;transition:all 0.15s;
+}
+.topbar-back:hover{color:var(--ink);background:var(--surface2)}
+
+/* ── STEP PILLS ── */
+.step-bar{
+  height:48px;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;gap:0;
+}
+.spill{display:flex;align-items:center;gap:7px;padding:6px 14px;cursor:default;position:relative}
+.spill-num{
+  width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:600;
+  background:var(--surface2);border:1.5px solid var(--border2);
+  color:var(--ink3);transition:all 0.25s;flex-shrink:0;
+}
+.spill-label{font-size:12px;color:var(--ink3);font-weight:500;transition:color 0.25s}
+.spill.active .spill-num{background:var(--accent);border-color:var(--accent);color:#fff}
+.spill.active .spill-label{color:var(--ink);font-weight:600}
+.spill.done .spill-num{background:var(--green-light);border-color:#9FDDBE;color:var(--green)}
+.spill.done .spill-label{color:var(--ink3)}
+.spill-div{width:28px;height:1px;background:var(--border2)}
+
+/* ── LAYOUT ── */
+.body{padding:32px 20px 100px;display:flex;flex-direction:column;align-items:center;min-height:540px}
+.step-page{display:none;width:100%;max-width:760px;animation:slideUp 0.3s ease both}
+.step-page.active{display:flex;flex-direction:column}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+.page-head{margin-bottom:28px}
+.page-eyebrow{font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
+.page-title{font-family:'Instrument Serif',serif;font-size:clamp(24px,4vw,34px);font-weight:400;color:var(--ink);line-height:1.2;margin-bottom:8px}
+.page-sub{font-size:14px;color:var(--ink2);line-height:1.6;max-width:480px}
+
+/* ── CARDS ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px 22px;box-shadow:var(--shadow-sm)}
+.card-title{font-size:12px;font-weight:600;color:var(--ink2);letter-spacing:0.04em;text-transform:uppercase;margin-bottom:14px}
+
+/* ── LANDING ── */
+.mode-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.mode-card{
+  background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r-lg);
+  padding:22px 20px;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden;
+}
+.mode-card:hover{border-color:var(--accent-mid);box-shadow:var(--shadow);transform:translateY(-1px)}
+.mode-card.featured{border-color:var(--accent-mid);background:linear-gradient(135deg,var(--accent-light),#fff)}
+.mode-card-icon{
+  width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-size:17px;margin-bottom:14px;background:var(--surface2);border:1px solid var(--border);
+}
+.mode-card.featured .mode-card-icon{background:var(--accent-light);border-color:var(--accent-mid)}
+.mode-badge{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;
+  font-size:10px;font-weight:600;background:var(--accent-light);color:var(--accent);
+  border:1px solid var(--accent-mid);margin-bottom:8px;letter-spacing:0.03em;
+}
+.mode-title{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px}
+.mode-desc{font-size:12px;color:var(--ink2);line-height:1.6}
+.mode-link{font-size:12px;color:var(--accent);font-weight:500;margin-top:12px;display:flex;align-items:center;gap:4px}
+
+.quick-row{
+  background:var(--surface);border:1.5px solid var(--border2);border-radius:var(--r-lg);
+  padding:14px 14px 14px 18px;display:flex;align-items:center;gap:10px;
+  transition:border-color 0.2s;margin-bottom:12px;
+}
+.quick-row:focus-within{border-color:var(--accent)}
+.quick-row input{
+  flex:1;border:none;outline:none;background:transparent;
+  font-family:'Geist',sans-serif;font-size:13px;color:var(--ink);
+}
+.quick-row input::placeholder{color:var(--ink4)}
+.btn-primary{
+  padding:9px 18px;border-radius:8px;border:none;
+  background:var(--accent);color:#fff;
+  font-family:'Geist',sans-serif;font-size:13px;font-weight:500;
+  cursor:pointer;transition:all 0.2s;white-space:nowrap;
+  box-shadow:0 2px 8px rgba(26,86,255,0.25);
+}
+.btn-primary:hover{background:#1345E0;box-shadow:0 4px 14px rgba(26,86,255,0.35);transform:translateY(-1px)}
+.examples-row{display:flex;gap:7px;flex-wrap:wrap}
+.ex-chip{
+  padding:6px 13px;border-radius:20px;font-size:12px;font-weight:500;
+  border:1px solid var(--border2);background:var(--surface);color:var(--ink2);
+  cursor:pointer;transition:all 0.15s;
+}
+.ex-chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+.ex-label{font-size:11px;color:var(--ink3);margin-bottom:8px;font-weight:500}
+
+/* ── FORM ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field.full{grid-column:1/-1}
+.label{font-size:12px;font-weight:500;color:var(--ink2)}
+.label .req{color:var(--accent)}
+.input{
+  background:var(--surface);border:1.5px solid var(--border2);border-radius:8px;
+  padding:9px 13px;font-family:'Geist',sans-serif;font-size:13px;color:var(--ink);
+  outline:none;transition:border-color 0.15s;width:100%;
+}
+.input:focus{border-color:var(--accent)}
+.input::placeholder{color:var(--ink4)}
+.select{
+  background:var(--surface);border:1.5px solid var(--border2);border-radius:8px;
+  padding:9px 13px;font-family:'Geist',sans-serif;font-size:13px;color:var(--ink);
+  outline:none;appearance:none;cursor:pointer;width:100%;
+  background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238C91A0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 13px center;padding-right:32px;
+}
+.hint{font-size:11px;color:var(--ink3)}
+.hint code{
+  font-size:10px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;color:var(--accent);font-family:'Geist',monospace;
+}
+
+/* Industry tags */
+.industry-tags{display:flex;flex-wrap:wrap;gap:7px}
+.ind-tag{
+  padding:6px 13px;border-radius:7px;font-size:13px;
+  border:1.5px solid var(--border2);background:var(--surface);color:var(--ink2);
+  cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:5px;
+}
+.ind-tag:hover{border-color:var(--border2);background:var(--surface2)}
+.ind-tag.sel{border-color:var(--accent);background:var(--accent-light);color:var(--accent);font-weight:500}
+
+/* Size */
+.size-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.size-card{
+  padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);
+  background:var(--surface);cursor:pointer;transition:all 0.15s;
+}
+.size-card:hover{background:var(--surface2)}
+.size-card.sel{border-color:var(--accent);background:var(--accent-light)}
+.size-card .name{font-size:13px;font-weight:600;color:var(--ink)}
+.size-card.sel .name{color:var(--accent)}
+.size-card .desc{font-size:11px;color:var(--ink3);margin-top:2px}
+
+/* Callout */
+.callout{
+  padding:13px 16px;border-radius:10px;display:flex;align-items:flex-start;gap:10px;
+  border:1px solid var(--border);background:var(--surface2);
+}
+.callout.info{border-color:var(--accent-mid);background:var(--accent-light)}
+.callout.success{border-color:#9FDDBE;background:var(--green-light)}
+.callout.warn{border-color:#FCD34D;background:var(--amber-light)}
+.callout-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.callout-body{}
+.callout-title{font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:3px}
+.callout.info .callout-title{color:var(--accent)}
+.callout.success .callout-title{color:var(--green)}
+.callout-text{font-size:12px;color:var(--ink2);line-height:1.6}
+.dept-pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.dept-pill{
+  font-size:11px;padding:2px 8px;border-radius:5px;font-weight:500;
+  background:#fff;border:1px solid var(--accent-mid);color:var(--accent);
+}
+
+/* ── STEP 2 ── */
+.org-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.org-canvas{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:18px;min-height:300px;position:relative;overflow:hidden;
+}
+.org-canvas-label{font-size:11px;color:var(--ink3);font-weight:500;margin-bottom:14px}
+.node{
+  padding:7px 14px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--surface);font-size:12px;font-weight:500;color:var(--ink);
+  white-space:nowrap;cursor:default;transition:all 0.15s;text-align:center;
+}
+.node:hover{border-color:var(--border2);box-shadow:var(--shadow-sm)}
+.node.board{border-color:#DDD5FA;background:#F5F3FF;color:#5B21B6}
+.node.ceo{border-color:var(--accent-mid);background:var(--accent-light);color:var(--accent)}
+.node.dept{border-color:#D1F5E4;background:#F0FBF6;color:var(--green)}
+.node.agent{background:var(--surface2);font-weight:400;font-size:11px}
+.tree-level{display:flex;justify-content:center;gap:10px;margin-bottom:0}
+.tree-connector{display:flex;justify-content:center;height:18px}
+.tree-connector svg{overflow:visible}
+
+.tpl-list{display:flex;flex-direction:column;gap:8px}
+.tpl-card{
+  padding:12px 14px;border-radius:10px;border:1.5px solid var(--border2);
+  background:var(--surface);cursor:pointer;transition:all 0.15s;
+  display:flex;align-items:center;gap:11px;
+}
+.tpl-card:hover{background:var(--surface2)}
+.tpl-card.sel{border-color:var(--accent);background:var(--accent-light)}
+.tpl-icon{font-size:18px}
+.tpl-name{font-size:13px;font-weight:600;color:var(--ink)}
+.tpl-card.sel .tpl-name{color:var(--accent)}
+.tpl-desc{font-size:11px;color:var(--ink3)}
+
+/* ── STEP 3 ── */
+.persona-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.persona{
+  padding:10px 12px;border-radius:9px;border:1.5px solid var(--border2);
+  background:var(--surface);cursor:pointer;transition:all 0.15s;text-align:center;
+}
+.persona:hover{background:var(--surface2)}
+.persona.sel{border-color:#A78BFA;background:#F5F3FF}
+.persona-icon{font-size:18px;margin-bottom:4px}
+.persona-name{font-size:12px;font-weight:500;color:var(--ink)}
+.persona.sel .persona-name{color:#5B21B6}
+.persona-sub{font-size:10px;color:var(--ink3)}
+
+.radio-row{display:flex;gap:8px;flex-wrap:wrap}
+.radio-opt{
+  padding:7px 14px;border-radius:8px;border:1.5px solid var(--border2);
+  background:var(--surface);cursor:pointer;transition:all 0.15s;
+  font-size:13px;color:var(--ink2);font-weight:500;
+}
+.radio-opt:hover{background:var(--surface2)}
+.radio-opt.sel{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+
+.model-list{display:flex;flex-direction:column;gap:7px}
+.model-item{
+  padding:10px 13px;border-radius:9px;border:1.5px solid var(--border2);
+  background:var(--surface);cursor:pointer;transition:all 0.15s;
+  display:flex;align-items:center;gap:10px;
+}
+.model-item:hover{background:var(--surface2)}
+.model-item.sel{border-color:var(--accent);background:var(--accent-light)}
+.model-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.model-name{font-size:13px;font-weight:500;color:var(--ink);flex:1}
+.model-item.sel .model-name{color:var(--accent)}
+.mbadge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600}
+.mbadge.rec{background:#FEF3C7;color:var(--amber)}
+.mbadge.sm{background:var(--green-light);color:var(--green)}
+
+.ceo-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* ── STEP 4 ── */
+.review-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.review-row{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:9px 0;border-bottom:1px solid var(--border);
+}
+.review-row:last-child{border-bottom:none}
+.rv-key{font-size:12px;color:var(--ink3);width:72px;flex-shrink:0;padding-top:1px}
+.rv-val{font-size:13px;color:var(--ink);font-weight:500;flex:1}
+.rv-val.accent{color:var(--accent)}
+
+/* ── FOOTER ── */
+.footer{
+  position:fixed;bottom:0;left:0;right:0;height:64px;
+  background:rgba(247,246,243,0.92);backdrop-filter:blur(12px);
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 32px;z-index:40;
+}
+.btn-ghost{
+  padding:8px 18px;border-radius:8px;border:1.5px solid var(--border2);
+  background:transparent;color:var(--ink2);
+  font-family:'Geist',sans-serif;font-size:13px;font-weight:500;
+  cursor:pointer;transition:all 0.15s;
+}
+.btn-ghost:hover{background:var(--surface);border-color:var(--border2);color:var(--ink)}
+.btn-ghost:disabled{opacity:0.35;cursor:not-allowed}
+.btn-next{
+  padding:9px 22px;border-radius:8px;border:none;
+  background:var(--ink);color:#fff;
+  font-family:'Geist',sans-serif;font-size:13px;font-weight:500;
+  cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:7px;
+  box-shadow:var(--shadow-sm);
+}
+.btn-next:hover{background:#2A2F3D;box-shadow:var(--shadow)}
+.btn-next.accent{background:var(--accent);box-shadow:0 2px 10px rgba(26,86,255,0.3)}
+.btn-next.accent:hover{background:#1345E0}
+.footer-hint{font-size:11px;color:var(--ink3)}
+
+/* ── LOADING OVERLAY ── */
+.loading-overlay{
+  display:none;position:fixed;inset:0;z-index:100;
+  background:rgba(247,246,243,0.95);backdrop-filter:blur(16px);
+  flex-direction:column;align-items:center;justify-content:center;gap:20px;
+}
+.loading-overlay.show{display:flex}
+.loading-logo{font-family:'Instrument Serif',serif;font-size:20px;color:var(--ink2)}
+.loading-status{font-family:'Instrument Serif',serif;font-size:26px;color:var(--ink);text-align:center}
+.loading-sub{font-size:13px;color:var(--ink3)}
+.loading-bar-wrap{width:280px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.loading-bar{height:100%;background:var(--accent);border-radius:2px;transition:width 0.5s ease;width:0}
+.loading-pct{font-size:13px;font-weight:500;color:var(--accent)}
+.prog-list{display:flex;flex-direction:column;gap:8px;width:300px}
+.prog-item{
+  display:flex;align-items:center;gap:10px;padding:9px 13px;
+  border-radius:9px;background:var(--surface);border:1px solid var(--border);
+  opacity:0.4;transition:all 0.3s;
+}
+.prog-item.cur{opacity:1;border-color:var(--accent-mid);background:var(--accent-light)}
+.prog-item.done{opacity:1;border-color:#9FDDBE;background:var(--green-light)}
+.prog-icon{font-size:13px;flex-shrink:0}
+.prog-text{font-size:12px;color:var(--ink2)}
+.prog-item.cur .prog-text{color:var(--accent);font-weight:500}
+.prog-item.done .prog-text{color:var(--green);font-weight:500}
+.prog-spin{
+  width:14px;height:14px;border-radius:50%;
+  border:2px solid var(--accent-mid);border-top-color:var(--accent);
+  animation:spin 0.7s linear infinite;margin-left:auto;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── SUCCESS MODAL ── */
+.modal-overlay{
+  display:none;position:fixed;inset:0;z-index:200;
+  background:rgba(15,17,23,0.45);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
+}
+.modal-overlay.show{display:flex}
+.modal{
+  background:var(--surface);border-radius:var(--r-xl);border:1px solid var(--border);
+  box-shadow:var(--shadow-lg);padding:36px 32px;max-width:400px;width:90%;
+  text-align:center;animation:modalIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+@keyframes modalIn{from{transform:scale(0.9) translateY(12px);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-star{font-size:36px;margin-bottom:16px}
+.modal-title{font-family:'Instrument Serif',serif;font-size:26px;color:var(--ink);margin-bottom:8px}
+.modal-sub{font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:24px}
+.modal-actions{display:flex;flex-direction:column;gap:8px}
+.btn-modal-main{
+  padding:12px;border-radius:10px;border:none;
+  background:var(--accent);color:#fff;
+  font-family:'Geist',sans-serif;font-size:14px;font-weight:500;
+  cursor:pointer;transition:all 0.2s;
+  box-shadow:0 2px 10px rgba(26,86,255,0.25);
+}
+.btn-modal-main:hover{background:#1345E0}
+.btn-modal-sec{
+  padding:11px;border-radius:10px;
+  border:1.5px solid var(--border2);background:transparent;
+  font-family:'Geist',sans-serif;font-size:13px;font-weight:500;color:var(--ink2);
+  cursor:pointer;transition:all 0.15s;
+}
+.btn-modal-sec:hover{background:var(--surface2)}
+
+.upload-zone{
+  border:1.5px dashed var(--border2);border-radius:9px;padding:18px;
+  text-align:center;cursor:pointer;transition:all 0.15s;
+  background:var(--surface2);
+}
+.upload-zone:hover{border-color:var(--accent);background:var(--accent-light)}
+.upload-text{font-size:12px;color:var(--ink3)}
+
+.section-divider{height:1px;background:var(--border);margin:18px 0}
+</style>
+
+<div>
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-back" onclick="gotoStep(0)">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      返回
+    </div>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="#fff" stroke-width="1.5"/><circle cx="7" cy="7" r="2" fill="#fff"/></svg>
+      </div>
+      OrgOS
+    </div>
+    <div class="topbar-quick" onclick="focusQuick()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      一句话极速创建
+    </div>
+  </div>
+
+  <!-- STEP BAR (hidden on step 0) -->
+  <div class="step-bar" id="step-bar" style="display:none">
+    <div class="spill active" id="sp1"><div class="spill-num">1</div><span class="spill-label">基本信息</span></div>
+    <div class="spill-div"></div>
+    <div class="spill" id="sp2"><div class="spill-num">2</div><span class="spill-label">组织结构</span></div>
+    <div class="spill-div"></div>
+    <div class="spill" id="sp3"><div class="spill-num">3</div><span class="spill-label">CEO 配置</span></div>
+    <div class="spill-div"></div>
+    <div class="spill" id="sp4"><div class="spill-num">4</div><span class="spill-label">确认与创建</span></div>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+
+    <!-- STEP 0: LANDING -->
+    <div class="step-page active" id="step-0" style="max-width:680px">
+      <div style="text-align:center;margin-bottom:32px">
+        <div style="display:inline-block;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink3);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;margin-bottom:14px">✦ 创建你的第一个 AI 公司</div>
+        <h1 style="font-family:'Instrument Serif',serif;font-size:clamp(28px,5vw,42px);font-weight:400;color:var(--ink);line-height:1.15;margin-bottom:12px">创建你的 AI 公司</h1>
+        <p style="font-size:15px;color:var(--ink2);line-height:1.65;max-width:420px;margin:0 auto">像新建 Notion Workspace 一样，几分钟内拥有一个可运行的 AI 组织——智能推荐，一键启动。</p>
+      </div>
+
+      <div class="mode-cards">
+        <div class="mode-card featured" onclick="gotoStep(1)">
+          <div class="mode-badge">✦ 推荐</div>
+          <div class="mode-card-icon">🧠</div>
+          <div class="mode-title">智能向导创建</div>
+          <p class="mode-desc">推荐：分步引导，自动推荐组织与 CEO 配置</p>
+          <div class="mode-link">开始向导 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6h7M6.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </div>
+        <div class="mode-card" onclick="focusQuick()">
+          <div class="mode-card-icon">⚡</div>
+          <div class="mode-title">一句话极速创建</div>
+          <p class="mode-desc">自然语言描述，AI 自动解析并生成完整配置，30 秒完成</p>
+          <div class="mode-link" style="color:var(--ink3)">输入描述 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6h7M6.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </div>
+      </div>
+
+      <div class="quick-row" id="quick-row">
+        <span style="font-size:15px">💬</span>
+        <input id="quick-input" type="text" placeholder="例如：专注短视频营销的内容创作公司，初始预算8000元，风格激进创新" />
+        <button class="btn-primary" onclick="quickCreate()">立即生成</button>
+      </div>
+
+      <div class="ex-label">示例（点击预填）</div>
+      <div class="examples-row">
+        <div class="ex-chip" onclick="fillEx('内容创作公司','极光内容工作室','content','周更短视频与图文，服务品牌增长',6000)">✍️ 内容创作公司</div>
+        <div class="ex-chip" onclick="fillEx('跨境电商公司','海链跨境','ecommerce','独立站运营与履约协同',12000)">🌏 跨境电商公司</div>
+        <div class="ex-chip" onclick="fillEx('AI 咨询公司','深澜咨询','consulting','企业 AI 转型与落地陪跑',8000)">🤖 AI 咨询公司</div>
+        <div class="ex-chip" onclick="fillEx('软件开发工作室','栈外科技','tech','SaaS 产品交付与迭代',10000)">💻 软件开发工作室</div>
+      </div>
+    </div>
+
+    <!-- STEP 1: BASIC INFO -->
+    <div class="step-page" id="step-1">
+      <div class="page-head">
+        <div class="page-eyebrow">步骤 1 — 4</div>
+        <h2 class="page-title">基本信息</h2>
+        <p class="page-sub">填写公司基础资料，行业选择将影响组织结构推荐</p>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <div class="form-grid">
+          <div class="field full">
+            <label class="label">公司名称 <span class="req">*</span></label>
+            <input class="input" id="co-name" placeholder="例：极光科技有限公司" oninput="updateSlug()" />
+            <span class="hint" id="slug-hint">URL 预览：—</span>
+          </div>
+
+          <div class="field full">
+            <label class="label">Logo（可选）</label>
+            <div class="upload-zone">
+              <div style="font-size:20px;margin-bottom:6px">📷</div>
+              <div class="upload-text">点击或拖拽上传</div>
+            </div>
+          </div>
+
+          <div class="field full">
+            <label class="label">行业 <span class="req">*</span></label>
+            <div class="industry-tags" id="industry-tags">
+              <div class="ind-tag sel" onclick="selInd(this,'内容创作')">✍️ 内容创作</div>
+              <div class="ind-tag" onclick="selInd(this,'科技')">💡 科技</div>
+              <div class="ind-tag" onclick="selInd(this,'电子商务')">🛒 电子商务</div>
+              <div class="ind-tag" onclick="selInd(this,'咨询')">🎯 咨询</div>
+              <div class="ind-tag" onclick="selInd(this,'教育')">🎓 教育</div>
+              <div class="ind-tag" onclick="selInd(this,'金融')">📊 金融</div>
+              <div class="ind-tag" onclick="selInd(this,'医疗')">🏥 医疗</div>
+              <div class="ind-tag" onclick="selInd(this,'游戏')">🎮 游戏</div>
+            </div>
+          </div>
+
+          <div class="field full">
+            <label class="label">公司规模</label>
+            <div class="size-grid">
+              <div class="size-card sel" onclick="selSize(this)"><div class="name">小型团队</div><div class="desc">< 10 人</div></div>
+              <div class="size-card" onclick="selSize(this)"><div class="name">中型</div><div class="desc">10–50 人</div></div>
+              <div class="size-card" onclick="selSize(this)"><div class="name">大型</div><div class="desc">> 50 人</div></div>
+            </div>
+          </div>
+
+          <div class="field full">
+            <label class="label">主要目标（可选）</label>
+            <input class="input" id="co-goal" placeholder="如：内容产出、销售转化、客户服务…" />
+          </div>
+
+          <div class="field">
+            <label class="label">初始预算</label>
+            <div style="display:flex;gap:8px">
+              <input class="input" type="number" id="co-budget" value="6000" style="flex:1" />
+              <select class="select" style="width:100px">
+                <option>元 (CNY)</option>
+                <option>USD</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label">时区</label>
+            <input class="input" placeholder="如 Asia/Tokyo" value="Asia/Shanghai" />
+          </div>
+
+          <div class="field full">
+            <label class="label">公司描述（可选）</label>
+            <textarea class="input" rows="2" placeholder="简要描述公司定位与业务方向" style="resize:vertical"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout info" id="rec-callout">
+        <span class="callout-icon">✨</span>
+        <div class="callout-body">
+          <div class="callout-title">AI 推荐 · 内容创作行业结构</div>
+          <div class="callout-text">选择后，系统将推荐部门结构：</div>
+          <div class="dept-pills">
+            <span class="dept-pill">CEO</span>
+            <span class="dept-pill">内容部</span>
+            <span class="dept-pill">设计部</span>
+            <span class="dept-pill">运营部</span>
+            <span class="dept-pill">分发部</span>
+            <span class="dept-pill">共 8 Agent</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: ORG STRUCTURE -->
+    <div class="step-page" id="step-2">
+      <div class="page-head">
+        <div class="page-eyebrow">步骤 2 — 4</div>
+        <h2 class="page-title">组织结构</h2>
+        <p class="page-sub">将按行业生成默认部门；创建后可在「组织」中完整编辑</p>
+      </div>
+
+      <div class="org-layout">
+        <div class="org-canvas">
+          <div class="org-canvas-label">组织结构预览</div>
+          <div class="tree-level" style="margin-bottom:4px">
+            <div class="node ceo">👑 CEO</div>
+          </div>
+          <div class="tree-connector">
+            <svg width="180" height="18" viewBox="0 0 180 18">
+              <line x1="90" y1="0" x2="30" y2="18" stroke="#D1D5DB" stroke-width="1"/>
+              <line x1="90" y1="0" x2="90" y2="18" stroke="#D1D5DB" stroke-width="1"/>
+              <line x1="90" y1="0" x2="150" y2="18" stroke="#D1D5DB" stroke-width="1"/>
+            </svg>
+          </div>
+          <div class="tree-level" style="gap:6px;margin-bottom:4px">
+            <div class="node dept" style="font-size:11px">✍️ 内容部</div>
+            <div class="node dept" style="font-size:11px">🎨 设计部</div>
+            <div class="node dept" style="font-size:11px">📈 运营部</div>
+          </div>
+          <div class="tree-connector">
+            <svg width="200" height="18" viewBox="0 0 200 18">
+              <line x1="38" y1="0" x2="20" y2="18" stroke="#E5E7EB" stroke-width="1"/>
+              <line x1="38" y1="0" x2="55" y2="18" stroke="#E5E7EB" stroke-width="1"/>
+              <line x1="100" y1="0" x2="100" y2="18" stroke="#E5E7EB" stroke-width="1"/>
+              <line x1="162" y1="0" x2="145" y2="18" stroke="#E5E7EB" stroke-width="1"/>
+              <line x1="162" y1="0" x2="180" y2="18" stroke="#E5E7EB" stroke-width="1"/>
+            </svg>
+          </div>
+          <div class="tree-level" style="gap:4px">
+            <div class="node agent" style="padding:5px 9px">Luna</div>
+            <div class="node agent" style="padding:5px 9px">Kai</div>
+            <div class="node agent" style="padding:5px 9px">Iris</div>
+            <div class="node agent" style="padding:5px 9px">Max</div>
+            <div class="node agent" style="padding:5px 9px">Eva</div>
+          </div>
+          <div style="position:absolute;bottom:14px;right:14px;font-size:11px;color:var(--ink3)">节点数 5 ≤ 15 ✓</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div class="label" style="margin-bottom:8px">结构模板</div>
+            <div class="tpl-list">
+              <div class="tpl-card sel" onclick="selTpl(this)">
+                <span class="tpl-icon">🚀</span>
+                <div><div class="tpl-name">激进增长型</div><div class="tpl-desc">强调 Growth / 扩张</div></div>
+              </div>
+              <div class="tpl-card" onclick="selTpl(this)">
+                <span class="tpl-icon">⚖️</span>
+                <div><div class="tpl-name">稳健运营型</div><div class="tpl-desc">默认均衡结构</div></div>
+              </div>
+              <div class="tpl-card" onclick="selTpl(this)">
+                <span class="tpl-icon">🔬</span>
+                <div><div class="tpl-name">创新研发型</div><div class="tpl-desc">突出 R&D</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="callout">
+            <span class="callout-icon">ℹ️</span>
+            <div class="callout-body">
+              <div class="callout-title">关于节点数量</div>
+              <div class="callout-text">系统将创建 Board → CEO → 部门节点；预计与左侧预览一致（节点数 ≤ 15）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: CEO CONFIG -->
+    <div class="step-page" id="step-3">
+      <div class="page-head">
+        <div class="page-eyebrow">步骤 3 — 4</div>
+        <h2 class="page-title">CEO 配置</h2>
+        <p class="page-sub">配置公司 AI 大脑，决定决策风格与日常汇报方式</p>
+      </div>
+
+      <div class="ceo-layout">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="card">
+            <div class="card-title">性格标签（多选）</div>
+            <div class="persona-grid">
+              <div class="persona sel" onclick="togglePersona(this)"><div class="persona-icon">🔥</div><div class="persona-name">激进型</div><div class="persona-sub">敢于冒险</div></div>
+              <div class="persona" onclick="togglePersona(this)"><div class="persona-icon">💡</div><div class="persona-name">创新型</div><div class="persona-sub">追求突破</div></div>
+              <div class="persona" onclick="togglePersona(this)"><div class="persona-icon">🛡️</div><div class="persona-name">保守型</div><div class="persona-sub">稳健优先</div></div>
+              <div class="persona" onclick="togglePersona(this)"><div class="persona-icon">📊</div><div class="persona-name">数据驱动型</div><div class="persona-sub">用数字说话</div></div>
+              <div class="persona" onclick="togglePersona(this)"><div class="persona-icon">🤝</div><div class="persona-name">关怀型</div><div class="persona-sub">以人为本</div></div>
+              <div class="persona" onclick="togglePersona(this)"><div class="persona-icon">🎯</div><div class="persona-name">务实型</div><div class="persona-sub">只看结果</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">决策风格</div>
+            <div class="radio-row" id="decision-row">
+              <div class="radio-opt sel" onclick="selRadio('decision-row',this)">民主</div>
+              <div class="radio-opt" onclick="selRadio('decision-row',this)">独裁</div>
+              <div class="radio-opt" onclick="selRadio('decision-row',this)">共识制</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">汇报频率</div>
+            <div class="radio-row" id="freq-row">
+              <div class="radio-opt sel" onclick="selRadio('freq-row',this)">每日</div>
+              <div class="radio-opt" onclick="selRadio('freq-row',this)">每小时</div>
+              <div class="radio-opt" onclick="selRadio('freq-row',this)">重要事项实时</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="card">
+            <div class="card-title">默认模型</div>
+            <div class="model-list">
+              <div class="model-item" onclick="selModel(this)">
+                <div class="model-dot" style="background:#10B981"></div>
+                <div class="model-name">GPT-4o</div>
+                <span class="mbadge rec">推荐</span>
+              </div>
+              <div class="model-item sel" onclick="selModel(this)">
+                <div class="model-dot" style="background:#1A56FF"></div>
+                <div class="model-name">GPT-4o mini</div>
+                <span class="mbadge sm">轻量</span>
+              </div>
+              <div class="model-item" onclick="selModel(this)">
+                <div class="model-dot" style="background:#7C3AED"></div>
+                <div class="model-name">Claude 3.5 Sonnet</div>
+              </div>
+              <div class="model-item" onclick="selModel(this)">
+                <div class="model-dot" style="background:#EA580C"></div>
+                <div class="model-name">Llama 3.3 70B</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">System Prompt（可选，高级用户）</div>
+            <textarea class="input" rows="3" placeholder="留空则使用根据性格自动生成的提示词" style="resize:vertical;font-size:12px;font-family:monospace"></textarea>
+          </div>
+
+          <div class="callout info" id="ceo-preview">
+            <span class="callout-icon">💬</span>
+            <div class="callout-body">
+              <div class="callout-title">欢迎语预览</div>
+              <div class="callout-text" id="ceo-greeting-text">大家好，我是公司的 CEO。我们会一起讨论每个重要决定；每日同步进展。我的风格：激进型。一起把目标落地。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: REVIEW -->
+    <div class="step-page" id="step-4">
+      <div class="page-head">
+        <div class="page-eyebrow">步骤 4 — 4</div>
+        <h2 class="page-title">确认与创建</h2>
+        <p class="page-sub">确认以下信息，点击「创建公司」即可启动</p>
+      </div>
+
+      <div class="review-layout">
+        <div class="card">
+          <div class="card-title">公司信息</div>
+          <div class="review-row"><div class="rv-key">名称</div><div class="rv-val accent" id="rv-name">—</div></div>
+          <div class="review-row"><div class="rv-key">行业</div><div class="rv-val" id="rv-ind">内容创作</div></div>
+          <div class="review-row"><div class="rv-key">规模</div><div class="rv-val">小型团队</div></div>
+          <div class="review-row"><div class="rv-key">预算</div><div class="rv-val" id="rv-budget">¥ 6,000</div></div>
+          <div class="review-row"><div class="rv-key">时区</div><div class="rv-val">Asia/Shanghai</div></div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="card">
+            <div class="card-title">预计初始配置</div>
+            <div class="review-row"><div class="rv-key">初始 Agent</div><div class="rv-val">8 个（估算）</div></div>
+            <div class="review-row"><div class="rv-key">部门节点</div><div class="rv-val" style="font-size:12px">内容部、设计部、运营部、分发部</div></div>
+            <div class="review-row"><div class="rv-key">CEO 模型</div><div class="rv-val">GPT-4o mini</div></div>
+          </div>
+
+          <div class="callout warn">
+            <span class="callout-icon">ℹ️</span>
+            <div class="callout-body">
+              <div class="callout-text">确认后将创建公司并切换到该公司；CEO 配置会在 Agent 就绪后自动写入。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer" id="footer" style="display:none">
+    <button class="btn-ghost" id="btn-back" onclick="prevStep()">← 上一步</button>
+    <span class="footer-hint" id="footer-hint">预计创建 1 CEO + 3 部门 + 8 Agent</span>
+    <button class="btn-next" id="btn-next" onclick="nextStep()">下一步 →</button>
+  </div>
+</div>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loading-ov">
+  <div class="loading-logo">AI 工厂</div>
+  <div class="loading-status" id="ld-status">正在初始化组织结构…</div>
+  <div class="loading-sub" id="ld-sub">CEO Agent 上岗中</div>
+  <div class="loading-bar-wrap"><div class="loading-bar" id="ld-bar"></div></div>
+  <div class="loading-pct" id="ld-pct">0%</div>
+  <div class="prog-list">
+    <div class="prog-item" id="pg0"><span class="prog-icon">🏢</span><span class="prog-text">初始化组织结构</span></div>
+    <div class="prog-item" id="pg1"><span class="prog-icon">👑</span><span class="prog-text">CEO Agent 上岗中</span></div>
+    <div class="prog-item" id="pg2"><span class="prog-icon">🏗️</span><span class="prog-text">配置部门主管</span></div>
+    <div class="prog-item" id="pg3"><span class="prog-icon">🤖</span><span class="prog-text">招募执行 Agent</span></div>
+    <div class="prog-item" id="pg4"><span class="prog-icon">💬</span><span class="prog-text">创建主群聊</span></div>
+    <div class="prog-item" id="pg5"><span class="prog-icon">✅</span><span class="prog-text">完成，准备就绪</span></div>
+  </div>
+</div>
+
+<!-- SUCCESS MODAL -->
+<div class="modal-overlay" id="success-ov">
+  <div class="modal">
+    <div class="modal-star">✦</div>
+    <div class="modal-title">公司已成功启动</div>
+    <div class="modal-sub">「<span id="modal-name">极光内容工作室</span>」已就绪。即将进入仪表盘查看 CEO 欢迎与今日 Heartbeat 建议。</div>
+    <div class="modal-actions">
+      <button class="btn-modal-main" onclick="goDash()">进入仪表盘</button>
+      <button class="btn-modal-sec">打开主群聊</button>
+      <button class="btn-modal-sec">组织工作室</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let cur = 0;
+let selIndustry = '内容创作';
+const PROG_STEPS = [
+  ['正在初始化组织结构…','CEO Agent 上岗中',20],
+  ['配置部门主管…','分配职责与权限',45],
+  ['招募执行 Agent…','加载工具与记忆',70],
+  ['创建主群聊…','所有成员即将加入',90],
+  ['创建完成','正在写入 CEO 配置…',100]
+];
+
+function gotoStep(n) {
+  document.querySelectorAll('.step-page').forEach(p => p.classList.remove('active'));
+  document.getElementById('step-' + n).classList.add('active');
+  cur = n;
+  const bar = document.getElementById('step-bar');
+  const footer = document.getElementById('footer');
+  bar.style.display = n === 0 ? 'none' : 'flex';
+  footer.style.display = n === 0 ? 'none' : 'flex';
+  updateStepPills();
+  if (n === 4) syncReview();
+  const btnBack = document.getElementById('btn-back');
+  const btnNext = document.getElementById('btn-next');
+  btnBack.textContent = n === 1 ? '取消向导' : '← 上一步';
+  if (n === 4) {
+    btnNext.textContent = '创建公司（Ctrl+Enter）';
+    btnNext.classList.add('accent');
+  } else {
+    btnNext.textContent = '下一步 →';
+    btnNext.classList.remove('accent');
+  }
+}
+
+function updateStepPills() {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('sp' + i);
+    el.classList.remove('active','done');
+    if (i < cur) el.classList.add('done');
+    else if (i === cur) el.classList.add('active');
+    const num = el.querySelector('.spill-num');
+    num.textContent = i < cur ? '✓' : i;
+  }
+}
+
+function nextStep() {
+  if (cur < 4) gotoStep(cur + 1);
+  else launchCompany();
+}
+function prevStep() {
+  if (cur > 1) gotoStep(cur - 1);
+  else gotoStep(0);
+}
+
+function updateSlug() {
+  const v = document.getElementById('co-name').value;
+  const slug = v.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') || '—';
+  document.getElementById('slug-hint').innerHTML = 'URL 预览：' + (slug === '—' ? '—' : '<code>' + slug + '</code>');
+}
+
+function selInd(el, name) {
+  document.querySelectorAll('.ind-tag').forEach(t => t.classList.remove('sel'));
+  el.classList.add('sel');
+  selIndustry = name;
+  document.querySelector('#rec-callout .callout-title').textContent = 'AI 推荐 · ' + name + '行业结构';
+}
+
+function selSize(el) {
+  document.querySelectorAll('.size-card').forEach(c => c.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function selTpl(el) {
+  document.querySelectorAll('.tpl-card').forEach(t => t.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function togglePersona(el) {
+  el.classList.toggle('sel');
+  updateCEOGreeting();
+}
+
+function selRadio(groupId, el) {
+  document.querySelectorAll('#' + groupId + ' .radio-opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+  updateCEOGreeting();
+}
+
+function selModel(el) {
+  document.querySelectorAll('.model-item').forEach(m => m.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function updateCEOGreeting() {
+  const personas = [...document.querySelectorAll('.persona.sel')].map(p => p.querySelector('.persona-name').textContent);
+  const dec = document.querySelector('#decision-row .radio-opt.sel')?.textContent || '民主';
+  const freq = document.querySelector('#freq-row .radio-opt.sel')?.textContent || '每日';
+  const styleMap = {'民主':'我们会一起讨论每个重要决定','独裁':'我会快速拍板并推动执行','共识制':'我会尽量对齐团队共识'};
+  const freqMap = {'每日':'每日同步进展','每小时':'按小时关注关键指标','重要事项实时':'重大事项实时汇报'};
+  const tags = personas.length ? personas.join('、') : '稳健';
+  const coName = document.getElementById('co-name')?.value || '公司';
+  document.getElementById('ceo-greeting-text').textContent =
+    `大家好，我是${coName}的 CEO。${styleMap[dec] || ''}；${freqMap[freq] || ''}。我的风格：${tags}。一起把目标落地。`;
+}
+
+function syncReview() {
+  const name = document.getElementById('co-name').value || '—';
+  document.getElementById('rv-name').textContent = name;
+  document.getElementById('modal-name').textContent = name || '新公司';
+  document.getElementById('rv-ind').textContent = selIndustry;
+  const budget = document.getElementById('co-budget').value;
+  document.getElementById('rv-budget').textContent = '¥ ' + Number(budget).toLocaleString();
+}
+
+function focusQuick() { document.getElementById('quick-input').focus(); }
+
+function fillEx(label, name, ind, goal, budget) {
+  document.getElementById('quick-input').value = `帮我创建一个${label}，名称：${name}，目标：${goal}，初始预算${budget}元`;
+  gotoStep(1);
+  setTimeout(() => {
+    document.getElementById('co-name').value = name;
+    document.getElementById('co-budget').value = budget;
+    document.getElementById('co-goal').value = goal;
+    updateSlug();
+    const indMap = {content:'内容创作',ecommerce:'电子商务',consulting:'咨询',tech:'科技'};
+    const indName = indMap[ind] || '科技';
+    const tag = [...document.querySelectorAll('.ind-tag')].find(t => t.textContent.includes(indName));
+    if (tag) selInd(tag, indName);
+    syncReview();
+  }, 100);
+}
+
+function quickCreate() {
+  const val = document.getElementById('quick-input').value.trim();
+  if (!val) { document.getElementById('quick-input').focus(); return; }
+  gotoStep(4);
+}
+
+function launchCompany() {
+  syncReview();
+  const ov = document.getElementById('loading-ov');
+  ov.classList.add('show');
+  let idx = 0;
+  const pgs = ['pg0','pg1','pg2','pg3','pg4','pg5'];
+  function tick() {
+    pgs.forEach((id, i) => {
+      const el = document.getElementById(id);
+      el.classList.remove('cur','done');
+      if (i < idx) el.classList.add('done');
+      else if (i === idx) el.classList.add('cur');
+    });
+    const [status, sub, pct] = PROG_STEPS[Math.min(idx, PROG_STEPS.length-1)];
+    document.getElementById('ld-status').textContent = status;
+    document.getElementById('ld-sub').textContent = sub;
+    document.getElementById('ld-bar').style.width = pct + '%';
+    document.getElementById('ld-pct').textContent = pct + '%';
+    if (idx < pgs.length - 1) {
+      idx++;
+      setTimeout(tick, idx === pgs.length - 1 ? 600 : 950);
+    } else {
+      setTimeout(() => {
+        ov.classList.remove('show');
+        document.getElementById('success-ov').classList.add('show');
+      }, 700);
+    }
+  }
+  tick();
+}
+
+function goDash() {
+  document.getElementById('success-ov').classList.remove('show');
+  sendPrompt('我的AI公司已创建成功！帮我介绍一下接下来如何在OrgOS中运营这家公司');
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (cur === 4) launchCompany();
+    else if (cur > 0) nextStep();
+  }
+});
+
+// Init
+gotoStep(0);
+</script>

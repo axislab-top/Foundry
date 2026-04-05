@@ -9,9 +9,19 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@ant-design/icons": "^6.0.0",
+    "@contracts/types": "workspace:*",
+    "@tanstack/react-query": "^5.62.0",
+    "@xyflow/react": "^12.10.2",
+    "antd": "^5.22.0",
+    "axios": "^1.13.2",
+    "framer-motion": "^12.38.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.5.0"
+    "react-router-dom": "^7.5.0",
+    "socket.io-client": "^4.8.1",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

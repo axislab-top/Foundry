@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'packages/core/task'
   - 'infrastructure/*'
   - 'tooling/*'
   - 'contracts/types'

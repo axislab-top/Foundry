@@ -6,7 +6,8 @@ import { WebhooksRpcController } from './webhooks.rpc.controller.js';
 import { WebhookService } from './services/webhook.service.js';
 import { WebhookForwarderService } from './services/webhook-forwarder.service.js';
 import { WebhookRetryService } from './services/webhook-retry.service.js';
-import { Webhook, WebhookHistory } from './entities/index.js';
+import { Webhook } from './entities/webhook.entity.js';
+import { WebhookHistory } from './entities/webhook-history.entity.js';
 import { InboundWebhookSecurityMiddleware } from '../../common/security/inbound-webhook-security.middleware.js';
 
 /**

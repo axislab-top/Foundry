@@ -51,10 +51,23 @@ describe('JwtAuthGuard', () => {
 
       expect(() => guard.canActivate(context)).toThrow();
     });
+
+    it('should allow RPC without req.user (actor comes from payload)', () => {
+      const context = {
+        getType: () => 'rpc' as const,
+        switchToHttp: () => ({ getRequest: () => ({}) }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      } as unknown as ExecutionContext;
+      reflector.getAllAndOverride = jest.fn().mockReturnValue(false);
+
+      expect(guard.canActivate(context)).toBe(true);
+    });
   });
 
   function createMockContext(user?: UserInfo) {
     return {
+      getType: () => 'http' as const,
       switchToHttp: () => ({
         getRequest: () => ({
           user,

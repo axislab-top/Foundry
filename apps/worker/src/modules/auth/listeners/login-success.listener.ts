@@ -8,6 +8,10 @@ import type { LoginSuccessEvent } from '@contracts/events';
 import type { MessageContext } from '@service/messaging';
 import { createLogger, LogLevel } from '@service/logging';
 import { IdempotencyService } from '../../../common/idempotency/idempotency.service.js';
+import {
+  TenantContextService,
+  resolveCompanyIdFromEvent,
+} from '@service/tenant';
 
 @Injectable()
 export class LoginSuccessListener implements OnModuleInit {
@@ -19,6 +23,7 @@ export class LoginSuccessListener implements OnModuleInit {
   constructor(
     private readonly messagingService: MessagingService,
     private readonly idempotency: IdempotencyService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async onModuleInit() {
@@ -57,6 +62,17 @@ export class LoginSuccessListener implements OnModuleInit {
     event: LoginSuccessEvent,
     context: MessageContext,
   ): Promise<void> {
+    const companyId = resolveCompanyIdFromEvent(event);
+    if (companyId) {
+      return this.tenantContext.runWithCompanyId(companyId, async () => {
+        await this.processLoginSuccess(event);
+      });
+    }
+
+    await this.processLoginSuccess(event);
+  }
+
+  private async processLoginSuccess(event: LoginSuccessEvent): Promise<void> {
     const ok = this.idempotency.markIfNew(
       `auth.login_success:${event.eventId}`,
       24 * 60 * 60_000,

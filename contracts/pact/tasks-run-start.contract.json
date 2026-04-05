@@ -1,0 +1,19 @@
+{
+  "description": "tasks.run.start RPC 最小契约（供 Consumer/Provider 对齐；Broker 为 RabbitMQ）",
+  "pattern": "tasks.run.start",
+  "request": {
+    "companyId": "uuid",
+    "actor": { "id": "uuid", "roles": ["admin"] },
+    "triggerSource": "temporal | schedule | manual | nest_timer",
+    "temporalWorkflowId": "string | optional",
+    "temporalRunId": "string | optional",
+    "metadata": "object | optional"
+  },
+  "response": {
+    "id": "uuid",
+    "companyId": "uuid",
+    "triggerSource": "string",
+    "status": "running",
+    "startedAt": "iso8601"
+  }
+}

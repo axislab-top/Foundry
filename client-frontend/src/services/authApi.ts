@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { unwrapResponse } from './apiTypes';
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -9,6 +10,7 @@ export interface AuthUser {
   id: string;
   email?: string;
   username?: string;
+  companyId?: string;
   roles?: string[];
   permissions?: string[];
 }

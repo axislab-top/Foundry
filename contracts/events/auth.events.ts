@@ -18,6 +18,7 @@ export interface LoginSuccessEvent extends BaseEvent {
     loginAt: string;
     ipAddress?: string;
     userAgent?: string;
+    companyId?: string;
   };
 }
 
@@ -33,6 +34,7 @@ export interface LoginFailedEvent extends BaseEvent {
     failedAt: string;
     ipAddress?: string;
     userAgent?: string;
+    companyId?: string;
   };
 }
 
@@ -46,6 +48,7 @@ export interface LogoutEvent extends BaseEvent {
     userId: string;
     tokenId: string;
     logoutAt: string;
+    companyId?: string;
   };
 }
 
@@ -60,6 +63,7 @@ export interface TokenRefreshedEvent extends BaseEvent {
     oldTokenId: string;
     newTokenId: string;
     refreshedAt: string;
+    companyId?: string;
   };
 }
 
@@ -74,6 +78,7 @@ export interface TokenRevokedEvent extends BaseEvent {
     tokenId: string;
     revokedAt: string;
     reason?: string;
+    companyId?: string;
   };
 }
 

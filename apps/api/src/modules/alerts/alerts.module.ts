@@ -1,0 +1,23 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminAlert } from './entities/admin-alert.entity.js';
+import { CompanyMembership } from '../companies/entities/company-membership.entity.js';
+import { AlertsService } from './alerts.service.js';
+import { BudgetSignalsAlertListener } from './listeners/billsignals-alert.listener.js';
+import { SkillRiskAlertListener } from './listeners/skill-risk-alert.listener.js';
+import { TaskAnomalyAlertListener } from './listeners/task-anomaly-alert.listener.js';
+import { AlertsRpcController } from './alerts.rpc.controller.js';
+import { CollaborationModule } from '../collaboration/collaboration.module.js';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([AdminAlert, CompanyMembership]), CollaborationModule],
+  controllers: [AlertsRpcController],
+  providers: [
+    AlertsService,
+    BudgetSignalsAlertListener,
+    SkillRiskAlertListener,
+    TaskAnomalyAlertListener,
+  ],
+})
+export class AlertsModule {}
+

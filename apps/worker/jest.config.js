@@ -1,9 +1,17 @@
-module.exports = {
+export default {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: 'src',
   testRegex: '.*\\.spec\\.ts$',
   transform: {
-    '^.+\\.(t|j)s$': 'ts-jest',
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: '<rootDir>/../tsconfig.spec.json',
+        diagnostics: {
+          ignoreCodes: [151002],
+        },
+      },
+    ],
   },
   collectCoverageFrom: [
     '**/*.(t|j)s',
@@ -26,9 +34,11 @@ module.exports = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^@service/(.*)$': '<rootDir>/../../../infrastructure/$1/src',
+    '^@contracts/(.*)$': '<rootDir>/../../../contracts/$1',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   preset: 'ts-jest',
-  setupFilesAfterEnv: ['<rootDir>/../../test/setup/jest-setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/../../../test/setup/jest-setup.js'],
 };
 

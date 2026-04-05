@@ -75,6 +75,17 @@ export const configSchema = Joi.object({
   REDIS_PASSWORD: Joi.string().allow('').optional(),
   REDIS_DB: Joi.number().default(0),
   REDIS_URL: Joi.string().optional(),
+  /** 本地未起 Redis 时默认关闭协作 Pub/Sub，避免 ECONNRESET 刷屏；Docker 通过环境变量显式开启 */
+  /** 与 API 对齐；false 时网关不订阅 Redis，agent/REST 落库消息无法经 WS 推送 */
+  COLLAB_REDIS_NOTIFY: Joi.boolean().default(true),
+  /** Socket.IO 专用 DB（仅在不使用 REDIS_URL 时生效） */
+  SOCKET_IO_REDIS_DB: Joi.number().optional(),
+  /** Socket.IO Redis Adapter：on/off/auto（默认 auto，连接失败可配合 FALLBACK） */
+  SOCKET_IO_REDIS_ADAPTER: Joi.string()
+    .valid('true', 'false', 'auto', 'on', 'off', '1', '0')
+    .default('auto'),
+  /** Redis Adapter 不可用时是否回退到内存（多实例生产环境建议 false） */
+  SOCKET_IO_REDIS_ADAPTER_FALLBACK: Joi.boolean().default(true),
   
   // 服务地址配置
   API_SERVICE_URL: Joi.string().default('http://localhost:3000'),
@@ -89,6 +100,11 @@ export const configSchema = Joi.object({
   
   // 超时配置
   HTTP_TIMEOUT: Joi.number().default(30000), // HTTP 请求超时（毫秒）
+  /**
+   * 网关 API/Webhooks RPC 每条路由 timeout 的下限（毫秒）。设为 0 可关闭。
+   * 未设置时：非 production 默认 20000（避免前端长时间挂起）；production 为 0。
+   */
+  GATEWAY_API_RPC_MIN_TIMEOUT_MS: Joi.number().integer().min(0).max(300000).optional(),
   
   // 重试配置
   HTTP_RETRY_ENABLED: Joi.boolean().default(true), // 是否启用重试

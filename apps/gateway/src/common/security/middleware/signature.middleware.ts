@@ -22,6 +22,7 @@ export class SignatureMiddleware implements NestMiddleware {
     '/api/health',
     '/metrics',
     '/api/auth/login',
+    '/api/auth/admin/login',
     '/api/auth/register',
     // 可以配置跳过不需要签名验证的路由
   ];

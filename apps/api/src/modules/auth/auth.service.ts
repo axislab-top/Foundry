@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service.js';
 import { MessagingService } from '@service/messaging';
+import { TenantContextService } from '@service/tenant';
 import type { IUserInfo } from '../users/interfaces/user.interface.js';
 import type {
   LoginSuccessEvent,
@@ -19,6 +20,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly messagingService: MessagingService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   /**
@@ -39,6 +41,7 @@ export class AuthService {
 
       // 发布登录成功事件
       try {
+        const companyId = this.tenantContext.getCompanyId();
         const event: LoginSuccessEvent = {
           eventId: randomUUID(),
           eventType: 'auth.login_success',
@@ -46,6 +49,7 @@ export class AuthService {
           aggregateType: 'auth',
           occurredAt: new Date().toISOString(),
           version: 1,
+          companyId,
           data: {
             userId: userInfo.id,
             email: userInfo.email,
@@ -53,6 +57,7 @@ export class AuthService {
             loginAt: new Date().toISOString(),
             ipAddress,
             userAgent,
+            companyId,
           },
         };
 
@@ -71,6 +76,7 @@ export class AuthService {
     } catch (error: any) {
       // 发布登录失败事件
       try {
+        const companyId = this.tenantContext.getCompanyId();
         const failureReason = this.getFailureReason(error);
 
         const event: LoginFailedEvent = {
@@ -80,12 +86,14 @@ export class AuthService {
           aggregateType: 'auth',
           occurredAt: new Date().toISOString(),
           version: 1,
+          companyId,
           data: {
             email,
             reason: failureReason,
             failedAt: new Date().toISOString(),
             ipAddress,
             userAgent,
+            companyId,
           },
         };
 

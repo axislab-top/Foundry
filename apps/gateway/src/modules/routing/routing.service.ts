@@ -12,6 +12,13 @@ import { Route } from './interfaces/route.interface.js';
 import { AxiosResponse } from 'axios';
 import { ErrorCode } from '../../common/exceptions/error-codes.js';
 import { GatewayException } from '../../common/exceptions/filters/gateway-exception.filter.js';
+import { resolveCompanyIdFromRequest } from '@service/tenant';
+
+function compactRpcPayload(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, v]) => v !== undefined),
+  );
+}
 
 /**
  * 路由服务
@@ -40,17 +47,16 @@ export class RoutingService {
     originalRequest?: any,
   ): Promise<AxiosResponse> {
     this.logger.log('Routing request', { method, path });
-    
-    // 先查找动态路由
-    const dyn = this.dynamicRoutesService.findRoute(path);
-    let route: Route | undefined = dyn?.route;
-    let routeParams: Record<string, string> = dyn?.params || {};
-    
-    // 如果动态路由没找到，使用静态配置
+
+    // 先匹配静态 ROUTES（与代码中的 RPC/HTTP 契约一致），再查动态路由（仅作扩展）
+    const stat = findRoute(path, method);
+    let route: Route | undefined = stat?.route;
+    let routeParams: Record<string, string> = stat?.params || {};
+
     if (!route) {
-      const stat = findRoute(path);
-      route = stat?.route;
-      routeParams = stat?.params || {};
+      const dyn = this.dynamicRoutesService.findRoute(path);
+      route = dyn?.route;
+      routeParams = dyn?.params || {};
     }
 
     if (!route) {
@@ -97,7 +103,9 @@ export class RoutingService {
 
     // 根据服务类型选择代理
     try {
-      const timeoutMs = route.rpcTimeoutMs ?? route.timeout ?? 5000;
+      const routeTimeout = route.rpcTimeoutMs ?? route.timeout ?? 5000;
+      const timeoutMs = Math.max(routeTimeout, this.configService.getApiRpcMinTimeoutMs());
+      const companyId = resolveCompanyIdFromRequest(originalRequest);
       const actor = originalRequest?.user
         ? {
             id: originalRequest.user.id,
@@ -105,27 +113,19 @@ export class RoutingService {
             permissions: originalRequest.user.permissions,
             email: originalRequest.user.email,
             username: originalRequest.user.username,
+            companyId,
           }
         : undefined;
-      const rpcPayload =
-        method.toUpperCase() === 'GET'
-          ? {
-              ...(originalRequest?.query || {}),
-              ...routeParams,
-              actor,
-              traceparent: originalRequest?.headers?.['traceparent'],
-              tracestate: originalRequest?.headers?.['tracestate'],
-            }
-          : {
-              ...(originalRequest?.body || {}),
-              ...(originalRequest?.query || {}),
-              ...routeParams,
-              actor,
-              ip: originalRequest?.ip,
-              userAgent: originalRequest?.headers?.['user-agent'],
-              traceparent: originalRequest?.headers?.['traceparent'],
-              tracestate: originalRequest?.headers?.['tracestate'],
-            };
+      const rpcPayload = compactRpcPayload(
+        this.buildRpcPayload({
+          method,
+          rpcPattern: route.rpcPattern,
+          originalRequest,
+          routeParams,
+          actor,
+          companyId,
+        }),
+      );
 
       switch (route.service) {
         case 'api':
@@ -218,6 +218,18 @@ export class RoutingService {
   /**
    * 重写路径
    */
+  private substitutePathParams(
+    template: string,
+    params: Record<string, string>,
+  ): string {
+    let out = template;
+    for (const [key, val] of Object.entries(params)) {
+      if (key === 'wildcard') continue;
+      out = out.replace(new RegExp(`:${key}(?=/|$)`, 'g'), val);
+    }
+    return out;
+  }
+
   private rewritePath(
     path: string,
     route: Route,
@@ -232,7 +244,7 @@ export class RoutingService {
           const suffix = wildcard.startsWith('/') ? wildcard : `/${wildcard}`;
           return `${route.rewritePath}${suffix}`;
         }
-        return route.rewritePath;
+        return this.substitutePathParams(route.rewritePath, params);
       }
     }
 
@@ -262,6 +274,86 @@ export class RoutingService {
 
     this.logger.debug('Path not rewritten', { path });
     return path;
+  }
+
+  private buildRpcPayload(args: {
+    method: string;
+    rpcPattern?: string;
+    originalRequest?: any;
+    routeParams: Record<string, string>;
+    actor?: Record<string, unknown>;
+    companyId?: string;
+  }): Record<string, unknown> {
+    const {
+      method,
+      rpcPattern,
+      originalRequest,
+      routeParams,
+      actor,
+      companyId,
+    } = args;
+    const upperMethod = method.toUpperCase();
+    const query = originalRequest?.query || {};
+    const body = originalRequest?.body || {};
+
+    const base = {
+      actor,
+      companyId,
+      ...routeParams,
+    };
+
+    // Billing RPC contracts (apps/api/src/modules/billing/billing.rpc.controller.ts)
+    if (rpcPattern === 'billing.records.list') {
+      return {
+        ...base,
+        query,
+      };
+    }
+    if (
+      rpcPattern === 'billing.record.append' ||
+      rpcPattern === 'billing.budget.upsert' ||
+      rpcPattern === 'billing.settings.update'
+    ) {
+      return {
+        ...base,
+        data: body,
+      };
+    }
+
+    if (rpcPattern === 'companies.createDraft') {
+      return {
+        actor,
+        companyId,
+        ip: originalRequest?.ip,
+        userAgent: originalRequest?.headers?.['user-agent'],
+      };
+    }
+
+    if (rpcPattern === 'companies.completeWizard') {
+      return {
+        id: routeParams.id,
+        data: body,
+        actor,
+        companyId,
+        ip: originalRequest?.ip,
+        userAgent: originalRequest?.headers?.['user-agent'],
+      };
+    }
+
+    if (upperMethod === 'GET') {
+      return {
+        ...query,
+        ...base,
+      };
+    }
+
+    return {
+      ...body,
+      ...query,
+      ...base,
+      ip: originalRequest?.ip,
+      userAgent: originalRequest?.headers?.['user-agent'],
+    };
   }
 }
 

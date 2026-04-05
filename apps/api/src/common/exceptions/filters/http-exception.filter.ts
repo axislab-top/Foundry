@@ -4,7 +4,7 @@ import {
   ArgumentsHost,
   HttpException,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { BaseExceptionFilter } from './base-exception.filter.js';
 
 /**
