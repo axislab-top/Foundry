@@ -17,7 +17,8 @@ export type DigitalTaskStatus =
   | 'awaiting_approval'
   | 'completed'
   | 'blocked'
-  | 'cancelled';
+  | 'cancelled'
+  | 'paused';
 
 /** 依赖边：taskId 依赖 dependsOnTaskId（前置完成后才能开始后序）→ 有向边 dependsOnTaskId → taskId */
 export type TaskDependencyEdge = {

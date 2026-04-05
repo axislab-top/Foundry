@@ -4,6 +4,8 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Server } from 'http';
 import { TenantContextService } from '@service/tenant';
+import { MessagingService } from '@service/messaging';
+import { ClickhouseTraceService } from '../../src/modules/observability/clickhouse-trace.service.js';
 import { CompanyMembership } from '../../src/modules/companies/entities/company-membership.entity.js';
 import { TaskRun } from '../../src/modules/tasks/entities/task-run.entity.js';
 import { Task } from '../../src/modules/tasks/entities/task.entity.js';
@@ -73,6 +75,9 @@ export async function createPactRpcHarness(): Promise<PactHarness> {
     },
   };
 
+  const messaging = { publish: jest.fn().mockResolvedValue(true) };
+  const clickhouseTrace = { mirrorExecutionLog: jest.fn().mockResolvedValue(undefined) };
+
   const moduleRef: TestingModule = await Test.createTestingModule({
     providers: [
       TaskRunService,
@@ -82,6 +87,8 @@ export async function createPactRpcHarness(): Promise<PactHarness> {
       { provide: getRepositoryToken(Task), useValue: tasksRepo },
       { provide: getRepositoryToken(TaskExecutionLog), useValue: logsRepo },
       { provide: TenantContextService, useValue: tenantContext },
+      { provide: MessagingService, useValue: messaging },
+      { provide: ClickhouseTraceService, useValue: clickhouseTrace },
     ],
   }).compile();
 

@@ -6,17 +6,19 @@ import { AgentEventsListener } from './listeners/agent-events.listener.js';
 import { OrganizationNodeMovedAgentsListener } from './listeners/organization-node-moved.listener.js';
 import { AgentExecutionService } from './services/agent-execution.service.js';
 import { ExternalHttpSkillRunnerService } from './services/external-http-skill-runner.service.js';
+import { ExecutionGuardService } from '../approval/execution-guard.service.js';
 
 @Module({
   imports: [ConfigModule],
   providers: [
     ToolRegistry,
     ExternalHttpSkillRunnerService,
+    ExecutionGuardService,
     AgentExecutionService,
     SkillAwareAiRuntimeAdapter,
     AgentEventsListener,
     OrganizationNodeMovedAgentsListener,
   ],
-  exports: [ToolRegistry, AgentExecutionService, SkillAwareAiRuntimeAdapter],
+  exports: [ToolRegistry, AgentExecutionService, SkillAwareAiRuntimeAdapter, ExecutionGuardService],
 })
 export class AgentsModule {}

@@ -72,12 +72,18 @@ describe('BillingService', () => {
     };
 
     const budgetService: any = {
-      incrementCompanyUsed: jest.fn(),
+      applyBillingConsumptionInTransaction: jest.fn().mockResolvedValue(undefined),
+      invalidateUtilizationCache: jest.fn().mockResolvedValue(undefined),
       getUtilizationRatio: jest.fn().mockResolvedValue(0.1),
       getCompanyBudget: jest.fn().mockResolvedValue({
         totalAmount: '100',
         usedAmount: '10',
         warningThreshold: '0.8',
+        criticalThreshold: '0.9',
+      }),
+      evaluateSpendAllowance: jest.fn().mockResolvedValue({
+        allowed: true,
+        utilization: 0.1,
       }),
     };
 
@@ -108,7 +114,7 @@ describe('BillingService', () => {
   }
 
   it('appendRecord should persist LLM cost and publish billing.recorded', async () => {
-    const { service, recordRepo, messaging } = await setup({});
+    const { service, recordRepo, messaging, budgetService } = await setup({});
     const row = await service.appendRecord('c1', {
       recordType: 'llm',
       modelName: 'gpt-4o-mini',
@@ -117,6 +123,7 @@ describe('BillingService', () => {
     });
     expect(row.record).toBeDefined();
     expect(recordRepo.save).toHaveBeenCalled();
+    expect(budgetService.applyBillingConsumptionInTransaction).toHaveBeenCalled();
     expect(messaging.publish).toHaveBeenCalled();
     const recorded = (messaging.publish as jest.Mock).mock.calls.find(
       (c: unknown[]) => (c[0] as { eventType: string }).eventType === 'billing.recorded',
@@ -191,6 +198,11 @@ describe('BillingService', () => {
       getCompanyBudget: jest.fn().mockResolvedValue({
         totalAmount: '100',
         usedAmount: '95',
+      }),
+      evaluateSpendAllowance: jest.fn().mockResolvedValue({
+        allowed: false,
+        utilization: 0.95,
+        reason: 'budget_exhausted',
       }),
     };
     const messaging: any = { publish: jest.fn() };

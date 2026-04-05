@@ -46,9 +46,8 @@ export function createGatewayRedisClient(
       // `localhost` 在 Windows 上可能解析为 `::1`（IPv6），经 Docker 端口转发层更容易出现 ECONNRESET。
       // 这里在 url host 为 localhost 时强制走 IPv4。
       ...(forceIpv4 ? { family: 4 as const } : {}),
-      // Windows + Docker Desktop 下偶发网络抖动时，开启 keepAlive 可降低 “Socket closed unexpectedly” 概率
-      keepAlive: true,
-      keepAliveInitialDelay: 30_000,
+      // node-redis socket：keepAlive 为 number（毫秒）或 false
+      keepAlive: 30_000,
       reconnectStrategy: (retries: number): number | Error => {
         if (retries > 100) {
           return new Error('Redis reconnect limit (gateway)');
@@ -59,6 +58,7 @@ export function createGatewayRedisClient(
     // 定期 ping，避免长时间空闲连接被中间网络设备回收
     pingInterval: 15_000,
   });
-  wireGatewayRedisErrorHandler(client, logger, label);
-  return client;
+  const typed = client as RedisClientType;
+  wireGatewayRedisErrorHandler(typed, logger, label);
+  return typed;
 }

@@ -16,12 +16,15 @@ import { ConfigModule } from './common/config/config.module.js';
 import { IdempotencyModule } from './common/idempotency/idempotency.module.js';
 import { TenantModule } from '@service/tenant';
 import { WorkerApiRpcModule } from './common/rpc/worker-api-rpc.module.js';
+import { ObservabilityWorkerModule } from './common/observability/observability-worker.module.js';
+import { AlertsWorkerModule } from './modules/alerts/alerts-worker.module.js';
 
 @Module({
   imports: [
     // 统一配置管理模块（全局模块）
     ConfigModule,
     WorkerApiRpcModule,
+    ObservabilityWorkerModule,
     // 消息队列模块（全局注册）
     MessagingModule.forRoot(),
     // 多租户上下文模块（CLS）
@@ -40,6 +43,7 @@ import { WorkerApiRpcModule } from './common/rpc/worker-api-rpc.module.js';
     TasksWorkerModule,
     BillingWorkerModule,
     TemplatesWorkerModule,
+    AlertsWorkerModule,
   ],
   controllers: [HealthController],
   providers: [],

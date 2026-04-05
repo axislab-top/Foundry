@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Background,
   Controls,
@@ -18,6 +19,8 @@ import {
   type ExecutionLogGroup,
   type TaskDependencyEdge,
   type TaskRunItem,
+  type ExecutionLogItem,
+  type TraceEventRow,
   ApiError,
 } from '../../services/tasksApi';
 
@@ -29,6 +32,7 @@ const statusColor: Record<string, string> = {
   completed: '#22c55e',
   blocked: '#ef4444',
   cancelled: '#64748b',
+  paused: '#ea580c',
 };
 
 function applyNodeSelection(nodes: Node[], selectedId: string | null): Node[] {
@@ -169,6 +173,73 @@ const TaskTreeInner: React.FC<{
   );
 };
 
+function RunTraceWaterfall({
+  pgItems,
+  chItems,
+  loading,
+}: {
+  pgItems: ExecutionLogItem[];
+  chItems: TraceEventRow[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return <div className="dash-muted" style={{ fontSize: 12 }}>加载 run 轨迹…</div>;
+  }
+  if (!pgItems.length && !chItems.length) {
+    return <div className="dash-muted" style={{ fontSize: 12 }}>暂无该 run 的步骤记录。</div>;
+  }
+  return (
+    <div style={{ fontSize: 11, maxHeight: 280, overflow: 'auto' }}>
+      <div className="section-title" style={{ fontSize: 12, marginBottom: 8 }}>
+        Run 瀑布流（Postgres 步骤）
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 18 }}>
+        {pgItems.map((it) => (
+          <li key={it.id} style={{ marginBottom: 6 }}>
+            <code>{it.stepType}</code>
+            {it.durationMs != null ? (
+              <span className="dash-muted"> · {it.durationMs}ms</span>
+            ) : null}
+            {it.message ? (
+              <div className="dash-muted" style={{ marginTop: 2 }}>
+                {it.message.slice(0, 200)}
+              </div>
+            ) : null}
+            <div className="dash-muted" style={{ fontSize: 10 }}>
+              {new Date(it.createdAt).toLocaleString()}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {chItems.length > 0 ? (
+        <>
+          <div className="section-title" style={{ fontSize: 12, margin: '12px 0 8px' }}>
+            ClickHouse 镜像（append-only）
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {chItems.map((row, i) => (
+              <li key={`${row.event_time}-${i}`} style={{ marginBottom: 6 }}>
+                <code>{row.event_type}</code>
+                <span className="dash-muted"> · {row.source_service}</span>
+                <pre
+                  style={{
+                    fontSize: 10,
+                    margin: '4px 0 0',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {row.payload_json.slice(0, 400)}
+                </pre>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function LogGroupsPanel({ groups }: { groups: ExecutionLogGroup[] }) {
   if (!groups.length) {
     return <div className="dash-muted" style={{ fontSize: 12 }}>该任务暂无执行日志。</div>;
@@ -198,6 +269,7 @@ function LogGroupsPanel({ groups }: { groups: ExecutionLogGroup[] }) {
 }
 
 export const BoardRoomTab: React.FC<{ companyId: string }> = ({ companyId }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [board, setBoard] = useState<BoardRunSummary | null>(null);
   const [runs, setRuns] = useState<TaskRunItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +278,9 @@ export const BoardRoomTab: React.FC<{ companyId: string }> = ({ companyId }) => 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [logGroups, setLogGroups] = useState<ExecutionLogGroup[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [runTracePg, setRunTracePg] = useState<ExecutionLogItem[]>([]);
+  const [runTraceCh, setRunTraceCh] = useState<TraceEventRow[]>([]);
+  const [runTraceLoading, setRunTraceLoading] = useState(false);
 
   useEffect(() => {
     setSelectedTaskId(null);
@@ -235,6 +310,50 @@ export const BoardRoomTab: React.FC<{ companyId: string }> = ({ companyId }) => 
     const t = setInterval(() => void load(), 25_000);
     return () => clearInterval(t);
   }, [load]);
+
+  const urlRunId = searchParams.get('runId');
+
+  useEffect(() => {
+    if (!urlRunId || !runs.length) {
+      return;
+    }
+    const hit = runs.find((r) => r.id === urlRunId);
+    if (hit && selectedRun?.id !== hit.id) {
+      setSelectedRun(hit);
+    }
+  }, [urlRunId, runs, selectedRun?.id]);
+
+  useEffect(() => {
+    if (!selectedRun) {
+      setRunTracePg([]);
+      setRunTraceCh([]);
+      return;
+    }
+    let cancelled = false;
+    setRunTraceLoading(true);
+    void Promise.all([
+      tasksApi.fetchExecutionLogsByRunId(companyId, selectedRun.id, 200),
+      tasksApi.fetchTraceEventsByRunId(companyId, selectedRun.id, 500),
+    ])
+      .then(([pg, ch]) => {
+        if (!cancelled) {
+          setRunTracePg(pg.items);
+          setRunTraceCh(ch.items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRunTracePg([]);
+          setRunTraceCh([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRunTraceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, selectedRun]);
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -309,7 +428,13 @@ export const BoardRoomTab: React.FC<{ companyId: string }> = ({ companyId }) => 
               <button
                 key={run.id}
                 type="button"
-                onClick={() => setSelectedRun(run)}
+                onClick={() => {
+                  setSelectedRun(run);
+                  const next = new URLSearchParams(searchParams);
+                  next.set('runId', run.id);
+                  next.set('tab', 'board');
+                  setSearchParams(next, { replace: true });
+                }}
                 className="btn btn-small"
                 style={{
                   display: 'block',
@@ -324,6 +449,11 @@ export const BoardRoomTab: React.FC<{ companyId: string }> = ({ companyId }) => 
                 <div style={{ fontSize: 12 }}>
                   {run.status} · {run.triggerSource}
                 </div>
+                {run.actualCost != null || run.costEstimate != null ? (
+                  <div className="dash-muted" style={{ fontSize: 11 }}>
+                    cost est {run.costEstimate ?? '—'} / actual {run.actualCost ?? '—'}
+                  </div>
+                ) : null}
                 <div className="dash-muted" style={{ fontSize: 11 }}>
                   {new Date(run.startedAt).toLocaleString()}
                 </div>
@@ -333,6 +463,15 @@ export const BoardRoomTab: React.FC<{ companyId: string }> = ({ companyId }) => 
           {selectedRun?.errorSummary ? (
             <div className="error-box" style={{ marginTop: 12, fontSize: 12 }}>
               {selectedRun.errorSummary}
+            </div>
+          ) : null}
+          {selectedRun ? (
+            <div style={{ marginTop: 12 }}>
+              <RunTraceWaterfall
+                pgItems={runTracePg}
+                chItems={runTraceCh}
+                loading={runTraceLoading}
+              />
             </div>
           ) : null}
         </div>

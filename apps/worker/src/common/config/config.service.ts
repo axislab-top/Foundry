@@ -213,6 +213,14 @@ export class ConfigService {
     return this.configManager.get<number>('CEO_LLM_ESTIMATED_COST', 0);
   }
 
+  getAgentSkillBudgetEstimate(): number {
+    return this.configManager.get<number>('AGENT_SKILL_BUDGET_ESTIMATE', 0.01);
+  }
+
+  getExternalSkillBudgetEstimate(): number {
+    return this.configManager.get<number>('EXTERNAL_SKILL_BUDGET_ESTIMATE', 0.05);
+  }
+
   getCeoReportMaxChars(): number {
     return this.configManager.get<number>('CEO_REPORT_MAX_CHARS', 8000);
   }
@@ -345,6 +353,19 @@ export class ConfigService {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  /** 告警 Webhook 列表（trim + 去空） */
+  getAlertWebhookUrls(): string[] {
+    const raw = this.configManager.get<string>('ALERT_WEBHOOK_URLS', '');
+    return (raw ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  getAdminPublicBaseUrl(): string {
+    return (this.configManager.get<string>('ADMIN_PUBLIC_BASE_URL', '') || '').trim();
   }
 
   /**

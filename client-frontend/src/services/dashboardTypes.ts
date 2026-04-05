@@ -23,6 +23,22 @@ export interface CompanyDashboardSummary {
   billing: {
     totalUnitsFromExecutionLogs: string;
   };
+  /** M5 复盘闭环指标 */
+  retrospective?: {
+    failedRuns7d: number;
+    lessonsIngested7d: number;
+    repeatFailurePatterns7d: number;
+    repeatFailureRate7d: number;
+  };
+  recentSupervisorLessons?: Array<{
+    id: string;
+    runId: string;
+    lesson: string;
+    confidence: number;
+    ingestedToMemory: boolean;
+    isRepeatPattern: boolean;
+    createdAt: string;
+  }>;
   generatedAt: string;
 }
 
@@ -34,6 +50,7 @@ export interface BillingDashboardSummary {
     usedAmount: string;
     utilization: number;
     warningThreshold: string;
+    criticalThreshold: string;
     currency: string;
   } | null;
   aggregates: {

@@ -34,6 +34,8 @@ module.exports = {
   testPathIgnorePatterns: ['<rootDir>/test/pact/'],
   moduleNameMapper: {
     '^@foundry/task-core$': '<rootDir>/../../packages/core/task/src/index.ts',
+    '^@foundry/supervisor-core$': '<rootDir>/../../packages/core/supervisor/src/index.ts',
+    '^@foundry/observability-core$': '<rootDir>/../../packages/core/observability/src/index.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@service/config$': '<rootDir>/../../test/mocks/service-config.ts',
     '^@service/(.*)$': '<rootDir>/../../infrastructure/$1/src',

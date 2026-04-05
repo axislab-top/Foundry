@@ -9,6 +9,7 @@
     "start": "turbo run start",
     "test": "turbo run test",
     "test:pact": "pnpm --filter @service/api run test:pact",
+    "ci:local": "node scripts/ci-local.mjs",
     "lint": "turbo run lint",
     "infra:start": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml up -d",
     "infra:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml down",

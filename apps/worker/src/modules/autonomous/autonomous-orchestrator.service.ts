@@ -17,6 +17,7 @@ import type {
   BillingConsumptionRequestedEvent,
   TaskBreakdownRequestedEvent,
 } from '@contracts/events';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { ConfigService } from '../../common/config/config.service.js';
 import { CeoChatModelFactory } from './ceo-chat-model.factory.js';
 import { ceoPlanSchema, type CeoPlanOutput } from './ceo-plan.schema.js';
@@ -33,6 +34,7 @@ import {
   endCeoPipelineRpc,
   resolveCeoPipelineRpcTier,
 } from './ceo-pipeline-rpc-context.js';
+import { WorkerExecutionLogService } from '../../common/observability/worker-execution-log.service.js';
 
 export interface RunHeartbeatOptions {
   triggerSource?: 'schedule' | 'task_completed' | 'budget_warning' | 'collaboration_mention';
@@ -84,6 +86,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     private readonly llmKeyResolver: LlmKeyResolverService,
     private readonly checkpoints: AutonomousCheckpointService,
     private readonly memoryPort: RpcMemoryAdapter,
+    private readonly executionLog: WorkerExecutionLogService,
   ) {}
 
   onModuleInit(): void {
@@ -184,6 +187,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         : 'default';
 
     beginCeoPipelineRpc(initial.traceId, rpcTier);
+    const recordHeartbeatRun = initial.runKind === 'heartbeat';
     try {
       const threadId = `ceo:${initial.companyId}:${initial.runKind}:${initial.traceId}`;
       const useBreakdownGraph = initial.runKind === 'breakdown';
@@ -196,10 +200,33 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         checkpointerMode: useBreakdownGraph ? 'memory (breakdown fast path)' : 'persisted',
         apiRpcTier: resolveCeoPipelineRpcTier(initial.traceId),
       });
+      if (recordHeartbeatRun) {
+        await this.executionLog.appendForRun(initial.companyId, initial.traceId, {
+          stepType: 'ceo.graph.start',
+          traceId: initial.traceId,
+          message: `${initial.triggerSource}:invoke`,
+        });
+      }
+      const tracer = trace.getTracer('foundry-worker-autonomous');
       let out: Awaited<ReturnType<typeof graph.invoke>>;
       try {
-        out = await graph.invoke(initial, {
-          configurable: { thread_id: threadId },
+        out = await tracer.startActiveSpan('ceo.langgraph.invoke', async (span) => {
+          span.setAttribute('foundry.company_id', initial.companyId);
+          span.setAttribute('foundry.correlation_trace_id', initial.traceId);
+          span.setAttribute('foundry.thread_id', threadId);
+          span.setAttribute('foundry.run_kind', initial.runKind);
+          span.setAttribute('gen_ai.operation.name', 'ceo_heartbeat_graph');
+          try {
+            const result = await graph.invoke(initial, {
+              configurable: { thread_id: threadId },
+            });
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: msg.slice(0, 240) });
+            throw e;
+          }
         });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -209,6 +236,14 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           checkpointerMode: useBreakdownGraph ? 'memory' : 'persisted',
           message: msg,
         });
+        if (recordHeartbeatRun) {
+          await this.executionLog.appendForRun(initial.companyId, initial.traceId, {
+            stepType: 'ceo.graph.error',
+            traceId: initial.traceId,
+            message: msg.slice(0, 2000),
+            outputSnapshot: { error: msg.slice(0, 1500), threadId },
+          });
+        }
         throw e;
       }
       this.logger.log('CEO graph completed', {
@@ -219,6 +254,14 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       });
 
       const preview = (out.reportDraft ?? '').slice(0, 2000);
+      if (recordHeartbeatRun) {
+        await this.executionLog.appendForRun(initial.companyId, initial.traceId, {
+          stepType: 'ceo.graph.complete',
+          traceId: initial.traceId,
+          message: 'ok',
+          outputSnapshot: { reportPreview: preview.slice(0, 800), threadId },
+        });
+      }
       const completed: AutonomousCeoHeartbeatCompletedEvent = {
         eventId: randomUUID(),
         eventType: 'autonomous.ceo.heartbeat.completed',
@@ -350,6 +393,24 @@ export class AutonomousOrchestratorService implements OnModuleInit {
             .filter(Boolean)
             .join(' | ');
 
+    const sup = parsed.supervisorLessons;
+    const supArr = Array.isArray(sup) ? sup : [];
+    const lessonPreview =
+      mode === 'minimal'
+        ? undefined
+        : supArr
+            .slice(0, 2)
+            .map((x: unknown) => {
+              const s =
+                x && typeof x === 'object' && x && 'snippet' in x
+                  ? String((x as { snippet?: string }).snippet ?? '')
+                  : '';
+              const lim = mode === 'slimmer' ? 80 : 140;
+              return s.slice(0, lim);
+            })
+            .filter(Boolean)
+            .join(' | ');
+
     const router = parsed.modelRouter as { modelName?: string; utilization?: number; degraded?: boolean } | undefined;
     const budgetsRaw = parsed.budgets;
     const budgetsStr =
@@ -360,7 +421,9 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       rootTaskId: state.rootTaskId ?? null,
       dashboard: dashSlice || null,
       memoryHits: memArr.length,
+      supervisorLessonHits: supArr.length,
       ...(memPreview ? { memoryPreview: memPreview } : {}),
+      ...(lessonPreview ? { lessonPreview } : {}),
       taskCounts: {
         pending: this.taskCountInIngestBundle(parsed, 'pending'),
         in_progress: this.taskCountInIngestBundle(parsed, 'in_progress'),
@@ -453,6 +516,49 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           { companyId, actor },
           state.traceId,
         );
+      }),
+      safe('supervisorLessons', async () => {
+        const mainRoom = await this.rpc<{ id?: string } | null>(
+          'collaboration.rooms.findMain',
+          { companyId, actor },
+          state.traceId,
+        ).catch(() => null);
+        const collab = state.collaborationRoomId?.trim();
+        const memoryRoomId =
+          state.runKind === 'breakdown' && collab ? collab : mainRoom?.id;
+        const q = `失败复盘教训 prevention: ${searchQuery.slice(0, 300)}`;
+        if (this.config.isAutonomousMemoryAdapterEnabled()) {
+          bundle.supervisorLessons = await this.memoryPort.search({
+            companyId,
+            actor,
+            data: {
+              query: q,
+              topK: 5,
+              namespaces: ['lesson:company'],
+              scope: 'company',
+              agentRole: 'ceo',
+              roomId: memoryRoomId,
+              pipelineTraceId: state.traceId,
+            },
+          });
+        } else {
+          bundle.supervisorLessons = await this.rpc(
+            'memory.search.hierarchy',
+            {
+              companyId,
+              actor,
+              data: {
+                query: q,
+                topK: 5,
+                namespaces: ['lesson:company'],
+                scope: 'company',
+                agentRole: 'ceo',
+                roomId: memoryRoomId,
+              },
+            },
+            state.traceId,
+          );
+        }
       }),
       safe('memorySearch', async () => {
         const mainRoom = await this.rpc<{ id?: string } | null>(

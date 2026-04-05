@@ -13,9 +13,11 @@ describe('routes.config tasks & dashboard', () => {
         'tasks.dependencies.list',
         'tasks.tree',
         'tasks.executionLogs.list',
+        'tasks.executionLogs.listByRunId',
         'tasks.executionLogs.groupedByRun',
         'tasks.executionLog.append',
         'tasks.runs.list',
+        'observability.trace.listByRunId',
         'tasks.assign',
         'tasks.updateProgress',
         'tasks.findOne',
@@ -33,6 +35,20 @@ describe('routes.config tasks & dashboard', () => {
   it('should match /v1/tasks/dependencies before /v1/tasks/:id', () => {
     const r = findRoute('/v1/tasks/dependencies', 'GET');
     expect(r?.route.rpcPattern).toBe('tasks.dependencies.list');
+  });
+
+  it('should match task-runs execution-logs by runId', () => {
+    const runId = '660e8400-e29b-41d4-a716-446655440001';
+    const r = findRoute(`/v1/task-runs/${runId}/execution-logs`, 'GET');
+    expect(r?.route.rpcPattern).toBe('tasks.executionLogs.listByRunId');
+    expect(r?.params.runId).toBe(runId);
+  });
+
+  it('should match task-runs trace-events by runId', () => {
+    const runId = '660e8400-e29b-41d4-a716-446655440002';
+    const r = findRoute(`/v1/task-runs/${runId}/trace-events`, 'GET');
+    expect(r?.route.rpcPattern).toBe('observability.trace.listByRunId');
+    expect(r?.params.runId).toBe(runId);
   });
 
   it('should match execution-logs grouped subpath', () => {

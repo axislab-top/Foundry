@@ -12,6 +12,7 @@ import { CeoChatModelFactory } from './ceo-chat-model.factory.js';
 import { AutonomousCheckpointService } from './autonomous-checkpoint.service.js';
 import { RpcMemoryAdapter } from './memory-port.js';
 import { LlmKeyResolverService } from './llm-key-resolver.service.js';
+import { WorkerExecutionLogService } from '../../common/observability/worker-execution-log.service.js';
 
 describe('AutonomousOrchestratorService', () => {
   it('runHeartbeat ingests RPCs, plans, and publishes completion event', async () => {
@@ -144,6 +145,11 @@ describe('AutonomousOrchestratorService', () => {
       })),
     };
 
+    const executionLog = {
+      appendForRun: jest.fn().mockResolvedValue(undefined),
+      appendForTask: jest.fn().mockResolvedValue(undefined),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AutonomousOrchestratorService,
@@ -156,6 +162,7 @@ describe('AutonomousOrchestratorService', () => {
         { provide: LlmKeyResolverService, useValue: llmKeyResolver },
         { provide: AutonomousCheckpointService, useValue: checkpoints },
         { provide: RpcMemoryAdapter, useValue: memoryPort },
+        { provide: WorkerExecutionLogService, useValue: executionLog },
       ],
     }).compile();
 

@@ -58,6 +58,23 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=true
 
+  # ClickHouse — M2 append-only trace / OLAP（开发可选）
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: service-clickhouse-dev
+    restart: unless-stopped
+    networks:
+      - service-network
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
   # Redis - 缓存服务（开发环境）
   redis:
     image: redis:7-alpine
@@ -235,6 +252,8 @@ volumes:
   rabbitmq-data:
     driver: local
   rabbitmq-logs:
+    driver: local
+  clickhouse-data:
     driver: local
 
 networks:

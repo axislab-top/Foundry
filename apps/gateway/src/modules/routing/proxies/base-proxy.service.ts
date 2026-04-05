@@ -18,7 +18,7 @@ import { resolveCompanyIdFromRequest } from '@service/tenant';
  */
 @Injectable()
 export class BaseProxyService {
-  private readonly logger = new Logger(BaseProxyService.name);
+  protected readonly logger = new Logger(BaseProxyService.name);
 
   constructor(
     private readonly httpService: HttpService,

@@ -14,7 +14,8 @@ export type TaskStatus =
   | 'awaiting_approval'
   | 'completed'
   | 'blocked'
-  | 'cancelled';
+  | 'cancelled'
+  | 'paused';
 
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 

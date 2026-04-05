@@ -177,6 +177,40 @@ class TasksExecutionLogRpcDto {
   data: AppendExecutionLogDto;
 }
 
+class TasksExecutionLogForRunAppendRpcDto {
+  @ValidateNested()
+  @Type(() => ActorDto)
+  actor: ActorDto;
+
+  @IsUUID()
+  companyId: string;
+
+  @IsUUID()
+  runId: string;
+
+  @ValidateNested()
+  @Type(() => AppendExecutionLogDto)
+  data: AppendExecutionLogDto;
+}
+
+class TasksExecutionLogsByRunRpcDto {
+  @ValidateNested()
+  @Type(() => ActorDto)
+  actor: ActorDto;
+
+  @IsUUID()
+  companyId: string;
+
+  @IsUUID()
+  runId: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+}
+
 class TasksExecutionLogsListRpcDto {
   @ValidateNested()
   @Type(() => ActorDto)
@@ -232,6 +266,10 @@ class TaskRunStartRpcDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsUUID()
+  approvalRequestId?: string;
 }
 
 class TaskRunIdRpcDto {
@@ -248,6 +286,10 @@ class TaskRunIdRpcDto {
   @IsOptional()
   @IsString()
   costEstimate?: string;
+
+  @IsOptional()
+  @IsString()
+  actualCost?: string;
 }
 
 class TaskRunFailRpcDto {
@@ -451,6 +493,30 @@ export class TasksRpcController {
     }
   }
 
+  @MessagePattern('tasks.executionLog.appendForRun')
+  async appendExecutionLogForRun(@Payload() payload: unknown) {
+    try {
+      const dto = validateRpcDto(TasksExecutionLogForRunAppendRpcDto, payload);
+      return await this.runWithCompany(dto.companyId, () =>
+        this.execution.appendLogForRun(dto.runId, dto.data, dto.actor),
+      );
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('tasks.executionLogs.listByRunId')
+  async listExecutionLogsByRunId(@Payload() payload: unknown) {
+    try {
+      const dto = validateRpcDto(TasksExecutionLogsByRunRpcDto, payload);
+      return await this.runWithCompany(dto.companyId, () =>
+        this.execution.listExecutionLogsByRunId(dto.runId, dto.actor, dto.limit),
+      );
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
   @MessagePattern('tasks.executionLogs.list')
   async listExecutionLogs(@Payload() payload: unknown) {
     try {
@@ -498,6 +564,7 @@ export class TasksRpcController {
             temporalWorkflowId: dto.temporalWorkflowId ?? null,
             temporalRunId: dto.temporalRunId ?? null,
             metadata: dto.metadata ?? null,
+            approvalRequestId: dto.approvalRequestId ?? null,
           },
           dto.actor,
         ),
@@ -513,7 +580,8 @@ export class TasksRpcController {
       const dto = validateRpcDto(TaskRunIdRpcDto, payload);
       return await this.runWithCompany(dto.companyId, () =>
         this.taskRuns.completeRun(dto.runId, dto.actor, {
-          costEstimate: dto.costEstimate ?? null,
+          ...(dto.costEstimate !== undefined ? { costEstimate: dto.costEstimate ?? null } : {}),
+          ...(dto.actualCost !== undefined ? { actualCost: dto.actualCost ?? null } : {}),
         }),
       );
     } catch (e: any) {

@@ -157,7 +157,37 @@ export const DashboardPage: React.FC = () => {
           <div className="kpi-value">{kpi.activityMain}</div>
           <div className="kpi-delta">{kpi.activitySub}</div>
         </div>
+        <div className="kpi-card">
+          <div className="kpi-label">复盘闭环 · 重复失败率</div>
+          <div className="kpi-value">{kpi.retrospectiveMain}</div>
+          <div className="kpi-delta">{kpi.retrospectiveSub}</div>
+          <div className="progress-bar" style={{ marginTop: 8 }}>
+            <div
+              className="progress-fill"
+              style={{ width: `${kpi.retrospectiveBarPct}%`, background: '#A78BFA' }}
+            />
+          </div>
+        </div>
       </div>
+
+      {company?.recentSupervisorLessons && company.recentSupervisorLessons.length > 0 ? (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="panel-title">最近复盘教训</div>
+          <p className="panel-subtitle">来自 Supervisor 结构化输出；已回灌记忆的条目可用于 CEO 计划检索</p>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {company.recentSupervisorLessons.map((x) => (
+              <li key={x.id} style={{ marginBottom: 10 }}>
+                <div className="orgos-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                  {new Date(x.createdAt).toLocaleString()} · 置信 {(x.confidence * 100).toFixed(0)}%
+                  {x.ingestedToMemory ? ' · 已回灌记忆' : ''}
+                  {x.isRepeatPattern ? ' · 重复模式' : ''}
+                </div>
+                <div>{x.lesson.length > 240 ? `${x.lesson.slice(0, 240)}…` : x.lesson}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="ceo-card">
         <div className="ceo-avatar">CEO</div>
@@ -306,6 +336,9 @@ function deriveKpi(
   agentsSub: string;
   activityMain: string;
   activitySub: string;
+  retrospectiveMain: string;
+  retrospectiveSub: string;
+  retrospectiveBarPct: number;
 } {
   if (!company) {
     return {
@@ -320,6 +353,9 @@ function deriveKpi(
       agentsSub: '—',
       activityMain: '—',
       activitySub: '—',
+      retrospectiveMain: '—',
+      retrospectiveSub: '加载后显示',
+      retrospectiveBarPct: 0,
     };
   }
 
@@ -355,6 +391,17 @@ function deriveKpi(
     activitySub = `本月 ${formatAmountDisplay(agg.monthCost, currency)} · 记录 ${agg.recordCountMonth} 笔`;
   }
 
+  const retro = company.retrospective;
+  let retrospectiveMain = '—';
+  let retrospectiveSub = '复盘指标加载中';
+  let retrospectiveBarPct = 0;
+  if (retro) {
+    const ratePct = Math.round(Math.min(1, Math.max(0, retro.repeatFailureRate7d)) * 100);
+    retrospectiveBarPct = ratePct;
+    retrospectiveMain = `${ratePct}%`;
+    retrospectiveSub = `7日失败 ${retro.failedRuns7d} · 回灌 ${retro.lessonsIngested7d} · 重复模式 ${retro.repeatFailurePatterns7d}`;
+  }
+
   return {
     taskRateLabel: `${pct}%`,
     taskDelta: `逾期 ${overdueCount} · 待办 ${pending} · 在办 ${inProgress}`,
@@ -367,6 +414,9 @@ function deriveKpi(
     agentsSub: `活跃参与任务 / 公司内活跃 Agent`,
     activityMain,
     activitySub,
+    retrospectiveMain,
+    retrospectiveSub,
+    retrospectiveBarPct,
   };
 }
 

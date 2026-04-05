@@ -10,7 +10,9 @@ import { TenantContextService } from '@service/tenant';
 import { ErrorCode } from '../../../common/exceptions/error-codes.js';
 import { CompanyMembership } from '../../companies/entities/company-membership.entity.js';
 import { AppendExecutionLogDto } from '../dto/append-execution-log.dto.js';
+import { ClickhouseTraceService } from '../../observability/clickhouse-trace.service.js';
 import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
+import { TaskRun } from '../entities/task-run.entity.js';
 import { Task } from '../entities/task.entity.js';
 
 interface Actor {
@@ -24,9 +26,11 @@ export class TaskExecutionService {
     @InjectRepository(TaskExecutionLog)
     private readonly logsRepo: Repository<TaskExecutionLog>,
     @InjectRepository(Task) private readonly tasksRepo: Repository<Task>,
+    @InjectRepository(TaskRun) private readonly runsRepo: Repository<TaskRun>,
     @InjectRepository(CompanyMembership)
     private readonly membershipsRepo: Repository<CompanyMembership>,
     private readonly tenantContext: TenantContextService,
+    private readonly clickhouseTrace: ClickhouseTraceService,
   ) {}
 
   private getCompanyIdOrThrow(): string {
@@ -79,11 +83,94 @@ export class TaskExecutionService {
       runId: dto.runId ?? null,
     });
     const saved = await this.logsRepo.save(row);
+    void this.clickhouseTrace.mirrorExecutionLog({
+      companyId,
+      runId: saved.runId,
+      taskId: saved.taskId,
+      agentId: saved.agentId,
+      traceId: saved.traceId,
+      stepType: saved.stepType,
+      message: saved.message,
+      outputSnapshot: saved.outputSnapshot,
+      durationMs: saved.durationMs,
+      billingUnits: saved.billingUnits,
+    });
     return {
       id: saved.id,
       taskId: saved.taskId,
       stepType: saved.stepType,
       createdAt: saved.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * Run-scoped step (e.g. CEO heartbeat) without requiring a task row; optional taskId in dto links a task.
+   */
+  async appendLogForRun(runId: string, dto: AppendExecutionLogDto, actor: Actor) {
+    const companyId = this.getCompanyIdOrThrow();
+    await this.assertMember(companyId, actor);
+    const run = await this.runsRepo.findOne({ where: { id: runId, companyId } });
+    if (!run) {
+      throw new NotFoundException({ code: ErrorCode.NOT_FOUND, message: '运行记录不存在' });
+    }
+    let linkedTaskId: string | null = null;
+    if (dto.taskId) {
+      const task = await this.tasksRepo.findOne({ where: { id: dto.taskId, companyId } });
+      if (!task) {
+        throw new NotFoundException({ code: ErrorCode.NOT_FOUND, message: '任务不存在' });
+      }
+      linkedTaskId = task.id;
+    }
+    const row = this.logsRepo.create({
+      companyId,
+      taskId: linkedTaskId,
+      agentId: dto.agentId ?? null,
+      stepType: dto.stepType,
+      message: dto.message ?? null,
+      outputSnapshot: dto.outputSnapshot ?? null,
+      billingUnits: dto.billingUnits ?? null,
+      durationMs: dto.durationMs ?? null,
+      traceId: dto.traceId ?? null,
+      runId,
+    });
+    const saved = await this.logsRepo.save(row);
+    void this.clickhouseTrace.mirrorExecutionLog({
+      companyId,
+      runId: saved.runId,
+      taskId: saved.taskId,
+      agentId: saved.agentId,
+      traceId: saved.traceId,
+      stepType: saved.stepType,
+      message: saved.message,
+      outputSnapshot: saved.outputSnapshot,
+      durationMs: saved.durationMs,
+      billingUnits: saved.billingUnits,
+    });
+    return {
+      id: saved.id,
+      taskId: saved.taskId,
+      stepType: saved.stepType,
+      createdAt: saved.createdAt.toISOString(),
+    };
+  }
+
+  /** All execution logs for a task run (any task_id, same run_id). */
+  async listExecutionLogsByRunId(runId: string, actor: Actor, limit = 200) {
+    const companyId = this.getCompanyIdOrThrow();
+    await this.assertMember(companyId, actor);
+    const run = await this.runsRepo.findOne({ where: { id: runId, companyId } });
+    if (!run) {
+      throw new NotFoundException({ code: ErrorCode.NOT_FOUND, message: '运行记录不存在' });
+    }
+    const cap = Math.min(Math.max(limit, 1), 500);
+    const items = await this.logsRepo.find({
+      where: { companyId, runId },
+      order: { createdAt: 'ASC' },
+      take: cap,
+    });
+    return {
+      runId,
+      items: items.map((l) => this.serializeLogRow(l)),
     };
   }
 
@@ -111,24 +198,14 @@ export class TaskExecutionService {
     return {
       taskId,
       runId: runId ?? null,
-      items: items.map((l) => ({
-        id: l.id,
-        agentId: l.agentId,
-        stepType: l.stepType,
-        message: l.message,
-        outputSnapshot: l.outputSnapshot,
-        billingUnits: l.billingUnits,
-        durationMs: l.durationMs,
-        traceId: l.traceId,
-        runId: l.runId,
-        createdAt: l.createdAt.toISOString(),
-      })),
+      items: items.map((l) => this.serializeLogRow(l)),
     };
   }
 
   private serializeLogRow(l: TaskExecutionLog) {
     return {
       id: l.id,
+      taskId: l.taskId,
       agentId: l.agentId,
       stepType: l.stepType,
       message: l.message,

@@ -10,6 +10,7 @@ const statuses = [
   'completed',
   'blocked',
   'cancelled',
+  'paused',
 ] as const;
 
 export class UpdateProgressDto {

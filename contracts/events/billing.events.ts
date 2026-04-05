@@ -50,6 +50,18 @@ export interface BudgetExceededEvent extends BaseEvent {
   };
 }
 
+/** 利用率 ≥ criticalThreshold（默认约 90%，即剩余约 10%） */
+export interface BudgetCriticalLowEvent extends BaseEvent {
+  eventType: 'budget.critical_low';
+  aggregateType: 'company';
+  data: {
+    companyId: string;
+    utilization: number;
+    criticalThreshold: number;
+    occurredAt: string;
+  };
+}
+
 /** API 入账成功后发布，供审计/下游同步 */
 export interface BillingRecordedEvent extends BaseEvent {
   eventType: 'billing.recorded';
@@ -82,6 +94,7 @@ export interface ModelRoutedEvent extends BaseEvent {
 export type BillingEvent =
   | BillingConsumptionRequestedEvent
   | BudgetWarningEvent
+  | BudgetCriticalLowEvent
   | BudgetExceededEvent
   | BillingRecordedEvent
   | ModelRoutedEvent;
@@ -89,6 +102,7 @@ export type BillingEvent =
 export interface BillingEventTopics {
   'billing.consumption.requested': BillingConsumptionRequestedEvent;
   'budget.warning': BudgetWarningEvent;
+  'budget.critical_low': BudgetCriticalLowEvent;
   'budget.exceeded': BudgetExceededEvent;
   'billing.recorded': BillingRecordedEvent;
   'model.routed': ModelRoutedEvent;

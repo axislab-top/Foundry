@@ -50,8 +50,10 @@ export class DynamicRoutesService implements OnModuleInit {
       service: route.service as 'api' | 'webhooks' | 'worker',
       rewritePath: route.rewritePath || undefined,
       authRequired: route.authRequired,
-      transport: route.transport || 'http',
-      rpcClientName: route.rpcClientName || undefined,
+      transport: (route.transport || 'http') as 'http' | 'rpc',
+      rpcClientName: route.rpcClientName
+        ? (route.rpcClientName as 'api' | 'webhooks')
+        : undefined,
       rpcPattern: route.rpcPattern || undefined,
       rpcTimeoutMs: route.rpcTimeoutMs || undefined,
     }));

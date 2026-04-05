@@ -1,8 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { ClientProxy } from '@nestjs/microservices';
 import { randomUUID } from 'crypto';
+import { firstValueFrom, timeout } from 'rxjs';
 import { MessagingService } from '@service/messaging';
 import type { BillingConsumptionRequestedEvent, SkillExecutedEvent } from '@contracts/events';
 import { ToolRegistry } from '@service/ai';
+import {
+  skillNeedsBudgetOverageApproval,
+  skillRequiresExecutionToken,
+} from '@foundry/approval-core';
+import { ConfigService } from '../../../common/config/config.service.js';
+import { ExecutionGuardService } from '../../approval/execution-guard.service.js';
 import { ExternalHttpSkillRunnerService } from './external-http-skill-runner.service.js';
 
 export interface ExecuteSkillParams {
@@ -14,6 +22,8 @@ export interface ExecuteSkillParams {
   skillId?: string | null;
   /** Caller capability / role keys; required when skill.requiredPermissions is non-empty */
   roles?: string[];
+  /** M4：高风险 Skill（metadata.approvalRiskLevel L2/L3）须携带一次性执行令牌 */
+  executionToken?: string;
 }
 
 @Injectable()
@@ -22,7 +32,57 @@ export class AgentExecutionService {
     private readonly registry: ToolRegistry,
     private readonly messagingService: MessagingService,
     private readonly externalHttp: ExternalHttpSkillRunnerService,
+    private readonly config: ConfigService,
+    private readonly executionGuard: ExecutionGuardService,
+    @Inject('API_RPC_CLIENT') private readonly apiRpc: ClientProxy,
   ) {}
+
+  private workerActor() {
+    return { id: this.config.getWorkerActorUserId(), roles: ['admin'] as string[] };
+  }
+
+  private async assertExternalSkillBudgetAllowance(
+    params: ExecuteSkillParams,
+    snap: { name: string; metadata?: Record<string, unknown> | null },
+  ): Promise<void> {
+    const actor = this.workerActor();
+    const estimatedCost = this.config.getExternalSkillBudgetEstimate();
+    const allowance = await firstValueFrom(
+      this.apiRpc
+        .send<{ allowed: boolean; reason?: string }>('billing.checkAllowance', {
+          companyId: params.companyId,
+          actor,
+          estimatedCost,
+          agentId: params.agentId,
+        })
+        .pipe(timeout(this.config.getApiRpcTimeoutMs())),
+    );
+    if (!allowance?.allowed) {
+      if (skillNeedsBudgetOverageApproval(snap.metadata ?? undefined)) {
+        const created = await firstValueFrom(
+          this.apiRpc
+            .send<{ id: string }>('approval.create', {
+              companyId: params.companyId,
+              actor,
+              actionType: 'billing.external_skill_overage',
+              riskLevel: 'L2',
+              context: {
+                skillName: params.skillName,
+                agentId: params.agentId,
+                traceId: params.traceId ?? null,
+                budgetReason: allowance?.reason ?? null,
+              },
+            })
+            .pipe(timeout(this.config.getApiRpcTimeoutMs())),
+        );
+        const aid = created?.id ?? 'unknown';
+        throw new Error(
+          `M4_APPROVAL_REQUIRED:${aid}: budget blocked for external skill "${snap.name}" — approve then retry with executionToken`,
+        );
+      }
+      throw new Error(`budget blocked (external skill): ${allowance?.reason ?? 'not allowed'}`);
+    }
+  }
 
   private async publishSkillBilling(
     params: ExecuteSkillParams,
@@ -79,7 +139,23 @@ export class AgentExecutionService {
         roles: params.roles,
       });
 
+      const snapMeta = (snap as { metadata?: Record<string, unknown> | null }).metadata;
+      if (skillRequiresExecutionToken(snapMeta ?? undefined)) {
+        const tok = params.executionToken?.trim();
+        if (!tok) {
+          throw new Error(
+            `M4: execution token required for high-risk skill "${params.skillName}" (metadata.approvalRiskLevel L2/L3)`,
+          );
+        }
+        await this.executionGuard.validateAndConsumeToken({
+          companyId: params.companyId,
+          tokenId: tok,
+          action: `skill:${params.skillName}`,
+        });
+      }
+
       if (snap.implementationType === 'external') {
+        await this.assertExternalSkillBudgetAllowance(params, snap);
         result = await this.externalHttp.execute(snap, params.args, { traceId: params.traceId });
       } else {
         // builtin (default) / api / langgraph: currently only builtin handler is supported.

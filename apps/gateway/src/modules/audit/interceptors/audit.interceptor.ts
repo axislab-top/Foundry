@@ -7,7 +7,7 @@ import {
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { AuditService } from '../services/audit.service.js';
-import type { GatewayRequest } from '../../common/types/gateway-request.type.js';
+import type { GatewayRequest } from '../../../common/types/request.types.js';
 
 /**
  * 审计拦截器

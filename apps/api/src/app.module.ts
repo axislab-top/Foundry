@@ -24,6 +24,8 @@ import { LlmKeysModule } from './modules/llm-keys/llm-keys.module.js';
 import { LlmProvidersModule } from './modules/llm-providers/llm-providers.module.js';
 import { AlertsModule } from './modules/alerts/alerts.module.js';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module.js';
+import { ApprovalModule } from './modules/approval/approval.module.js';
+import { SupervisorModule } from './modules/supervisor/supervisor.module.js';
 import { MessagingModule } from '@service/messaging';
 import { TenantModule } from '@service/tenant';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
@@ -65,6 +67,8 @@ import { DefaultAdminInitializerService } from './common/utils/default-admin.ini
     LlmProvidersModule,
     AlertsModule,
     AdminDashboardModule,
+    ApprovalModule,
+    SupervisorModule,
   ],
   controllers: [],
   providers: [DefaultAdminInitializerService],

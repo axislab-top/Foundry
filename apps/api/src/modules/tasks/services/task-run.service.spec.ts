@@ -3,8 +3,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TenantContextService } from '@service/tenant';
+import { MessagingService } from '@service/messaging';
 import { CompanyMembership } from '../../companies/entities/company-membership.entity.js';
 import { TaskRun } from '../entities/task-run.entity.js';
+import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
 import { TaskRunService } from './task-run.service.js';
 
 describe('TaskRunService', () => {
@@ -37,17 +39,25 @@ describe('TaskRunService', () => {
     };
     membershipsRepo = { findOne: jest.fn() };
 
+    const execLogsRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+
     const tenantContext = {
       getCompanyId: jest.fn(() => companyId),
       runWithCompanyId: jest.fn((_id: string, fn: () => unknown) => fn()),
     };
 
+    const messaging = { publish: jest.fn().mockResolvedValue(true) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskRunService,
         { provide: getRepositoryToken(TaskRun), useValue: runsRepo },
+        { provide: getRepositoryToken(TaskExecutionLog), useValue: execLogsRepo },
         { provide: getRepositoryToken(CompanyMembership), useValue: membershipsRepo },
         { provide: TenantContextService, useValue: tenantContext },
+        { provide: MessagingService, useValue: messaging },
       ],
     }).compile();
 

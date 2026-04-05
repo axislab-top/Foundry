@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { MessagingService } from '@service/messaging';
-import type { BudgetExceededEvent, BudgetWarningEvent } from '@contracts/events';
+import type { BudgetCriticalLowEvent, BudgetExceededEvent, BudgetWarningEvent } from '@contracts/events';
 import { AlertsService } from '../alerts.service.js';
 
 /**
@@ -31,6 +31,16 @@ export class BudgetSignalsAlertListener implements OnModuleInit {
       async (event) => this.alerts.createFromBudgetEvent(event),
       {
         queue: 'api-alerts-budget-exceeded',
+        durable: true,
+        prefetchCount: 10,
+      },
+    );
+
+    this.messaging.subscribeWithBackoff<BudgetCriticalLowEvent>(
+      'budget.critical_low',
+      async (event) => this.alerts.createFromBudgetEvent(event),
+      {
+        queue: 'api-alerts-budget-critical-low',
         durable: true,
         prefetchCount: 10,
       },

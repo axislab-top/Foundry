@@ -36,6 +36,7 @@ export default {
     '^@/(.*)$': '<rootDir>/$1',
     '^@service/(.*)$': '<rootDir>/../../../infrastructure/$1/src',
     '^@contracts/(.*)$': '<rootDir>/../../../contracts/$1',
+    '^@foundry/approval-core$': '<rootDir>/../../../packages/core/approval/src/index.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   preset: 'ts-jest',

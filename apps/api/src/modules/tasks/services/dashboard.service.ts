@@ -9,6 +9,8 @@ import { OrganizationNode } from '../../organization/entities/organization-node.
 import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
 import { Task } from '../entities/task.entity.js';
 import { buildNodeIdToDepartmentIdMap } from '../utils/organization-department.util.js';
+import { SupervisorMetricsService } from '../../supervisor/services/supervisor-metrics.service.js';
+import { SupervisorLessonQueryService } from '../../supervisor/services/supervisor-lesson-query.service.js';
 
 interface Actor {
   id: string;
@@ -30,6 +32,8 @@ export class DashboardService {
     @InjectRepository(CompanyMembership)
     private readonly membershipsRepo: Repository<CompanyMembership>,
     private readonly tenantContext: TenantContextService,
+    private readonly supervisorMetrics: SupervisorMetricsService,
+    private readonly supervisorLessons: SupervisorLessonQueryService,
   ) {}
 
   private getCompanyIdOrThrow(): string {
@@ -80,6 +84,8 @@ export class DashboardService {
       tasks,
       orgNodes,
       agents,
+      retrospective,
+      recentSupervisorLessons,
     ] = await Promise.all([
       this.tasksRepo
         .createQueryBuilder('t')
@@ -123,6 +129,8 @@ export class DashboardService {
         where: { companyId },
         select: ['id', 'organizationNodeId'],
       }),
+      this.supervisorMetrics.getRetrospectiveSlice(companyId),
+      this.supervisorLessons.listRecent(companyId, 8),
     ]);
 
     const byStatus: Record<string, number> = {};
@@ -180,6 +188,8 @@ export class DashboardService {
       billing: {
         totalUnitsFromExecutionLogs: billingRow?.total ?? '0',
       },
+      retrospective,
+      recentSupervisorLessons,
       generatedAt: new Date().toISOString(),
     };
   }

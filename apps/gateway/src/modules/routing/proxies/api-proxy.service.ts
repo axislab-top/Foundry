@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { BaseProxyService } from './base-proxy.service.js';
 import { ConfigService } from '../../../common/config/config.service.js';
@@ -12,8 +12,6 @@ import { AxiosResponse } from 'axios';
  */
 @Injectable()
 export class ApiProxyService extends BaseProxyService {
-  private readonly logger = new Logger(ApiProxyService.name);
-
   constructor(
     httpService: HttpService,
     configService: ConfigService,

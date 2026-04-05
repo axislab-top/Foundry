@@ -19,6 +19,8 @@ import { TaskOrchestratorService } from './services/task-orchestrator.service.js
 import { TaskRunService } from './services/task-run.service.js';
 import { TasksService } from './services/tasks.service.js';
 import { TasksRpcController } from './tasks.rpc.controller.js';
+import { ObservabilityModule } from '../observability/observability.module.js';
+import { SupervisorModule } from '../supervisor/supervisor.module.js';
 
 @Module({
   imports: [
@@ -35,6 +37,8 @@ import { TasksRpcController } from './tasks.rpc.controller.js';
     MessagingModule,
     TenantModule,
     CollaborationModule,
+    ObservabilityModule,
+    SupervisorModule,
   ],
   controllers: [TasksRpcController],
   providers: [

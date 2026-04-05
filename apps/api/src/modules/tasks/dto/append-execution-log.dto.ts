@@ -31,4 +31,9 @@ export class AppendExecutionLogDto {
   @IsOptional()
   @IsUUID()
   runId?: string;
+
+  /** When appending via run-scoped RPC, optionally link a concrete task row. */
+  @IsOptional()
+  @IsUUID()
+  taskId?: string;
 }

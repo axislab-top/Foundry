@@ -85,6 +85,10 @@ export const configSchema = Joi.object({
   CEO_LLM_MAX_OUTPUT_TOKENS: Joi.number().integer().min(256).max(16000).default(4096),
   /** 调用 LLM 前 billing.checkAllowance 的预估成本（与预算金额同单位） */
   CEO_LLM_ESTIMATED_COST: Joi.number().min(0).default(0),
+  /** Agent 自治执行 skills 前 billing.checkAllowance 的预估扣费（与 budgets 金额同单位） */
+  AGENT_SKILL_BUDGET_ESTIMATE: Joi.number().min(0).default(0.01),
+  /** external HTTP skill 额外预检扣费估值（叠加或单独用于高成本工具闸） */
+  EXTERNAL_SKILL_BUDGET_ESTIMATE: Joi.number().min(0).default(0.05),
   CEO_REPORT_MAX_CHARS: Joi.number().integer().min(500).max(65535).default(8000),
 
   /** 事件触发 CEO 的冷却（毫秒） */
@@ -149,6 +153,14 @@ export const configSchema = Joi.object({
   SKILL_HTTP_ALLOWLIST: Joi.string().allow('').default(''),
   /** External HTTP Skill 统一超时（毫秒） */
   SKILL_HTTP_TIMEOUT_MS: Joi.number().integer().min(1000).max(300000).default(15000),
+
+  /** 逗号分隔 Webhook URL；task.run.failed 等告警 POST JSON */
+  ALERT_WEBHOOK_URLS: Joi.string().allow('').optional(),
+  /** Admin 前端 base（用于告警 deepLink），如 https://admin.example.com */
+  ADMIN_PUBLIC_BASE_URL: Joi.string().allow('').optional(),
+
+  OTEL_EXPORTER_OTLP_ENDPOINT: Joi.string().allow('').optional(),
+  OTEL_SERVICE_NAME: Joi.string().allow('').optional(),
 
   // Consul 配置（可选）
   CONSUL_ENABLED: Joi.boolean().default(false),

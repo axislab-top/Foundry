@@ -54,6 +54,19 @@ export class TaskRun {
   })
   costEstimate: string | null;
 
+  @Column({
+    name: 'actual_cost',
+    type: 'decimal',
+    precision: 14,
+    scale: 4,
+    nullable: true,
+  })
+  actualCost: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
+
+  /** M4：可选关联审批单，便于 trace 与 Run 对齐 */
+  @Column({ name: 'approval_request_id', type: 'uuid', nullable: true })
+  approvalRequestId: string | null;
 }

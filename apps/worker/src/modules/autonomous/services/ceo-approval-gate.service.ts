@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 /**
- * CEO 审批门闸：用于让后续任务执行（Task/Agent）在 CEO 审批通过后才放行。
+ * CEO 审批门闸：自治流水线内快速同步（同进程）用。
  *
- * 注意：该实现基于进程内存状态 + MQ 广播事件更新。
- * 每个 Worker 实例都会消费同一审批事件并更新自己的内存映射。
+ * **Pending 任务执行路径**（pending-agent-tasks）已改为只读 **任务 metadata** 中的
+ * `ceoApprovalDecision`，不再依赖本服务的 `isCeoApproved`，避免 Worker 重启丢状态。
+ * 监听器仍可调用 `resolve` / `resolveTrace` 以加速同实例内后续 tick。
  */
 @Injectable()
 export class CeoApprovalGateService {

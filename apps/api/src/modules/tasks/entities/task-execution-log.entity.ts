@@ -16,8 +16,8 @@ export class TaskExecutionLog {
   @Column({ name: 'company_id', type: 'uuid' })
   companyId: string;
 
-  @Column({ name: 'task_id', type: 'uuid' })
-  taskId: string;
+  @Column({ name: 'task_id', type: 'uuid', nullable: true })
+  taskId: string | null;
 
   @Column({ name: 'agent_id', type: 'uuid', nullable: true })
   agentId: string | null;

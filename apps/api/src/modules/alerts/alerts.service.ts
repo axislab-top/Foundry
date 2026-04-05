@@ -3,7 +3,14 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { CacheService } from '../../common/cache/cache.service.js';
 import { TenantRlsService, SQL_SET_LOCAL_MEMBERSHIP_LISTING_USER } from '@service/tenant';
-import type { BudgetExceededEvent, BudgetWarningEvent, SkillExecutedEvent, TaskBlockedEvent, TaskProgressUpdatedEvent } from '@contracts/events';
+import type {
+  BudgetCriticalLowEvent,
+  BudgetExceededEvent,
+  BudgetWarningEvent,
+  SkillExecutedEvent,
+  TaskBlockedEvent,
+  TaskProgressUpdatedEvent,
+} from '@contracts/events';
 import type { AdminAlertSeverity, AdminAlertStatus } from './entities/admin-alert.entity.js';
 import { AdminAlert } from './entities/admin-alert.entity.js';
 import { CompanyMembership } from '../companies/entities/company-membership.entity.js';
@@ -174,23 +181,34 @@ export class AlertsService {
     });
   }
 
-  async createFromBudgetEvent(event: BudgetWarningEvent | BudgetExceededEvent): Promise<void> {
+  async createFromBudgetEvent(
+    event: BudgetWarningEvent | BudgetExceededEvent | BudgetCriticalLowEvent,
+  ): Promise<void> {
     const companyId = (event as any).data?.companyId as string | undefined;
     if (!companyId) return;
 
     const type = event.eventType;
     const utilization = (event as any).data?.utilization as number | undefined;
     const warningThreshold = (event as any).data?.warningThreshold as number | undefined;
+    const criticalThreshold = (event as any).data?.criticalThreshold as number | undefined;
 
     const dedupKey = `alerts:budget:${companyId}:${type}`;
-    const dedupTtl = type === 'budget.exceeded' ? BILLING_EXCEEDED_DEDUP_TTL_SEC : BILLING_WARNING_DEDUP_TTL_SEC;
+    const dedupTtl =
+      type === 'budget.exceeded'
+        ? BILLING_EXCEEDED_DEDUP_TTL_SEC
+        : type === 'budget.critical_low'
+          ? BILLING_WARNING_DEDUP_TTL_SEC
+          : BILLING_WARNING_DEDUP_TTL_SEC;
     if (await this.cache.exists(dedupKey)) return;
 
-    const severity: AdminAlertSeverity = type === 'budget.exceeded' ? 'high' : 'medium';
+    const severity: AdminAlertSeverity =
+      type === 'budget.exceeded' ? 'high' : type === 'budget.critical_low' ? 'high' : 'medium';
     const message =
       type === 'budget.exceeded'
         ? `预算已超支（utilization=${utilization?.toFixed?.(2) ?? utilization}）`
-        : `预算预警（utilization=${utilization?.toFixed?.(2) ?? utilization} / warning=${warningThreshold ?? 'n/a'}）`;
+        : type === 'budget.critical_low'
+          ? `预算临界：剩余约 ${((1 - (utilization ?? 0)) * 100).toFixed(0)}%（utilization=${utilization?.toFixed?.(2) ?? utilization}）`
+          : `预算预警（utilization=${utilization?.toFixed?.(2) ?? utilization} / warning=${warningThreshold ?? 'n/a'}）`;
 
     await this.createAlert({
       companyId,
@@ -200,6 +218,7 @@ export class AlertsService {
       metadata: {
         utilization,
         warningThreshold,
+        criticalThreshold,
         occurredAt: event.occurredAt,
         eventId: event.eventId,
       },

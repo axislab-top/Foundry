@@ -7,7 +7,8 @@ export type TaskDomainStatus =
   | 'awaiting_approval'
   | 'completed'
   | 'blocked'
-  | 'cancelled';
+  | 'cancelled'
+  | 'paused';
 
 export interface TaskCreatedEvent extends BaseEvent {
   eventType: 'task.created';
@@ -105,6 +106,20 @@ export interface TaskHeartbeatTickEvent extends BaseEvent {
   };
 }
 
+/** task_runs 进入 failed（CEO 心跳 / Temporal / nest_timer 等） */
+export interface TaskRunFailedEvent extends BaseEvent {
+  eventType: 'task.run.failed';
+  aggregateType: 'task_run';
+  data: {
+    runId: string;
+    companyId: string;
+    errorSummary: string;
+    failedAt: string;
+    /** 从 execution logs 解析；CEO 级 run 可能为空 */
+    taskId?: string;
+  };
+}
+
 export type TaskEvent =
   | TaskCreatedEvent
   | TaskUpdatedEvent
@@ -113,7 +128,8 @@ export type TaskEvent =
   | TaskBlockedEvent
   | TaskSummaryGeneratedEvent
   | TaskBreakdownRequestedEvent
-  | TaskHeartbeatTickEvent;
+  | TaskHeartbeatTickEvent
+  | TaskRunFailedEvent;
 
 export interface TaskEventTopics {
   'task.created': TaskCreatedEvent;
@@ -124,4 +140,5 @@ export interface TaskEventTopics {
   'task.summary.generated': TaskSummaryGeneratedEvent;
   'task.breakdown.requested': TaskBreakdownRequestedEvent;
   'task.heartbeat.tick': TaskHeartbeatTickEvent;
+  'task.run.failed': TaskRunFailedEvent;
 }

@@ -5,8 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { TenantContextService } from '@service/tenant';
+import { MessagingService } from '@service/messaging';
+import type { TaskRunFailedEvent } from '@contracts/events';
 import { ErrorCode } from '../../../common/exceptions/error-codes.js';
 import { CompanyMembership } from '../../companies/entities/company-membership.entity.js';
 import {
@@ -14,6 +17,7 @@ import {
   type TaskRunStatus,
   type TaskRunTriggerSource,
 } from '../entities/task-run.entity.js';
+import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
 
 interface Actor {
   id: string;
@@ -25,15 +29,20 @@ export interface StartTaskRunInput {
   temporalWorkflowId?: string | null;
   temporalRunId?: string | null;
   metadata?: Record<string, unknown> | null;
+  /** M4：可选，关联审批上下文 */
+  approvalRequestId?: string | null;
 }
 
 @Injectable()
 export class TaskRunService {
   constructor(
     @InjectRepository(TaskRun) private readonly runsRepo: Repository<TaskRun>,
+    @InjectRepository(TaskExecutionLog)
+    private readonly execLogsRepo: Repository<TaskExecutionLog>,
     @InjectRepository(CompanyMembership)
     private readonly membershipsRepo: Repository<CompanyMembership>,
     private readonly tenantContext: TenantContextService,
+    private readonly messaging: MessagingService,
   ) {}
 
   private getCompanyIdOrThrow(): string {
@@ -78,7 +87,9 @@ export class TaskRunService {
       finishedAt: row.finishedAt?.toISOString() ?? null,
       errorSummary: row.errorSummary ?? null,
       costEstimate: row.costEstimate ?? null,
+      actualCost: row.actualCost ?? null,
       metadata: row.metadata ?? null,
+      approvalRequestId: row.approvalRequestId ?? null,
     };
   }
 
@@ -92,6 +103,7 @@ export class TaskRunService {
       temporalRunId: input.temporalRunId ?? null,
       status: 'running',
       metadata: input.metadata ?? null,
+      approvalRequestId: input.approvalRequestId ?? null,
     });
     const saved = await this.runsRepo.save(row);
     return this.serializeRun(saved);
@@ -100,7 +112,7 @@ export class TaskRunService {
   async completeRun(
     runId: string,
     actor: Actor,
-    opts?: { costEstimate?: string | null },
+    opts?: { costEstimate?: string | null; actualCost?: string | null },
   ) {
     const companyId = this.getCompanyIdOrThrow();
     await this.assertAdmin(companyId, actor);
@@ -118,6 +130,9 @@ export class TaskRunService {
     row.finishedAt = new Date();
     if (opts?.costEstimate !== undefined) {
       row.costEstimate = opts.costEstimate;
+    }
+    if (opts?.actualCost !== undefined) {
+      row.actualCost = opts.actualCost;
     }
     const saved = await this.runsRepo.save(row);
     return this.serializeRun(saved);
@@ -140,6 +155,36 @@ export class TaskRunService {
     row.finishedAt = new Date();
     row.errorSummary = errorSummary.slice(0, 8000);
     const saved = await this.runsRepo.save(row);
+    const taskRow = await this.execLogsRepo.findOne({
+      where: { companyId, runId: saved.id },
+      select: ['taskId'],
+      order: { createdAt: 'DESC' },
+    });
+    const taskId = taskRow?.taskId ?? undefined;
+    const evt: TaskRunFailedEvent = {
+      eventId: randomUUID(),
+      eventType: 'task.run.failed',
+      aggregateId: saved.id,
+      aggregateType: 'task_run',
+      occurredAt: new Date().toISOString(),
+      version: 1,
+      companyId,
+      data: {
+        runId: saved.id,
+        companyId,
+        errorSummary: saved.errorSummary ?? '',
+        failedAt: saved.finishedAt?.toISOString() ?? new Date().toISOString(),
+        ...(taskId ? { taskId } : {}),
+      },
+    };
+    try {
+      await this.messaging.publish(evt, {
+        routingKey: 'task.run.failed',
+        persistent: true,
+      });
+    } catch {
+      // 告警旁路失败不影响主流程
+    }
     return this.serializeRun(saved);
   }
 

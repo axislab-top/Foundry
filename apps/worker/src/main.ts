@@ -3,6 +3,9 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { createLogger, LogLevel } from '@service/logging';
 import { ConfigService } from './common/config/config.service.js';
+import { startWorkerOtel } from './otel-bootstrap.js';
+
+startWorkerOtel();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {

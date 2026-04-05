@@ -43,12 +43,22 @@ export class ModelRouterService {
     reason: string;
   }> {
     const utilization = await this.budgetService.getUtilizationRatio(params.companyId);
+    const companyBudget = await this.budgetService.getCompanyBudget(params.companyId);
     const settings = await this.settingsRepo.findOne({
       where: { companyId: params.companyId },
     });
     const policy = settings?.routingPolicy ?? {};
     const degradePct = (settings?.degradeThresholdPct ?? 80) / 100;
-    const degraded = utilization >= degradePct;
+    let lowHeadroom = false;
+    if (companyBudget) {
+      const total = parseFloat(companyBudget.totalAmount);
+      const used = parseFloat(companyBudget.usedAmount);
+      if (total > 0) {
+        const rem = total - used;
+        lowHeadroom = rem > 0 && rem / total < 0.15;
+      }
+    }
+    const degraded = utilization >= degradePct || utilization >= 1 || lowHeadroom;
 
     if (params.agentPreferredModel?.trim()) {
       const resolved = {

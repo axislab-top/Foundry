@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "pnpm run build && tsx src/activities.spec.ts",
     "build:workflows": "node ./scripts/bundle-workflows.mjs",
     "build": "pnpm run build:workflows && tsc -p tsconfig.json",
     "start": "node dist/run.js",

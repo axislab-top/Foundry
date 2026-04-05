@@ -10,6 +10,7 @@ export interface BillingDashboardSummary {
     usedAmount: string;
     utilization: number;
     warningThreshold: string;
+    criticalThreshold: string;
     currency: string;
   } | null;
   aggregates: {
@@ -58,6 +59,7 @@ export class DashboardBillingService {
             usedAmount: budget.usedAmount,
             utilization,
             warningThreshold: budget.warningThreshold,
+            criticalThreshold: budget.criticalThreshold ?? '0.9',
             currency: budget.currency,
           }
         : null,

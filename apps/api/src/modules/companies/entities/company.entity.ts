@@ -64,6 +64,10 @@ export class Company {
   @Column({ name: 'default_language', type: 'varchar', length: 16, nullable: true })
   defaultLanguage: string | null;
 
+  /** M4：全局执行熔断（董事会紧急制动） */
+  @Column({ name: 'execution_paused', type: 'boolean', default: false })
+  executionPaused: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
 

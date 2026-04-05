@@ -47,7 +47,7 @@ interface Actor {
 
 /** 合法状态迁移（不含保持不变） */
 const ALLOWED_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  pending: ['in_progress', 'review', 'awaiting_approval', 'blocked', 'cancelled'],
+  pending: ['in_progress', 'review', 'awaiting_approval', 'blocked', 'cancelled', 'paused'],
   in_progress: [
     'review',
     'awaiting_approval',
@@ -55,6 +55,7 @@ const ALLOWED_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
     'blocked',
     'cancelled',
     'pending',
+    'paused',
   ],
   review: [
     'completed',
@@ -62,11 +63,13 @@ const ALLOWED_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
     'awaiting_approval',
     'blocked',
     'cancelled',
+    'paused',
   ],
-  awaiting_approval: ['in_progress', 'completed', 'blocked', 'cancelled', 'review'],
+  awaiting_approval: ['in_progress', 'completed', 'blocked', 'cancelled', 'review', 'paused'],
   completed: [],
   blocked: ['in_progress', 'cancelled', 'pending', 'awaiting_approval'],
   cancelled: [],
+  paused: ['in_progress', 'pending', 'cancelled', 'blocked'],
 };
 
 @Injectable()

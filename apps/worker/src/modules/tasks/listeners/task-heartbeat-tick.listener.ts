@@ -1,8 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { MessagingService } from '@service/messaging';
 import type { TaskHeartbeatTickEvent } from '@contracts/events';
-import { AutonomousOrchestratorService } from '../../autonomous/autonomous-orchestrator.service.js';
-import { PendingAgentTaskExecutionService } from '../pending-agent-tasks.service.js';
+import { CeoHeartbeatRunCoordinatorService } from '../ceo-heartbeat-run-coordinator.service.js';
 
 /**
  * 消费心跳 tick：触发 CEO LangGraph 流水线（Dashboard + Memory → 汇报草稿）。
@@ -14,8 +13,7 @@ export class TaskHeartbeatTickListener implements OnModuleInit {
 
   constructor(
     private readonly messaging: MessagingService,
-    private readonly autonomous: AutonomousOrchestratorService,
-    private readonly pendingAgentTasks: PendingAgentTaskExecutionService,
+    private readonly coordinator: CeoHeartbeatRunCoordinatorService,
   ) {}
 
   onModuleInit() {
@@ -52,21 +50,10 @@ export class TaskHeartbeatTickListener implements OnModuleInit {
     this.inFlightCompanies.add(companyId);
     this.logger.debug('task.heartbeat.tick', { companyId, tickAt });
     try {
-      try {
-        await this.autonomous.runHeartbeat(companyId, tickAt, {
-          triggerSource: 'schedule',
-        });
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        this.logger.warn('autonomous.runHeartbeat failed', { companyId, message });
-      }
-
-      try {
-        await this.pendingAgentTasks.processPendingForCompany(companyId);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        this.logger.warn('pendingAgentTasks.processPendingForCompany failed', { companyId, message });
-      }
+      await this.coordinator.runCycle(companyId, tickAt, 'nest_timer', {});
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.logger.warn('ceo heartbeat run cycle failed', { companyId, tickAt, message });
     } finally {
       this.inFlightCompanies.delete(companyId);
     }

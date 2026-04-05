@@ -40,16 +40,14 @@ describe('PendingAgentTaskExecutionService', () => {
       executeSkill: jest.fn(),
     } as any;
 
-    const gate = {
-      isCeoApproved: jest.fn(() => false),
-    } as any;
+    const executionLog = { appendForTask: jest.fn() } as any;
 
     const service = new PendingAgentTaskExecutionService(
       apiRpc,
       config,
       registry,
       agentExecution,
-      gate,
+      executionLog,
     );
 
     await service.processPendingForCompany('company-1');

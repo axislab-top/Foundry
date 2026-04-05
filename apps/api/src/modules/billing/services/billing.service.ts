@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { MessagingService } from '@service/messaging';
 import type {
   BillingRecordedEvent,
+  BudgetCriticalLowEvent,
   BudgetExceededEvent,
   BudgetWarningEvent,
 } from '@contracts/events';
@@ -16,6 +17,7 @@ import { LlmKey } from '../../llm-keys/entities/llm-key.entity.js';
 import { LlmKeyDailyUsage } from '../../llm-keys/entities/llm-key-daily-usage.entity.js';
 import { CacheService } from '../../../common/cache/cache.service.js';
 import { BudgetService } from './budget.service.js';
+import { BudgetExhaustedError } from '../errors/budget-exhausted.error.js';
 
 function toUsageDateUTC(d: Date): string {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -87,6 +89,14 @@ export class BillingService {
 
         const savedRecord = await recordRepo.save(row);
 
+        await this.budgetService.applyBillingConsumptionInTransaction(
+          manager,
+          companyId,
+          cost,
+          dto.agentId ?? null,
+          dto.departmentId ?? null,
+        );
+
         // 与 billing_records 处于同一事务：避免 daily usage 更新失败导致“billing 记录已落库但 usage 未落库”的不一致。
         if (dto.llmKeyId && dto.recordType === 'llm') {
           const usedTokens = BigInt(dto.inputTokens ?? 0) + BigInt(dto.outputTokens ?? 0);
@@ -113,6 +123,9 @@ export class BillingService {
         return savedRecord;
       });
     } catch (e: unknown) {
+      if (e instanceof BudgetExhaustedError) {
+        throw e;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('uq_billing_records_company_idempotency') && dto.idempotencyKey) {
         const existing = await this.recordRepo.findOne({
@@ -128,7 +141,7 @@ export class BillingService {
       throw e;
     }
 
-    await this.budgetService.incrementCompanyUsed(companyId, cost);
+    await this.budgetService.invalidateUtilizationCache(companyId);
     const utilizationAfter = await this.budgetService.getUtilizationRatio(companyId);
     await this.maybeEmitBudgetSignals(companyId, utilizationAfter);
 
@@ -191,29 +204,18 @@ export class BillingService {
   async checkAllowance(
     companyId: string,
     estimatedCost = 0,
+    opts?: { agentId?: string | null; departmentId?: string | null; runId?: string | null },
   ): Promise<{
     allowed: boolean;
     utilization: number;
     reason?: string;
+    remainingMin?: number;
   }> {
-    const budget = await this.budgetService.getCompanyBudget(companyId);
-    if (!budget) {
-      return { allowed: true, utilization: 0 };
-    }
-    const total = parseFloat(budget.totalAmount);
-    const used = parseFloat(budget.usedAmount);
-    if (total <= 0) {
-      return { allowed: true, utilization: 0 };
-    }
-    const utilization = Math.min(1, used / total);
-    if (used + estimatedCost > total) {
-      return {
-        allowed: false,
-        utilization,
-        reason: 'budget_exhausted',
-      };
-    }
-    return { allowed: true, utilization };
+    void opts?.runId;
+    return this.budgetService.evaluateSpendAllowance(companyId, estimatedCost, {
+      agentId: opts?.agentId,
+      departmentId: opts?.departmentId,
+    });
   }
 
   private async resolvePricing(
@@ -310,6 +312,7 @@ export class BillingService {
     if (!budget) return;
 
     const warn = parseFloat(budget.warningThreshold);
+    const critical = parseFloat(budget.criticalThreshold ?? '0.9');
     const now = new Date().toISOString();
 
     if (utilization >= 1) {
@@ -339,7 +342,33 @@ export class BillingService {
       return;
     }
 
-    if (utilization >= warn && utilization < 1) {
+    if (utilization >= critical && utilization < 1) {
+      const dedupKey = `billing:critical_sent:v1:${companyId}`;
+      if (!(await this.cache.get(dedupKey))) {
+        const event: BudgetCriticalLowEvent = {
+          eventId: randomUUID(),
+          eventType: 'budget.critical_low',
+          aggregateId: companyId,
+          aggregateType: 'company',
+          occurredAt: now,
+          version: 1,
+          companyId,
+          data: {
+            companyId,
+            utilization,
+            criticalThreshold: critical,
+            occurredAt: now,
+          },
+        };
+        await this.messaging.publish(event, {
+          routingKey: 'budget.critical_low',
+          persistent: true,
+        });
+        await this.cache.set(dedupKey, '1', 86400);
+      }
+    }
+
+    if (utilization >= warn && utilization < critical) {
       const dedupKey = `billing:warn_sent:v1:${companyId}`;
       if (await this.cache.get(dedupKey)) {
         return;

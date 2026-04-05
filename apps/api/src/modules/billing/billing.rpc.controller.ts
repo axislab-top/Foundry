@@ -12,6 +12,7 @@ import {
   IsUUID,
   ValidateNested,
 } from 'class-validator';
+import { BudgetExhaustedError } from './errors/budget-exhausted.error.js';
 import { TenantContextService } from '@service/tenant';
 import { executeRpc } from '../../common/rpc/rpc-execution.js';
 import { validateRpcDto } from '../../common/rpc/rpc-validation.js';
@@ -112,6 +113,18 @@ class BillingAllowanceRpcDto extends CompanyRpcDto {
   @IsNumber()
   @Min(0)
   estimatedCost?: number;
+
+  @IsOptional()
+  @IsUUID()
+  agentId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  runId?: string;
 }
 
 @Controller()
@@ -148,6 +161,13 @@ export class BillingRpcController {
         this.billing.appendRecord(dto.companyId, dto.data),
       );
     } catch (e: unknown) {
+      if (e instanceof BudgetExhaustedError) {
+        throw new RpcException({
+          status: 409,
+          message: e.message,
+          code: e.code,
+        });
+      }
       throw this.toRpcError(e);
     }
   }
@@ -224,7 +244,11 @@ export class BillingRpcController {
     try {
       const dto = validateRpcDto(BillingAllowanceRpcDto, payload);
       return await this.runWithCompany(dto.companyId, () =>
-        this.billing.checkAllowance(dto.companyId, dto.estimatedCost ?? 0),
+        this.billing.checkAllowance(dto.companyId, dto.estimatedCost ?? 0, {
+          agentId: dto.agentId,
+          departmentId: dto.departmentId,
+          runId: dto.runId,
+        }),
       );
     } catch (e: unknown) {
       throw this.toRpcError(e);

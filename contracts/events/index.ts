@@ -14,6 +14,8 @@ export * from './collaboration.events.js';
 export * from './memory.events.js';
 export * from './task.events.js';
 export * from './billing.events.js';
+export * from './approval.events.js';
+export * from './supervisor.events.js';
 export * from './autonomous.events.js';
 export * from './template.events.js';
 

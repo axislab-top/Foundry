@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity.js';
-import type { GatewayRequest } from '../../common/types/gateway-request.type.js';
+import type { GatewayRequest } from '../../../common/types/request.types.js';
 
 /**
  * 审计日志服务
@@ -41,8 +41,15 @@ export class AuditService {
     error?: Error,
   ): Promise<void> {
     try {
+      const responseBody =
+        error != null
+          ? error.message
+          : response?.statusCode >= 400
+            ? this.maskBody(response?.body)
+            : null;
+
       const auditLog = this.auditLogRepository.create({
-        requestId: request.requestId,
+        requestId: request.requestId ?? null,
         userId: request.user?.id || null,
         companyId: this.extractCompanyId(request),
         apiKeyId: request.apiKey?.keyId || null,
@@ -52,7 +59,7 @@ export class AuditService {
         statusCode: response?.statusCode || 500,
         requestHeaders: this.maskHeaders(request.headers),
         requestBody: this.maskBody(request.body),
-        responseBody: error || (response?.statusCode >= 400 ? this.maskBody(response?.body) : null),
+        responseBody,
         clientIp: this.extractClientIp(request),
         userAgent: request.headers['user-agent'] || null,
         durationMs,

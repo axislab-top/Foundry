@@ -34,4 +34,32 @@ try {
   }
 }
 
+const reportScheduleId = process.env.TEMPORAL_SUPERVISOR_REPORT_SCHEDULE_ID ?? 'foundry-supervisor-report-daily';
+const reportIntervalHours = Number(process.env.TEMPORAL_SUPERVISOR_REPORT_INTERVAL_HOURS ?? '24');
+
+try {
+  await client.schedule.create({
+    scheduleId: reportScheduleId,
+    spec: {
+      intervals: [{ every: `${reportIntervalHours}h` }],
+    },
+    action: {
+      type: 'startWorkflow',
+      workflowType: 'supervisorReportFanoutWorkflow',
+      args: [{ kind: 'daily' }],
+      taskQueue,
+    },
+  });
+  console.log(
+    `Schedule created: ${reportScheduleId} every ${reportIntervalHours}h on queue ${taskQueue}`,
+  );
+} catch (e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.includes('already exists') || msg.includes('AlreadyExists')) {
+    console.log(`Schedule already exists: ${reportScheduleId}`);
+  } else {
+    throw e;
+  }
+}
+
 await connection.close();

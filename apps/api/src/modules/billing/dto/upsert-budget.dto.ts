@@ -33,6 +33,13 @@ export class UpsertBudgetDto {
   @Max(1)
   warningThreshold?: number;
 
+  /** 利用率 ≥ 此值触发「剩余约 10%」级临界预警（默认 0.9） */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  criticalThreshold?: number;
+
   @IsOptional()
   @Type(() => Date)
   periodStart?: Date;

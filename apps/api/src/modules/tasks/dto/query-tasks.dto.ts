@@ -10,6 +10,7 @@ const statuses = [
   'completed',
   'blocked',
   'cancelled',
+  'paused',
 ] as const;
 
 const assigneeTypes = ['unassigned', 'agent', 'organization_node'] as const;

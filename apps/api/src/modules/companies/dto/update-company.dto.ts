@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsNumber, IsOptional, IsString, IsUrl, Length, Min } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, IsUrl, Length, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { COMPANY_INDUSTRY_CODES } from '@contracts/types';
 import type { CompanyScale } from '../entities/company.entity.js';
@@ -63,4 +63,9 @@ export class UpdateCompanyDto {
   @IsString()
   @Length(1, 16)
   defaultLanguage?: string;
+
+  /** M4：紧急制动，暂停该公司下执行与消费预检 */
+  @IsOptional()
+  @IsBoolean()
+  executionPaused?: boolean;
 }

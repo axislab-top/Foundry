@@ -32,6 +32,8 @@ export interface TaskRunItem {
   startedAt: string;
   finishedAt?: string | null;
   errorSummary?: string | null;
+  costEstimate?: string | null;
+  actualCost?: string | null;
 }
 
 export interface BoardRunSummary {
@@ -57,11 +59,40 @@ export interface TaskDependencyEdge {
 
 export interface ExecutionLogItem {
   id: string;
+  taskId?: string | null;
   agentId: string | null;
   stepType: string;
   message: string | null;
   runId: string | null;
   createdAt: string;
+  durationMs?: number | null;
+  outputSnapshot?: Record<string, unknown> | null;
+  traceId?: string | null;
+  billingUnits?: string | null;
+}
+
+export interface TraceEventRow {
+  event_time: string;
+  company_id: string;
+  run_id: string;
+  task_id: string | null;
+  agent_id: string | null;
+  request_id: string;
+  trace_id: string;
+  span_id: string;
+  parent_span_id: string;
+  event_type: string;
+  source_service: string;
+  payload_json: string;
+}
+
+export interface ExecutionLogsByRunResponse {
+  runId: string;
+  items: ExecutionLogItem[];
+}
+
+export interface TraceEventsByRunResponse {
+  items: TraceEventRow[];
 }
 
 export interface ExecutionLogGroup {
@@ -126,6 +157,30 @@ export const tasksApi = {
       { params: { companyId, limit } },
     );
     return unwrapResponse(data) as ExecutionLogsGroupedResponse;
+  },
+
+  async fetchExecutionLogsByRunId(
+    companyId: string,
+    runId: string,
+    limit = 200,
+  ): Promise<ExecutionLogsByRunResponse> {
+    const { data } = await apiClient.get<unknown>(
+      `/v1/task-runs/${encodeURIComponent(runId)}/execution-logs`,
+      { params: { companyId, limit } },
+    );
+    return unwrapResponse(data) as ExecutionLogsByRunResponse;
+  },
+
+  async fetchTraceEventsByRunId(
+    companyId: string,
+    runId: string,
+    limit = 500,
+  ): Promise<TraceEventsByRunResponse> {
+    const { data } = await apiClient.get<unknown>(
+      `/v1/task-runs/${encodeURIComponent(runId)}/trace-events`,
+      { params: { companyId, limit } },
+    );
+    return unwrapResponse(data) as TraceEventsByRunResponse;
   },
 };
 

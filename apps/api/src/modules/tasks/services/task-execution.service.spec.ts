@@ -5,7 +5,9 @@ import { Repository } from 'typeorm';
 import { TenantContextService } from '@service/tenant';
 import { CompanyMembership } from '../../companies/entities/company-membership.entity.js';
 import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
+import { TaskRun } from '../entities/task-run.entity.js';
 import { Task } from '../entities/task.entity.js';
+import { ClickhouseTraceService } from '../../observability/clickhouse-trace.service.js';
 import { TaskExecutionService } from './task-execution.service.js';
 
 describe('TaskExecutionService', () => {
@@ -13,6 +15,7 @@ describe('TaskExecutionService', () => {
   let logsRepo: jest.Mocked<Pick<Repository<TaskExecutionLog>, 'create' | 'save' | 'find'>>;
   let tasksRepo: { findOne: jest.Mock };
   let membershipsRepo: { findOne: jest.Mock };
+  let runsRepo: { findOne: jest.Mock };
 
   const companyId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
   const taskId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -29,6 +32,7 @@ describe('TaskExecutionService', () => {
       find: jest.fn(),
     };
     tasksRepo = { findOne: jest.fn() };
+    runsRepo = { findOne: jest.fn() };
     membershipsRepo = { findOne: jest.fn() };
 
     const tenantContext = {
@@ -36,13 +40,17 @@ describe('TaskExecutionService', () => {
       runWithCompanyId: jest.fn((_id: string, fn: () => unknown) => fn()),
     };
 
+    const clickhouseTrace = { mirrorExecutionLog: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskExecutionService,
         { provide: getRepositoryToken(TaskExecutionLog), useValue: logsRepo },
         { provide: getRepositoryToken(Task), useValue: tasksRepo },
+        { provide: getRepositoryToken(TaskRun), useValue: runsRepo },
         { provide: getRepositoryToken(CompanyMembership), useValue: membershipsRepo },
         { provide: TenantContextService, useValue: tenantContext },
+        { provide: ClickhouseTraceService, useValue: clickhouseTrace },
       ],
     }).compile();
 

@@ -49,6 +49,16 @@ export class Budget {
   })
   warningThreshold: string;
 
+  /** 利用率 ≥ 此值（如约 0.9 = 剩余 10%）触发临界预警 */
+  @Column({
+    name: 'critical_threshold',
+    type: 'numeric',
+    precision: 5,
+    scale: 4,
+    default: 0.9,
+  })
+  criticalThreshold: string;
+
   @Column({ name: 'period_start', type: 'timestamp', nullable: true })
   periodStart: Date | null;
 

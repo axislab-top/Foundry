@@ -17,6 +17,8 @@
       "@contracts/events": ["../../contracts/events/index.ts"],
       "@contracts/types": ["../../contracts/types/index.ts"],
       "@foundry/task-core": ["../../packages/core/task/src/index.ts"],
+      "@foundry/supervisor-core": ["../../packages/core/supervisor/src/index.ts"],
+      "@foundry/observability-core": ["../../packages/core/observability/src/index.ts"],
       "@service/tenant": ["../../infrastructure/tenant/src/index.ts"],
       "@service/messaging": ["../../infrastructure/messaging/src/index.ts"]
     },
