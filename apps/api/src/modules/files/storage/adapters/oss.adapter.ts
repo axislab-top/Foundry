@@ -35,12 +35,27 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
     });
   }
 
+  private assertTenantObjectKey(key: string): void {
+    if (
+      key.startsWith('companies/') ||
+      key.startsWith('memory/') ||
+      key.startsWith('skills/') ||
+      key.startsWith('platform/')
+    ) {
+      return;
+    }
+    throw new Error(
+      'OSS object key must be tenant-scoped (companies/..., memory/..., skills/..., or platform/...)',
+    );
+  }
+
   async upload(
     file: Express.Multer.File,
     path?: string,
     options?: UploadOptions,
   ): Promise<FileInfo> {
     const objectName = path || this.generatePath(file.originalname);
+    this.assertTenantObjectKey(objectName);
     const contentType = options?.contentType || file.mimetype;
 
     const result = await this.client.put(objectName, file.buffer, {
@@ -66,11 +81,13 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
   }
 
   async download(path: string): Promise<Buffer> {
+    this.assertTenantObjectKey(path);
     const result = await this.client.get(path);
     return result.content as Buffer;
   }
 
   async getUrl(path: string, expiresIn: number = 3600): Promise<string> {
+    this.assertTenantObjectKey(path);
     try {
       // 生成签名 URL
       const url = this.client.signatureUrl(path, {
@@ -84,6 +101,7 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
   }
 
   async delete(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       await this.client.delete(path);
       return true;
@@ -93,6 +111,7 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
   }
 
   async exists(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       await this.client.head(path);
       return true;
@@ -102,6 +121,7 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
   }
 
   async getFileInfo(path: string): Promise<FileInfo> {
+    this.assertTenantObjectKey(path);
     const result = await this.client.head(path);
     const fileName = path.split('/').pop() || path;
 
@@ -118,6 +138,9 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
   }
 
   async list(prefix?: string, options?: ListOptions): Promise<FileInfo[]> {
+    if (prefix != null && prefix !== '') {
+      this.assertTenantObjectKey(prefix);
+    }
     const files: FileInfo[] = [];
     let marker: string | undefined = options?.marker;
 

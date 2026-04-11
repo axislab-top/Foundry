@@ -15,6 +15,7 @@ import { SkillExecutionLog } from '../entities/skill-execution-log.entity.js';
 import { SkillRevision } from '../entities/skill-revision.entity.js';
 import { SkillArtifact } from '../entities/skill-artifact.entity.js';
 import { StorageService } from '../../files/storage/storage.service.js';
+import { PLATFORM_SCOPE_COMPANY_ID } from '../../files/storage/storage-tenant-path.util.js';
 
 export interface AdminActor {
   id: string;
@@ -136,9 +137,14 @@ export class SkillsAdminService {
       throw new BadRequestException({ code: ErrorCode.BAD_REQUEST, message: 'Skill metadata.artifact.path 未设置，请先上传 zip' });
     }
 
-    const buf = await this.storage.download(artifactPath);
+    const buf = await this.storage.download(
+      PLATFORM_SCOPE_COMPANY_ID,
+      artifactPath,
+    );
     const sha256 = createHash('sha256').update(buf).digest('hex');
-    const info = await this.storage.getFileInfo(artifactPath).catch(() => null);
+    const info = await this.storage
+      .getFileInfo(PLATFORM_SCOPE_COMPANY_ID, artifactPath)
+      .catch(() => null);
 
     const artifact = await this.artifactsRepo.save(
       this.artifactsRepo.create({

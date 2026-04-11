@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
@@ -21,6 +22,7 @@ import { Skill } from '../entities/skill.entity.js';
 import { SkillRevision } from '../entities/skill-revision.entity.js';
 import { SkillArtifact } from '../entities/skill-artifact.entity.js';
 import { SkillValidatorService } from './skill-validator.service.js';
+import { SkillsBindingMetricsService } from './skills-binding-metrics.service.js';
 
 interface Actor {
   id: string;
@@ -75,6 +77,7 @@ export class SkillsService {
     private readonly tenantContext: TenantContextService,
     private readonly skillValidator: SkillValidatorService,
     private readonly storage: StorageService,
+    @Optional() private readonly skillsBindingMetrics?: SkillsBindingMetricsService,
   ) {}
 
   private getCompanyIdOrThrow(): string {
@@ -217,6 +220,37 @@ export class SkillsService {
     return names.map((n) => byName.get(n)).filter((id): id is string => !!id);
   }
 
+  async resolveRequiredGlobalSkillIdsByNames(
+    names: string[],
+    opts?: { source?: string; errorPrefix?: string },
+  ): Promise<string[]> {
+    const dedupedNames = Array.from(
+      new Set(
+        names
+          .map((n) => String(n ?? '').trim())
+          .filter(Boolean),
+      ),
+    );
+    if (dedupedNames.length === 0) return [];
+    const skills = await this.skillsRepo
+      .createQueryBuilder('s')
+      .where('s.company_id IS NULL AND s.name IN (:...names)', { names: dedupedNames })
+      .getMany();
+    const byName = new Map(skills.map((s) => [s.name, s.id]));
+    const missing = dedupedNames.filter((n) => !byName.has(n));
+    if (missing.length > 0) {
+      this.skillsBindingMetrics?.incBindMissing(opts?.source ?? 'unknown', missing.length);
+      throw new BadRequestException({
+        code: ErrorCode.BAD_REQUEST,
+        message:
+          `${opts?.errorPrefix ?? '缺少 Global Skills'}: ${missing.join(', ')}` +
+          '。请先由平台管理员在 Global Skills 中创建/Seed 后重试。',
+        missingSkills: missing,
+      });
+    }
+    return dedupedNames.map((n) => byName.get(n)!).filter(Boolean);
+  }
+
   async findByIdsForTenant(skillIds: string[], companyId: string): Promise<Skill[]> {
     if (skillIds.length === 0) return [];
     return this.skillsRepo
@@ -311,9 +345,11 @@ export class SkillsService {
     if (!artifactPath) {
       throw new BadRequestException({ code: ErrorCode.BAD_REQUEST, message: 'Skill metadata.artifact.path 未设置，请先上传 zip' });
     }
-    const buf = await this.storage.download(artifactPath);
+    const buf = await this.storage.download(companyId, artifactPath);
     const sha256 = createHash('sha256').update(buf).digest('hex');
-    const info = await this.storage.getFileInfo(artifactPath).catch(() => null);
+    const info = await this.storage
+      .getFileInfo(companyId, artifactPath)
+      .catch(() => null);
     const artifact = await this.artifactsRepo.save(
       this.artifactsRepo.create({
         companyId,

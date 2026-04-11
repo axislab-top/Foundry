@@ -3,12 +3,14 @@
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { StorageService } from './storage.service.js';
 import { IStorageAdapter } from '../interfaces/storage.interface.js';
 
 describe('StorageService', () => {
   let service: StorageService;
   let adapter: jest.Mocked<IStorageAdapter>;
+  const companyId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
   beforeEach(async () => {
     adapter = {
@@ -43,7 +45,7 @@ describe('StorageService', () => {
   });
 
   describe('upload', () => {
-    it('should upload file', async () => {
+    it('should upload file with tenant prefix', async () => {
       const mockFile = {
         fieldname: 'file',
         originalname: 'test.txt',
@@ -54,139 +56,79 @@ describe('StorageService', () => {
       } as Express.Multer.File;
 
       const mockFileInfo = {
-        path: 'uploads/test.txt',
+        path: `companies/${companyId}/uploads/x`,
         size: 1024,
-        mimetype: 'text/plain',
-        url: 'http://localhost/uploads/test.txt',
+        contentType: 'text/plain',
+        url: 'http://localhost/x',
       };
 
       adapter.upload.mockResolvedValue(mockFileInfo);
 
-      const result = await service.upload(mockFile, 'uploads');
+      const result = await service.upload(mockFile, companyId, 'uploads/x');
 
-      expect(adapter.upload).toHaveBeenCalledWith(mockFile, 'uploads', undefined);
+      expect(adapter.upload).toHaveBeenCalledWith(
+        mockFile,
+        `companies/${companyId}/uploads/x`,
+        undefined,
+      );
       expect(result).toEqual(mockFileInfo);
     });
-  });
 
-  describe('download', () => {
-    it('should download file', async () => {
-      const path = 'uploads/test.txt';
-      const mockBuffer = Buffer.from('test content');
-
-      adapter.download.mockResolvedValue(mockBuffer);
-
-      const result = await service.download(path);
-
-      expect(adapter.download).toHaveBeenCalledWith(path);
-      expect(result).toEqual(mockBuffer);
-    });
-  });
-
-  describe('getUrl', () => {
-    it('should get file URL', async () => {
-      const path = 'uploads/test.txt';
-      const url = 'http://localhost/uploads/test.txt';
-
-      adapter.getUrl.mockResolvedValue(url);
-
-      const result = await service.getUrl(path);
-
-      expect(adapter.getUrl).toHaveBeenCalledWith(path, undefined);
-      expect(result).toBe(url);
+    it('throws without companyId', async () => {
+      const mockFile = {
+        originalname: 'a.txt',
+        mimetype: 'text/plain',
+        size: 1,
+        buffer: Buffer.from('x'),
+      } as Express.Multer.File;
+      await expect(service.upload(mockFile, '')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
-    it('should get file URL with expiration', async () => {
-      const path = 'uploads/test.txt';
-      const url = 'http://localhost/uploads/test.txt?expires=123456';
-      const expiresIn = 3600;
-
-      adapter.getUrl.mockResolvedValue(url);
-
-      const result = await service.getUrl(path, expiresIn);
-
-      expect(adapter.getUrl).toHaveBeenCalledWith(path, expiresIn);
-      expect(result).toBe(url);
+    it('throws on write path using legacy memory/{companyId}/ root (must use companies/.../memory/)', async () => {
+      const mockFile = {
+        originalname: 'a.txt',
+        mimetype: 'text/plain',
+        size: 1,
+        buffer: Buffer.from('x'),
+      } as Express.Multer.File;
+      await expect(
+        service.upload(mockFile, companyId, `memory/${companyId}/x.txt`),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(adapter.upload).not.toHaveBeenCalled();
     });
   });
 
   describe('delete', () => {
-    it('should delete file', async () => {
-      const path = 'uploads/test.txt';
-
-      adapter.delete.mockResolvedValue(true);
-
-      const result = await service.delete(path);
-
-      expect(adapter.delete).toHaveBeenCalledWith(path);
-      expect(result).toBe(true);
+    it('throws without companyId', async () => {
+      await expect(service.delete('', 'uploads/x')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(adapter.delete).not.toHaveBeenCalled();
     });
   });
 
-  describe('exists', () => {
-    it('should check if file exists', async () => {
-      const path = 'uploads/test.txt';
-
-      adapter.exists.mockResolvedValue(true);
-
-      const result = await service.exists(path);
-
-      expect(adapter.exists).toHaveBeenCalledWith(path);
-      expect(result).toBe(true);
-    });
-  });
-
-  describe('getFileInfo', () => {
-    it('should get file info', async () => {
-      const path = 'uploads/test.txt';
-      const mockFileInfo = {
-        path,
-        size: 1024,
-        mimetype: 'text/plain',
-        url: 'http://localhost/uploads/test.txt',
-      };
-
-      adapter.getFileInfo.mockResolvedValue(mockFileInfo);
-
-      const result = await service.getFileInfo(path);
-
-      expect(adapter.getFileInfo).toHaveBeenCalledWith(path);
-      expect(result).toEqual(mockFileInfo);
+  describe('download', () => {
+    it('should resolve tenant key', async () => {
+      const mockBuffer = Buffer.from('test');
+      adapter.download.mockResolvedValue(mockBuffer);
+      const result = await service.download(companyId, 'uploads/test.txt');
+      expect(adapter.download).toHaveBeenCalledWith(
+        `companies/${companyId}/uploads/test.txt`,
+      );
+      expect(result).toEqual(mockBuffer);
     });
   });
 
   describe('list', () => {
-    it('should list files', async () => {
-      const prefix = 'uploads/';
-      const mockFiles = [
-        {
-          path: 'uploads/file1.txt',
-          size: 1024,
-          mimetype: 'text/plain',
-          url: 'http://localhost/uploads/file1.txt',
-        },
-        {
-          path: 'uploads/file2.txt',
-          size: 2048,
-          mimetype: 'text/plain',
-          url: 'http://localhost/uploads/file2.txt',
-        },
-      ];
-
-      adapter.list.mockResolvedValue(mockFiles);
-
-      const result = await service.list(prefix);
-
-      expect(adapter.list).toHaveBeenCalledWith(prefix, undefined);
-      expect(result).toEqual(mockFiles);
+    it('should list under tenant prefix when prefix omitted', async () => {
+      adapter.list.mockResolvedValue([]);
+      await service.list(companyId);
+      expect(adapter.list).toHaveBeenCalledWith(
+        `companies/${companyId}/`,
+        undefined,
+      );
     });
   });
 });
-
-
-
-
-
-
-
-

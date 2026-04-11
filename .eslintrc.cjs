@@ -23,6 +23,17 @@ module.exports = {
     '**/coverage/**',
     '**/.turbo/**',
   ],
+  overrides: [
+    {
+      files: ['apps/worker/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          { paths: ['child_process', 'node:child_process'] },
+        ],
+      },
+    },
+  ],
   rules: {
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/no-unused-vars': [

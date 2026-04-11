@@ -42,12 +42,27 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
     return join(this.basePath, path);
   }
 
+  private assertTenantObjectKey(key: string): void {
+    if (
+      key.startsWith('companies/') ||
+      key.startsWith('memory/') ||
+      key.startsWith('skills/') ||
+      key.startsWith('platform/')
+    ) {
+      return;
+    }
+    throw new Error(
+      'Local storage path must be tenant-scoped (companies/..., memory/..., skills/..., or platform/...)',
+    );
+  }
+
   async upload(
     file: Express.Multer.File,
     path?: string,
     options?: UploadOptions,
   ): Promise<FileInfo> {
     const filePath = path || this.generatePath(file.originalname);
+    this.assertTenantObjectKey(filePath);
     const fullPath = this.getFullPath(filePath);
     const dir = dirname(fullPath);
 
@@ -72,16 +87,18 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
   }
 
   async download(path: string): Promise<Buffer> {
+    this.assertTenantObjectKey(path);
     const fullPath = this.getFullPath(path);
     return await fs.readFile(fullPath);
   }
 
   async getUrl(path: string, expiresIn?: number): Promise<string> {
-    // 本地存储不需要过期时间，直接返回 URL
+    this.assertTenantObjectKey(path);
     return `${this.baseUrl}/${path}`;
   }
 
   async delete(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       const fullPath = this.getFullPath(path);
       await fs.unlink(fullPath);
@@ -92,6 +109,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
   }
 
   async exists(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       const fullPath = this.getFullPath(path);
       await fs.access(fullPath);
@@ -102,6 +120,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
   }
 
   async getFileInfo(path: string): Promise<FileInfo> {
+    this.assertTenantObjectKey(path);
     const fullPath = this.getFullPath(path);
     const stats = await fs.stat(fullPath);
     const fileName = path.split('/').pop() || path;
@@ -118,6 +137,9 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
   }
 
   async list(prefix?: string, options?: ListOptions): Promise<FileInfo[]> {
+    if (prefix != null && prefix !== '') {
+      this.assertTenantObjectKey(prefix);
+    }
     const searchPath = prefix ? this.getFullPath(prefix) : this.basePath;
     const files: FileInfo[] = [];
 

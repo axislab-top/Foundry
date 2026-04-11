@@ -47,6 +47,23 @@ export class ConfigService {
     };
   }
 
+  getRedisUrl(): string | undefined {
+    const direct = this.configManager.get<string>('REDIS_URL', '');
+    return direct?.trim() ? direct.trim() : undefined;
+  }
+
+  getRedisKeyPrefix(): string {
+    return (this.configManager.get<string>('REDIS_KEY_PREFIX', '') || '').trim();
+  }
+
+  getCeoLlmPrepCacheEnabled(): boolean {
+    return this.configManager.get<boolean>('CEO_LLM_PREP_CACHE_ENABLED', false);
+  }
+
+  getCeoLlmPrepCacheTtlMs(): number {
+    return this.configManager.get<number>('CEO_LLM_PREP_CACHE_TTL_MS', 20_000);
+  }
+
   /** 供 RMQ ClientProxy 连接 API 队列（与 apps/api main.ts 一致） */
   getRmqUrl(): string {
     const direct = this.configManager.get<string>('RMQ_URL');
@@ -60,6 +77,14 @@ export class ConfigService {
         ? '/'
         : `/${encodeURIComponent(c.vhost.replace(/^\//, ''))}`;
     return `amqp://${user}:${pass}@${c.host}:${c.port}${vhostPath}`;
+  }
+
+  /** Runner 微服务 RPC 队列（与 apps/runner main.ts RUNNER_RMQ_QUEUE 一致） */
+  getRunnerRpcQueue(): string {
+    return this.configManager.get<string>(
+      'RUNNER_RMQ_RPC_QUEUE',
+      'runner-rpc-queue',
+    );
   }
 
   getApiRpcQueue(): string {
@@ -79,6 +104,16 @@ export class ConfigService {
    * 协作 @CEO 提及监听器内 RPC（agents / collaboration / tasks）超时。
    * 队列积压时过短会导致「Request timed out」类失败且用户看不到拆解。
    */
+  /** 与 API 侧 MARKETPLACE_BINDING_NOTIFY_MAX_COMPANIES 对齐。 */
+  getMarketplaceBindingNotifyMaxCompanies(): number {
+    const raw = this.configManager.get<number | string | undefined>(
+      'MARKETPLACE_BINDING_NOTIFY_MAX_COMPANIES',
+    );
+    const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : raw;
+    if (typeof n !== 'number' || Number.isNaN(n)) return 500;
+    return Math.min(50_000, Math.max(1, Math.floor(n)));
+  }
+
   getCollaborationMentionRpcTimeoutMs(): number {
     const raw = this.configManager.get<number | string | undefined>(
       'WORKER_COLLAB_MENTION_RPC_TIMEOUT_MS',
@@ -111,6 +146,26 @@ export class ConfigService {
   getTaskHeartbeatSource(): 'nest_timer' | 'temporal' {
     const v = this.configManager.get<string>('TASK_HEARTBEAT_SOURCE', 'nest_timer');
     return v === 'temporal' ? 'temporal' : 'nest_timer';
+  }
+
+  isCompanyStuckTaskDetectionEnabled(): boolean {
+    return this.configManager.get<boolean>('COMPANY_STUCK_TASK_DETECTION_ENABLED', true);
+  }
+
+  getCompanyStuckMaxHoursInProgress(): number {
+    return this.configManager.get<number>('COMPANY_STUCK_MAX_HOURS_IN_PROGRESS', 4);
+  }
+
+  getCompanyStuckMaxHoursBlocked(): number {
+    return this.configManager.get<number>('COMPANY_STUCK_MAX_HOURS_BLOCKED', 2);
+  }
+
+  getCompanyStuckEmergencyThreshold(): number {
+    return this.configManager.get<number>('COMPANY_STUCK_EMERGENCY_THRESHOLD', 3);
+  }
+
+  getCompanyStuckMaxSelfMentionRetries(): number {
+    return this.configManager.get<number>('COMPANY_STUCK_MAX_SELF_MENTION_RETRIES', 2);
   }
 
   getWorkerInternalApiSecret(): string | undefined {
@@ -194,6 +249,22 @@ export class ConfigService {
     return env && env.length > 0 ? env : 'api-rpc-queue';
   }
 
+  isCeoInteractiveQueueEnabled(): boolean {
+    return this.configManager.get<boolean>('CEO_INTERACTIVE_QUEUE_ENABLED', false);
+  }
+
+  getCeoInteractiveQueueName(): string {
+    return this.configManager.get<string>('CEO_INTERACTIVE_QUEUE_NAME', 'ceo-interactive-queue');
+  }
+
+  getCeoInteractivePrefetch(): number {
+    return this.configManager.get<number>('CEO_INTERACTIVE_PREFETCH', 25);
+  }
+
+  getCeoInteractiveTimeoutMs(): number {
+    return this.configManager.get<number>('CEO_INTERACTIVE_TIMEOUT_MS', 8000);
+  }
+
   getCeoBreakdownIngestTaskPageSize(): number {
     const raw = this.configManager.get<number | string | undefined>(
       'WORKER_CEO_BREAKDOWN_INGEST_TASK_PAGE_SIZE',
@@ -215,6 +286,14 @@ export class ConfigService {
 
   getAgentSkillBudgetEstimate(): number {
     return this.configManager.get<number>('AGENT_SKILL_BUDGET_ESTIMATE', 0.01);
+  }
+
+  /**
+   * Mandatory approval gate for autonomous budget spend.
+   * 0 means disabled.
+   */
+  getBudgetApprovalThreshold(): number {
+    return this.configManager.get<number>('WORKER_BUDGET_APPROVAL_THRESHOLD', 0);
   }
 
   getExternalSkillBudgetEstimate(): number {
@@ -248,6 +327,15 @@ export class ConfigService {
     return this.configManager.get<boolean>('ENABLE_MEMORY_CONSOLIDATION', false);
   }
 
+  /** 渐进启用 ACP 协议消费路径（默认关闭）。 */
+  isAcpProtocolEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ACP_PROTOCOL', false);
+  }
+
+  isLayeredGraphEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_LAYERED_GRAPH', false);
+  }
+
   getWorkerCheckpointDatabaseUrl(): string | undefined {
     const v = this.configManager.get<string>('WORKER_CHECKPOINT_DATABASE_URL', '');
     return v?.trim() ? v.trim() : undefined;
@@ -270,6 +358,27 @@ export class ConfigService {
   }
 
   /** 未单独配置时与 COLLAB_INTENT_MODEL 共用 */
+  getCeoClassifierModel(): string {
+    const direct = (this.configManager.get<string>('CEO_CLASSIFIER_MODEL', '') ?? '').trim();
+    if (direct) return direct;
+    return this.getCeoDecisionModel();
+  }
+
+  getCeoLightModel(): string {
+    const direct = (this.configManager.get<string>('CEO_LIGHT_MODEL', '') ?? '').trim();
+    if (direct) return direct;
+    const fallback = this.getCollabDirectReplyModel().trim();
+    return fallback || 'gpt-4o-mini';
+  }
+
+  getCeoHeavyModel(): string {
+    const direct = (this.configManager.get<string>('CEO_HEAVY_MODEL', '') ?? '').trim();
+    if (direct) return direct;
+    const fallback = (this.configManager.get<string>('CEO_LLM_MODEL', '') ?? '').trim();
+    return fallback || 'gpt-4o-mini';
+  }
+
+  /** @deprecated use getCeoClassifierModel() */
   getCeoDecisionModel(): string {
     const direct = (this.configManager.get<string>('CEO_DECISION_MODEL', '') ?? '').trim();
     if (direct) return direct;
@@ -301,6 +410,58 @@ export class ConfigService {
     return this.configManager.get<number>('CEO_DECISION_CACHE_TTL_MS', 120_000);
   }
 
+  isCeoPreloadEnabled(): boolean {
+    return this.configManager.get<boolean>('CEO_PRELOAD_ENABLED', false);
+  }
+
+  getCeoPreloadPrefetch(): number {
+    return this.configManager.get<number>('CEO_PRELOAD_PREFETCH', 10);
+  }
+
+  getCeoPreloadMaxConcurrency(): number {
+    return this.configManager.get<number>('CEO_PRELOAD_MAX_CONCURRENCY', 15);
+  }
+
+  getCeoPreloadCooldownMs(): number {
+    return this.configManager.get<number>('CEO_PRELOAD_COOLDOWN_MS', 30_000);
+  }
+
+  isCeoFastpathEnabled(): boolean {
+    return this.configManager.get<boolean>('CEO_FASTPATH_ENABLED', true);
+  }
+
+  getCeoFastpathHighConfidenceThreshold(): number {
+    return this.configManager.get<number>('CEO_FASTPATH_HIGH_CONFIDENCE_THRESHOLD', 0.92);
+  }
+
+  getCeoFastpathMediumConfidenceThreshold(): number {
+    return this.configManager.get<number>('CEO_FASTPATH_MEDIUM_CONFIDENCE_THRESHOLD', 0.87);
+  }
+
+  getCeoFastpathConfidenceGap(): number {
+    return this.configManager.get<number>('CEO_FASTPATH_CONFIDENCE_GAP', 0.08);
+  }
+
+  getCeoClassifierTimeoutMs(): number {
+    return this.configManager.get<number>('CEO_CLASSIFIER_TIMEOUT_MS', 400);
+  }
+
+  getCeoLightTimeoutMs(): number {
+    return this.configManager.get<number>('CEO_LIGHT_TIMEOUT_MS', 2500);
+  }
+
+  getCeoLightPrimaryTimeoutMs(): number {
+    return this.configManager.get<number>('CEO_LIGHT_PRIMARY_TIMEOUT_MS', 6000);
+  }
+
+  getCeoLightFallbackTimeoutMs(): number {
+    return this.configManager.get<number>('CEO_LIGHT_FALLBACK_TIMEOUT_MS', 4000);
+  }
+
+  getCeoHeavyTimeoutMs(): number {
+    return this.configManager.get<number>('CEO_HEAVY_TIMEOUT_MS', 12000);
+  }
+
   getCeoDecisionHeuristicMinConfidence(): number {
     return this.configManager.get<number>('CEO_DECISION_HEURISTIC_MIN_CONFIDENCE', 0.85);
   }
@@ -323,7 +484,7 @@ export class ConfigService {
 
   /** 直聊多轮上下文：拉取最近若干条 chat_messages（0=关闭） */
   getCollabDirectReplyHistoryLimit(): number {
-    return this.configManager.get<number>('WORKER_COLLAB_DIRECT_HISTORY_LIMIT', 48);
+    return this.configManager.get<number>('WORKER_COLLAB_DIRECT_HISTORY_LIMIT', 8);
   }
 
   isGroupChatMemoryRetrievalEnabled(): boolean {
@@ -336,6 +497,61 @@ export class ConfigService {
 
   getGroupChatDigestTranscriptLimit(): number {
     return this.configManager.get<number>('WORKER_GROUP_CHAT_DIGEST_TRANSCRIPT_LIMIT', 40);
+  }
+
+  isDirectReplyAutoConsolidateEnabled(): boolean {
+    return this.configManager.get<boolean>('WORKER_DIRECT_REPLY_AUTO_CONSOLIDATE', true);
+  }
+
+  getCollabStreamMinIntervalMs(mode: 'quick' | 'structured'): number {
+    if (mode === 'structured') {
+      return this.configManager.get<number>('WORKER_COLLAB_STREAM_STRUCTURED_MIN_INTERVAL_MS', 75);
+    }
+    return this.configManager.get<number>('WORKER_COLLAB_STREAM_MIN_INTERVAL_MS', 60);
+  }
+
+  getCollabStreamMinChars(mode: 'quick' | 'structured'): number {
+    if (mode === 'structured') {
+      return this.configManager.get<number>('WORKER_COLLAB_STREAM_STRUCTURED_MIN_CHARS', 15);
+    }
+    return this.configManager.get<number>('WORKER_COLLAB_STREAM_MIN_CHARS', 12);
+  }
+
+  isSupervisorPostReviewEnabled(): boolean {
+    return this.configManager.get<boolean>('WORKER_SUPERVISOR_POST_REVIEW_ENABLED', true);
+  }
+
+  getSupervisorPostReviewMaxFindings(): number {
+    return this.configManager.get<number>('WORKER_SUPERVISOR_POST_REVIEW_MAX_FINDINGS', 3);
+  }
+
+  isSupervisorPostReviewChatEnabled(): boolean {
+    return this.configManager.get<boolean>('WORKER_SUPERVISOR_POST_REVIEW_CHAT_ENABLED', true);
+  }
+
+  getSupervisorPostReviewModel(): string {
+    const s = this.configManager.get<string>('WORKER_SUPERVISOR_POST_REVIEW_MODEL', '');
+    return s?.trim() || this.getCollabDirectReplyModel();
+  }
+
+  getSupervisorPostReviewLlmTimeoutMs(): number {
+    return this.configManager.get<number>('WORKER_SUPERVISOR_POST_REVIEW_LLM_TIMEOUT_MS', 12000);
+  }
+
+  getParallelDiscussionMinAgents(): number {
+    return this.configManager.get<number>('WORKER_PARALLEL_DISCUSSION_MIN_AGENTS', 2);
+  }
+
+  getParallelDiscussionMaxAgents(): number {
+    return this.configManager.get<number>('WORKER_PARALLEL_DISCUSSION_MAX_AGENTS', 5);
+  }
+
+  getParallelDiscussionTimeoutMinutes(): number {
+    return this.configManager.get<number>('WORKER_PARALLEL_DISCUSSION_TIMEOUT_MINUTES', 10);
+  }
+
+  isSupervisorReviewChatSummaryEnabled(): boolean {
+    return this.configManager.get<boolean>('WORKER_SUPERVISOR_REVIEW_CHAT_SUMMARY_ENABLED', true);
   }
 
   getWorkerAllowUnsafeSkillStubs(): boolean {

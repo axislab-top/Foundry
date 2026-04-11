@@ -5,10 +5,7 @@ import { firstValueFrom, timeout } from 'rxjs';
 import { MessagingService } from '@service/messaging';
 import type { BillingConsumptionRequestedEvent, SkillExecutedEvent } from '@contracts/events';
 import { ToolRegistry } from '@service/ai';
-import {
-  skillNeedsBudgetOverageApproval,
-  skillRequiresExecutionToken,
-} from '@foundry/approval-core';
+import { skillRequiresExecutionToken } from '@foundry/approval-core';
 import { ConfigService } from '../../../common/config/config.service.js';
 import { ExecutionGuardService } from '../../approval/execution-guard.service.js';
 import { ExternalHttpSkillRunnerService } from './external-http-skill-runner.service.js';
@@ -16,6 +13,8 @@ import { ExternalHttpSkillRunnerService } from './external-http-skill-runner.ser
 export interface ExecuteSkillParams {
   companyId: string;
   agentId: string;
+  /** Required for temporary agents; used for project isolation */
+  projectId?: string | null;
   skillName: string;
   args: Record<string, unknown>;
   traceId?: string;
@@ -41,6 +40,38 @@ export class AgentExecutionService {
     return { id: this.config.getWorkerActorUserId(), roles: ['admin'] as string[] };
   }
 
+  private async assertTemporaryAgentProjectScope(params: {
+    companyId: string;
+    agentId: string;
+    projectId?: string | null;
+  }): Promise<void> {
+    const actor = this.workerActor();
+    const agent = await firstValueFrom(
+      this.apiRpc
+        .send<{ metadata?: Record<string, unknown> | null }>('agents.findOne', {
+          companyId: params.companyId,
+          actor,
+          id: params.agentId,
+        })
+        .pipe(timeout(this.config.getApiRpcTimeoutMs())),
+    );
+    const meta = (agent as any)?.metadata as Record<string, unknown> | null | undefined;
+    const employmentType =
+      meta && typeof meta['employmentType'] === 'string' ? String(meta['employmentType']) : 'permanent';
+    if (employmentType !== 'temporary') return;
+    const boundProjectId = meta && typeof meta['projectId'] === 'string' ? String(meta['projectId']) : '';
+    const pid = typeof params.projectId === 'string' ? params.projectId.trim() : '';
+    if (!boundProjectId) {
+      throw new Error('PROJECT_SCOPE_REQUIRED: temporary agent missing bound projectId');
+    }
+    if (!pid) {
+      throw new Error('PROJECT_SCOPE_REQUIRED: projectId required for temporary agent');
+    }
+    if (pid !== boundProjectId) {
+      throw new Error('PROJECT_SCOPE_REQUIRED: temporary agent project mismatch');
+    }
+  }
+
   private async assertExternalSkillBudgetAllowance(
     params: ExecuteSkillParams,
     snap: { name: string; metadata?: Record<string, unknown> | null },
@@ -49,7 +80,7 @@ export class AgentExecutionService {
     const estimatedCost = this.config.getExternalSkillBudgetEstimate();
     const allowance = await firstValueFrom(
       this.apiRpc
-        .send<{ allowed: boolean; reason?: string }>('billing.checkAllowance', {
+        .send<{ allowed: boolean; reason?: string; warning?: string }>('billing.checkAllowance', {
           companyId: params.companyId,
           actor,
           estimatedCost,
@@ -57,30 +88,22 @@ export class AgentExecutionService {
         })
         .pipe(timeout(this.config.getApiRpcTimeoutMs())),
     );
+    if (allowance?.warning) {
+      this.logger.warn('billing.checkAllowance soft budget warning (external skill)', {
+        companyId: params.companyId,
+        agentId: params.agentId,
+        warning: allowance.warning,
+      });
+    }
     if (!allowance?.allowed) {
-      if (skillNeedsBudgetOverageApproval(snap.metadata ?? undefined)) {
-        const created = await firstValueFrom(
-          this.apiRpc
-            .send<{ id: string }>('approval.create', {
-              companyId: params.companyId,
-              actor,
-              actionType: 'billing.external_skill_overage',
-              riskLevel: 'L2',
-              context: {
-                skillName: params.skillName,
-                agentId: params.agentId,
-                traceId: params.traceId ?? null,
-                budgetReason: allowance?.reason ?? null,
-              },
-            })
-            .pipe(timeout(this.config.getApiRpcTimeoutMs())),
-        );
-        const aid = created?.id ?? 'unknown';
-        throw new Error(
-          `M4_APPROVAL_REQUIRED:${aid}: budget blocked for external skill "${snap.name}" — approve then retry with executionToken`,
-        );
+      if (allowance?.reason === 'execution_paused') {
+        throw new Error(`execution paused: ${allowance.reason}`);
       }
-      throw new Error(`budget blocked (external skill): ${allowance?.reason ?? 'not allowed'}`);
+      this.logger.warn('billing.checkAllowance disallowed (non-pause); continuing per soft budget policy', {
+        companyId: params.companyId,
+        agentId: params.agentId,
+        reason: allowance?.reason,
+      });
     }
   }
 
@@ -126,6 +149,11 @@ export class AgentExecutionService {
     }
     let result: unknown;
     try {
+      await this.assertTemporaryAgentProjectScope({
+        companyId: params.companyId,
+        agentId: params.agentId,
+        projectId: params.projectId,
+      });
       if (!snap) {
         // Keep existing error semantics aligned with ToolRegistry.execute.
         throw new Error(`Skill "${params.skillName}" is not bound to this agent`);
@@ -159,6 +187,7 @@ export class AgentExecutionService {
         result = await this.externalHttp.execute(snap, params.args, { traceId: params.traceId });
       } else {
         // builtin (default) / api / langgraph: currently only builtin handler is supported.
+        // TODO: P8 必须迁移到 runner.execute RPC（当前仍为临时路径）
         result = await this.registry.execute(
           params.companyId,
           params.agentId,

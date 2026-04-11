@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -26,6 +27,7 @@ import {
 import type { MemoryActor } from './memory-access.service.js';
 import { MemoryAccessService } from './memory-access.service.js';
 import { EmbeddingService } from './embedding.service.js';
+import { CollaborationRealtimePublisher } from '../../collaboration/services/collaboration-realtime-publisher.service.js';
 
 export interface StoreMemoryParams {
   companyId: string;
@@ -56,6 +58,7 @@ export class MemoryService {
     private readonly messaging: MessagingService,
     private readonly access: MemoryAccessService,
     private readonly storage: StorageService,
+    @Optional() private readonly realtime?: CollaborationRealtimePublisher,
   ) {}
 
   async ensureCollection(
@@ -207,6 +210,17 @@ export class MemoryService {
       sourceType,
     });
 
+    await this.realtime?.publishEnvelope({
+      companyId,
+      event: 'memory:ingested',
+      payload: {
+        entryId: id,
+        namespace,
+        sourceType,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
     return row;
   }
 
@@ -254,7 +268,10 @@ export class MemoryService {
     collectionLabel?: string;
     maxChunkChars?: number;
   }): Promise<{ chunks: number; detectedAs?: 'pdf' | 'utf8' }> {
-    const buf = await this.storage.download(params.storagePath);
+    const buf = await this.storage.download(
+      params.companyId,
+      params.storagePath,
+    );
     let text: string;
     let detectedAs: 'pdf' | 'utf8' | undefined;
     try {

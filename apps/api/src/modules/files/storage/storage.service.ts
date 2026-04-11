@@ -1,109 +1,98 @@
-import { Injectable, Inject, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject } from '@nestjs/common';
 import type {
   IStorageAdapter,
-  StorageType,
   FileInfo,
   UploadOptions,
   ListOptions,
 } from '../interfaces/storage.interface.js';
-import { ConfigService } from '../../../common/config/config.service.js';
+import {
+  resolveTenantListPrefix,
+  resolveTenantObjectKey,
+} from './storage-tenant-path.util.js';
 
 /**
- * 存储服务
- * 统一管理存储适配器，提供统一的存储接口
+ * 所有对象键必须经过租户解析：companies/{companyId}/...；读操作兼容 legacy memory/{companyId}/...
  */
 @Injectable()
 export class StorageService {
   private adapter: IStorageAdapter;
 
-  constructor(
-    @Inject('STORAGE_ADAPTER') adapter: IStorageAdapter,
-    @Optional() private readonly configService?: ConfigService,
-  ) {
+  constructor(@Inject('STORAGE_ADAPTER') adapter: IStorageAdapter) {
     this.adapter = adapter;
   }
 
-  /**
-   * 上传文件
-   */
+  private assertCompanyId(companyId: string | undefined): string {
+    if (!companyId?.trim()) {
+      throw new BadRequestException('companyId is required');
+    }
+    return companyId.trim();
+  }
+
+  private generatedRelativePath(file: Express.Multer.File): string {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    const extension = file.originalname.split('.').pop() || '';
+    const nameWithoutExt = file.originalname.replace(/\.[^/.]+$/, '');
+    const sanitizedName = nameWithoutExt
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .substring(0, 50);
+    const fileName = `${sanitizedName}_${timestamp}_${random}.${extension}`;
+    return `uploads/${fileName}`;
+  }
+
   async upload(
     file: Express.Multer.File,
+    companyId: string,
     path?: string,
     options?: UploadOptions,
   ): Promise<FileInfo> {
-    return this.adapter.upload(file, path, options);
+    const cid = this.assertCompanyId(companyId);
+    const relative = path ?? this.generatedRelativePath(file);
+    const key = resolveTenantObjectKey(cid, relative, 'write');
+    return this.adapter.upload(file, key, options);
   }
 
-  /**
-   * 下载文件
-   */
-  async download(path: string): Promise<Buffer> {
-    return this.adapter.download(path);
+  async download(companyId: string, path: string): Promise<Buffer> {
+    const cid = this.assertCompanyId(companyId);
+    const key = resolveTenantObjectKey(cid, path, 'read');
+    return this.adapter.download(key);
   }
 
-  /**
-   * 获取文件 URL
-   */
-  async getUrl(path: string, expiresIn?: number): Promise<string> {
-    return this.adapter.getUrl(path, expiresIn);
+  async getUrl(
+    companyId: string,
+    path: string,
+    expiresIn?: number,
+  ): Promise<string> {
+    const cid = this.assertCompanyId(companyId);
+    const key = resolveTenantObjectKey(cid, path, 'read');
+    return this.adapter.getUrl(key, expiresIn);
   }
 
-  /**
-   * 删除文件
-   */
-  async delete(path: string): Promise<boolean> {
-    return this.adapter.delete(path);
+  async delete(companyId: string, path: string): Promise<boolean> {
+    const cid = this.assertCompanyId(companyId);
+    const key = resolveTenantObjectKey(cid, path, 'read');
+    return this.adapter.delete(key);
   }
 
-  /**
-   * 检查文件是否存在
-   */
-  async exists(path: string): Promise<boolean> {
-    return this.adapter.exists(path);
+  async exists(companyId: string, path: string): Promise<boolean> {
+    const cid = this.assertCompanyId(companyId);
+    const key = resolveTenantObjectKey(cid, path, 'read');
+    return this.adapter.exists(key);
   }
 
-  /**
-   * 获取文件信息
-   */
-  async getFileInfo(path: string): Promise<FileInfo> {
-    return this.adapter.getFileInfo(path);
+  async getFileInfo(companyId: string, path: string): Promise<FileInfo> {
+    const cid = this.assertCompanyId(companyId);
+    const key = resolveTenantObjectKey(cid, path, 'read');
+    return this.adapter.getFileInfo(key);
   }
 
-  /**
-   * 列出文件
-   */
-  async list(prefix?: string, options?: ListOptions): Promise<FileInfo[]> {
-    return this.adapter.list(prefix, options);
+  async list(
+    companyId: string,
+    prefix?: string,
+    options?: ListOptions,
+  ): Promise<FileInfo[]> {
+    const cid = this.assertCompanyId(companyId);
+    const p = resolveTenantListPrefix(cid, prefix);
+    return this.adapter.list(p, options);
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

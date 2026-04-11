@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { BadRequestException, Controller } from '@nestjs/common';
 import { MessagePattern, Payload, RpcException } from '@nestjs/microservices';
 import { validateRpcDto } from '../../common/rpc/rpc-validation.js';
 import { StorageService } from './storage/storage.service.js';
@@ -15,6 +15,7 @@ import {
 import { Type } from 'class-transformer';
 import { isAuthorized } from '../../common/authz/authorization.js';
 import { FILES_PERMISSIONS } from './constants/permissions.constants.js';
+import { normalizeStorageKey } from './storage/storage-tenant-path.util.js';
 
 class ActorDto {
   @IsString()
@@ -31,28 +32,39 @@ class ActorDto {
   permissions?: string[];
 }
 
+function toRpcError(e: unknown): RpcException {
+  if (e instanceof RpcException) return e;
+  if (e instanceof BadRequestException) {
+    return new RpcException({ status: 400, message: e.message });
+  }
+  const msg = e instanceof Error ? e.message : String(e);
+  return new RpcException({ status: 500, message: msg || 'Internal error' });
+}
+
 function authorize(actor: ActorDto | undefined, anyPermissions: string[]) {
   if (isAuthorized(actor, { anyRoles: ['admin'], anyPermissions })) return;
   throw new RpcException({ status: 403, message: 'Insufficient permissions' });
 }
 
-/** 网关透传的租户上下文；与 memory/{companyId}/ 前缀一致时允许普通成员列出/访问本租户记忆文件 */
-function normalizeStorageKey(key: string): string {
-  return key.replace(/^\/+/, '');
-}
-
+/** 读兼容：companies/{companyId}/memory/... 与 legacy memory/{companyId}/...；写须走 companies 前缀（由 StorageService 强制）。 */
 function isTenantMemoryScope(companyId: string | undefined, key: string | undefined): boolean {
   if (!companyId || !key) {
     return false;
   }
   const k = normalizeStorageKey(key);
-  const base = `memory/${companyId}`;
-  return k === base || k.startsWith(`${base}/`);
+  const memNew = `companies/${companyId}/memory`;
+  const memOld = `memory/${companyId}`;
+  return (
+    k === memNew ||
+    k.startsWith(`${memNew}/`) ||
+    k === memOld ||
+    k.startsWith(`${memOld}/`)
+  );
 }
 
 function authorizeFilesRead(
   actor: ActorDto | undefined,
-  ctx: { companyId?: string; prefix?: string; path?: string },
+  ctx: { companyId: string; prefix?: string; path?: string },
 ) {
   if (isAuthorized(actor, { anyRoles: ['admin'], anyPermissions: [FILES_PERMISSIONS.READ] })) {
     return;
@@ -66,7 +78,7 @@ function authorizeFilesRead(
   throw new RpcException({ status: 403, message: 'Insufficient permissions' });
 }
 
-function authorizeFilesUrl(actor: ActorDto | undefined, ctx: { companyId?: string; path?: string }) {
+function authorizeFilesUrl(actor: ActorDto | undefined, ctx: { companyId: string; path?: string }) {
   if (
     isAuthorized(actor, {
       anyRoles: ['admin'],
@@ -83,7 +95,7 @@ function authorizeFilesUrl(actor: ActorDto | undefined, ctx: { companyId?: strin
 
 function authorizeFilesWrite(
   actor: ActorDto | undefined,
-  ctx: { companyId?: string; path?: string },
+  ctx: { companyId: string; path?: string },
 ) {
   if (
     isAuthorized(actor, {
@@ -100,9 +112,8 @@ function authorizeFilesWrite(
 }
 
 class FilesListDto {
-  @IsOptional()
   @IsUUID()
-  companyId?: string;
+  companyId: string;
 
   @IsOptional()
   @IsString()
@@ -131,9 +142,8 @@ class FilesPathDto {
   @IsString()
   path: string;
 
-  @IsOptional()
   @IsUUID()
-  companyId?: string;
+  companyId: string;
 
   @ValidateNested()
   @Type(() => ActorDto)
@@ -153,63 +163,54 @@ export class FilesRpcController {
   constructor(private readonly storageService: StorageService) {}
 
   @MessagePattern('files.list')
-  async list(@Payload() payload: any) {
+  async list(@Payload() payload: unknown) {
     try {
       const dto = validateRpcDto(FilesListDto, payload);
       authorizeFilesRead(dto.actor, { companyId: dto.companyId, prefix: dto.prefix });
-      const files = await this.storageService.list(dto.prefix, {
+      const files = await this.storageService.list(dto.companyId, dto.prefix, {
         maxKeys: dto.maxKeys,
         marker: dto.marker,
         recursive: dto.recursive === 'true',
       });
       return { items: files, count: files.length };
-    } catch (e: any) {
-      throw e instanceof RpcException
-        ? e
-        : new RpcException({ status: 500, message: e?.message || 'Internal error' });
+    } catch (e: unknown) {
+      throw toRpcError(e);
     }
   }
 
   @MessagePattern('files.getUrl')
-  async getUrl(@Payload() payload: any) {
+  async getUrl(@Payload() payload: unknown) {
     try {
       const dto = validateRpcDto(FilesUrlDto, payload);
       authorizeFilesUrl(dto.actor, { companyId: dto.companyId, path: dto.path });
       const expiresIn = dto.expiresIn ?? 3600;
-      const url = await this.storageService.getUrl(dto.path, expiresIn);
+      const url = await this.storageService.getUrl(dto.companyId, dto.path, expiresIn);
       return { url, expiresIn };
-    } catch (e: any) {
-      throw e instanceof RpcException
-        ? e
-        : new RpcException({ status: 500, message: e?.message || 'Internal error' });
+    } catch (e: unknown) {
+      throw toRpcError(e);
     }
   }
 
   @MessagePattern('files.getInfo')
-  async getInfo(@Payload() payload: any) {
+  async getInfo(@Payload() payload: unknown) {
     try {
       const dto = validateRpcDto(FilesPathDto, payload);
       authorizeFilesRead(dto.actor, { companyId: dto.companyId, path: dto.path });
-      return await this.storageService.getFileInfo(dto.path);
-    } catch (e: any) {
-      throw e instanceof RpcException
-        ? e
-        : new RpcException({ status: 500, message: e?.message || 'Internal error' });
+      return await this.storageService.getFileInfo(dto.companyId, dto.path);
+    } catch (e: unknown) {
+      throw toRpcError(e);
     }
   }
 
   @MessagePattern('files.delete')
-  async delete(@Payload() payload: any) {
+  async delete(@Payload() payload: unknown) {
     try {
       const dto = validateRpcDto(FilesPathDto, payload);
       authorizeFilesWrite(dto.actor, { companyId: dto.companyId, path: dto.path });
-      const deleted = await this.storageService.delete(dto.path);
+      const deleted = await this.storageService.delete(dto.companyId, dto.path);
       return { success: deleted };
-    } catch (e: any) {
-      throw e instanceof RpcException
-        ? e
-        : new RpcException({ status: 500, message: e?.message || 'Internal error' });
+    } catch (e: unknown) {
+      throw toRpcError(e);
     }
   }
 }
-

@@ -1,0 +1,94 @@
+# Replace namespace, image, and storageClassName per cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: foundry-runner
+  namespace: foundry-runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: foundry-runner-job-manager
+  namespace: foundry-runner
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create", "patch", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: foundry-runner-job-manager
+  namespace: foundry-runner
+subjects:
+  - kind: ServiceAccount
+    name: foundry-runner
+    namespace: foundry-runner
+roleRef:
+  kind: Role
+  name: foundry-runner-job-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foundry-runner
+  namespace: foundry-runner
+  labels:
+    app: foundry-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: foundry-runner
+  template:
+    metadata:
+      labels:
+        app: foundry-runner
+    spec:
+      serviceAccountName: foundry-runner
+      containers:
+        - name: runner
+          image: ghcr.io/your-org/foundry-runner:latest
+          ports:
+            - containerPort: 3010
+          env:
+            - name: RMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: foundry-rmq
+                  key: url
+                  optional: true
+            - name: RUNNER_EXEC_MODE
+              value: "kubernetes"
+            - name: RUNNER_K8S_NAMESPACE
+              value: "foundry-runner"
+            - name: RUNNER_GVISOR_RUNTIME_CLASS
+              value: "gvisor"
+            - name: API_RMQ_RPC_QUEUE
+              value: "api-rpc-queue"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foundry-runner
+  namespace: foundry-runner
+spec:
+  selector:
+    app: foundry-runner
+  ports:
+    - port: 3010
+      targetPort: 3010

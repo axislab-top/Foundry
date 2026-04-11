@@ -39,12 +39,27 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
     });
   }
 
+  private assertTenantObjectKey(key: string): void {
+    if (
+      key.startsWith('companies/') ||
+      key.startsWith('memory/') ||
+      key.startsWith('skills/') ||
+      key.startsWith('platform/')
+    ) {
+      return;
+    }
+    throw new Error(
+      'S3 object key must be tenant-scoped (companies/..., memory/..., skills/..., or platform/...)',
+    );
+  }
+
   async upload(
     file: Express.Multer.File,
     path?: string,
     options?: UploadOptions,
   ): Promise<FileInfo> {
     const key = path || this.generatePath(file.originalname);
+    this.assertTenantObjectKey(key);
     const contentType = options?.contentType || file.mimetype;
 
     const command = new PutObjectCommand({
@@ -73,6 +88,7 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
   }
 
   async download(path: string): Promise<Buffer> {
+    this.assertTenantObjectKey(path);
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: path,
@@ -91,6 +107,7 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
   }
 
   async getUrl(path: string, expiresIn: number = 3600): Promise<string> {
+    this.assertTenantObjectKey(path);
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: path,
@@ -100,6 +117,7 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
   }
 
   async delete(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       const command = new DeleteObjectCommand({
         Bucket: this.bucketName,
@@ -114,6 +132,7 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
   }
 
   async exists(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       const command = new HeadObjectCommand({
         Bucket: this.bucketName,
@@ -128,6 +147,7 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
   }
 
   async getFileInfo(path: string): Promise<FileInfo> {
+    this.assertTenantObjectKey(path);
     const command = new HeadObjectCommand({
       Bucket: this.bucketName,
       Key: path,
@@ -149,6 +169,9 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
   }
 
   async list(prefix?: string, options?: ListOptions): Promise<FileInfo[]> {
+    if (prefix != null && prefix !== '') {
+      this.assertTenantObjectKey(prefix);
+    }
     const files: FileInfo[] = [];
     let continuationToken: string | undefined = options?.marker;
 

@@ -1,10 +1,11 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { randomUUID } from 'crypto';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { firstValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   buildHierarchicalHeartbeatGraph,
+  ToolRegistry,
   type CeoSupervisorState,
 } from '@service/ai';
 import type { BaseCheckpointSaver } from '@langchain/langgraph';
@@ -15,12 +16,19 @@ import type {
   AutonomousCeoApprovalRequiredEvent,
   AutonomousCeoHeartbeatCompletedEvent,
   BillingConsumptionRequestedEvent,
+  SkillToolSnapshot,
   TaskBreakdownRequestedEvent,
 } from '@contracts/events';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
+import type { ZodIssue, ZodSchema } from 'zod';
 import { ConfigService } from '../../common/config/config.service.js';
 import { CeoChatModelFactory } from './ceo-chat-model.factory.js';
-import { ceoPlanSchema, type CeoPlanOutput } from './ceo-plan.schema.js';
+import {
+  ceoPlanIntentSchema,
+  ceoPlanSchema,
+  ceoPlanTasksExpansionSchema,
+  type CeoPlanOutput,
+} from './ceo-plan.schema.js';
 import {
   collectOrganizationNodeIds,
   compactOrgTreeForPrompt,
@@ -35,6 +43,8 @@ import {
   resolveCeoPipelineRpcTier,
 } from './ceo-pipeline-rpc-context.js';
 import { WorkerExecutionLogService } from '../../common/observability/worker-execution-log.service.js';
+import { MonitoringService } from '../../common/monitoring/monitoring.service.js';
+import { COLLAB_LLM_TRACE, safeLlmBaseUrlForLog } from '../../common/logging/collab-llm-trace.util.js';
 
 export interface RunHeartbeatOptions {
   triggerSource?: 'schedule' | 'task_completed' | 'budget_warning' | 'collaboration_mention';
@@ -74,6 +84,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
   private graph!: ReturnType<typeof buildHierarchicalHeartbeatGraph>;
   /** 群聊 @CEO 拆解：不用 Postgres checkpoint，避免 invoke 首帧读/写库卡住导致长时间无日志 */
   private graphBreakdown!: ReturnType<typeof buildHierarchicalHeartbeatGraph>;
+  private readonly ceoAgentIdCache = new Map<string, { agentId: string; expiresAt: number }>();
 
   constructor(
     private readonly tenantContext: TenantContextService,
@@ -87,6 +98,8 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     private readonly checkpoints: AutonomousCheckpointService,
     private readonly memoryPort: RpcMemoryAdapter,
     private readonly executionLog: WorkerExecutionLogService,
+    private readonly registry: ToolRegistry,
+    @Optional() private readonly monitoring?: MonitoringService,
   ) {}
 
   onModuleInit(): void {
@@ -169,11 +182,16 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const ctx = event.data.context;
     const collaborationRoomId =
       ctx && typeof ctx.roomId === 'string' && ctx.roomId.trim() ? ctx.roomId.trim() : '';
+    const triggerRef =
+      ctx && typeof ctx.sourceMessageId === 'string' && ctx.sourceMessageId.trim()
+        ? ctx.sourceMessageId.trim()
+        : '';
     await this.tenantContext.runWithCompanyId(companyId, async () => {
       await this.invokeGraph(
         this.baseState(companyId, tickAt, 'breakdown', event.data.goal, event.data.rootTaskId, {
           /** 无 room 的 breakdown（如后台触发）仍标为 schedule，避免误走 interactive 队列 */
           triggerSource: collaborationRoomId ? 'collaboration_mention' : 'schedule',
+          triggerRef,
           collaborationRoomId,
         }),
       );
@@ -200,6 +218,17 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         checkpointerMode: useBreakdownGraph ? 'memory (breakdown fast path)' : 'persisted',
         apiRpcTier: resolveCeoPipelineRpcTier(initial.traceId),
       });
+
+      // Cycle start prewarm: fetch effective skill snapshots and hydrate ToolRegistry once,
+      // so CEO tool availability is warm before any downstream execution/dispatch.
+      await this.prewarmCeoTools(initial).catch((e) => {
+        this.logger.warn('CEO tools prewarm failed (non-blocking)', {
+          traceId: initial.traceId,
+          companyId: initial.companyId,
+          message: this.formatErrorMessage(e).slice(0, 800),
+        });
+      });
+
       if (recordHeartbeatRun) {
         await this.executionLog.appendForRun(initial.companyId, initial.traceId, {
           stepType: 'ceo.graph.start',
@@ -217,6 +246,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           span.setAttribute('foundry.run_kind', initial.runKind);
           span.setAttribute('gen_ai.operation.name', 'ceo_heartbeat_graph');
           try {
+            // TODO: P8 必须迁移到 runner.execute RPC（当前仍为临时路径：LangGraph/ToolRegistry 内可能触发内置执行）
             const result = await graph.invoke(initial, {
               configurable: { thread_id: threadId },
             });
@@ -276,6 +306,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           runKind: initial.runKind,
           reportPreview: preview,
           threadId,
+          ...(initial.runKind === 'heartbeat' ? { runId: initial.traceId } : {}),
         },
       };
       await this.messaging.publish(completed, {
@@ -468,6 +499,110 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     return String(e);
   }
 
+  private clip(s: string, max: number): string {
+    const t = (s ?? '').trim();
+    if (!t) return '';
+    return t.length <= max ? t : `${t.slice(0, max)}…`;
+  }
+
+  private parseCeoPlanUnsafe(raw: string | undefined): unknown {
+    try {
+      return JSON.parse(raw || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  private parseCeoPlanWithGuard(raw: string | undefined, traceId: string, node: string): CeoPlanOutput {
+    const parsed = this.parseCeoPlanUnsafe(raw);
+    const checked = ceoPlanSchema.safeParse(parsed);
+    if (checked.success) {
+      return checked.data;
+    }
+    this.logger.warn('CEO plan schema parse failed; fallback defaults applied', {
+      traceId,
+      node,
+      issues: checked.error.issues.map((i) => `${i.path.join('.') || 'root'}:${i.message}`).slice(0, 10),
+    });
+    this.monitoring?.incStructuredOutputParseFailure('ceo_heartbeat', node);
+    return ceoPlanSchema.parse({
+      summary: '计划输出格式异常，已降级为安全默认计划。',
+      tasks: [],
+      neededSkills: [],
+      requiresHumanApproval: false,
+    });
+  }
+
+  private renderZodIssues(issues: ZodIssue[]): string {
+    return issues
+      .slice(0, 12)
+      .map((i) => `${i.path.join('.') || 'root'}: ${i.message}`)
+      .join('\n');
+  }
+
+  private async repairStructuredOutputByLlm<T>(
+    model: { invoke: (msgs: unknown[]) => Promise<unknown> },
+    stage: 'intent' | 'tasks',
+    schema: ZodSchema<T>,
+    schemaHint: string,
+    systemPrompt: string,
+    userContent: string,
+    malformed: unknown,
+    issues: ZodIssue[],
+    maxAttempts = 2,
+    onAttempt?: (attempt: number) => void,
+  ): Promise<T | null> {
+    try {
+      const issueText = this.renderZodIssues(issues);
+      const repairPrompt = [
+        '你是严格 JSON 修复器。',
+        '你 MUST 只输出一个合法 JSON 对象，且不得输出 markdown、解释、代码块、前后缀。',
+        `目标阶段: ${stage}`,
+        '请依据 schema 约束和校验错误修复输出。',
+        `Schema: ${schemaHint}`,
+      ].join('\n');
+      let currentMalformed = malformed;
+      let currentIssues = issueText;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        this.monitoring?.incCeoPlanningRepairAttempt(stage);
+        if (onAttempt) onAttempt(attempt);
+        const repaired = await model.invoke([
+          new SystemMessage(repairPrompt),
+          new HumanMessage(
+            [
+              `original_system_prompt=${systemPrompt.slice(0, 2200)}`,
+              `original_user_content=${userContent.slice(0, 3600)}`,
+              `zod_issues=${currentIssues}`,
+              `malformed_output=${JSON.stringify(currentMalformed).slice(0, 7000)}`,
+              '请只返回修复后的 JSON 对象。',
+            ].join('\n'),
+          ),
+        ]);
+        const txt =
+          typeof (repaired as any)?.content === 'string'
+            ? (repaired as any).content
+            : Array.isArray((repaired as any)?.content)
+              ? (repaired as any).content
+                  .map((x: unknown) => (typeof x === 'string' ? x : JSON.stringify(x)))
+                  .join('')
+              : JSON.stringify((repaired as any)?.content ?? repaired);
+        const match = txt.match(/\{[\s\S]*\}/);
+        const candidate = this.parseCeoPlanUnsafe(match ? match[0] : txt);
+        const checked = schema.safeParse(candidate);
+        if (checked.success) return checked.data;
+        currentMalformed = candidate;
+        currentIssues = this.renderZodIssues(checked.error.issues);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isMemoryNamespaceForbidden(e: unknown): boolean {
+    return /无权检索记忆命名空间|MEMORY_NAMESPACE_FORBIDDEN/i.test(this.formatErrorMessage(e));
+  }
+
   private async ingest(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
     const ingestStarted = Date.now();
     const { companyId } = state;
@@ -491,7 +626,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       try {
         await fn();
       } catch (e: unknown) {
-        bundle[`${label}Error`] = e instanceof Error ? e.message : String(e);
+        bundle[`${label}Error`] = this.formatErrorMessage(e);
       }
     };
 
@@ -527,37 +662,39 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         const memoryRoomId =
           state.runKind === 'breakdown' && collab ? collab : mainRoom?.id;
         const q = `失败复盘教训 prevention: ${searchQuery.slice(0, 300)}`;
-        if (this.config.isAutonomousMemoryAdapterEnabled()) {
-          bundle.supervisorLessons = await this.memoryPort.search({
-            companyId,
-            actor,
-            data: {
-              query: q,
-              topK: 5,
-              namespaces: ['lesson:company'],
-              scope: 'company',
-              agentRole: 'ceo',
-              roomId: memoryRoomId,
-              pipelineTraceId: state.traceId,
-            },
-          });
-        } else {
-          bundle.supervisorLessons = await this.rpc(
-            'memory.search.hierarchy',
-            {
+        try {
+          if (this.config.isAutonomousMemoryAdapterEnabled()) {
+            bundle.supervisorLessons = await this.memoryPort.search({
               companyId,
               actor,
               data: {
                 query: q,
                 topK: 5,
-                namespaces: ['lesson:company'],
-                scope: 'company',
-                agentRole: 'ceo',
                 roomId: memoryRoomId,
+                pipelineTraceId: state.traceId,
               },
-            },
-            state.traceId,
-          );
+            });
+          } else {
+            bundle.supervisorLessons = await this.rpc(
+              'memory.search.hierarchy',
+              {
+                companyId,
+                actor,
+                data: {
+                  query: q,
+                  topK: 5,
+                  roomId: memoryRoomId,
+                },
+              },
+              state.traceId,
+            );
+          }
+        } catch (e: unknown) {
+          if (this.isMemoryNamespaceForbidden(e)) {
+            bundle.supervisorLessons = [];
+            return;
+          }
+          throw e;
         }
       }),
       safe('memorySearch', async () => {
@@ -570,27 +707,35 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         /** 群聊 @CEO：记忆检索应对应当前房间，而非仅主群 */
         const memoryRoomId =
           state.runKind === 'breakdown' && collab ? collab : mainRoom?.id;
-        if (this.config.isAutonomousMemoryAdapterEnabled()) {
-          bundle.memorySearch = await this.memoryPort.search({
-            companyId,
-            actor,
-            data: {
-              query: searchQuery,
-              topK: 8,
-              roomId: memoryRoomId,
-              pipelineTraceId: state.traceId,
-            },
-          });
-        } else {
-          bundle.memorySearch = await this.rpc(
-            'memory.search',
-            {
+        try {
+          if (this.config.isAutonomousMemoryAdapterEnabled()) {
+            bundle.memorySearch = await this.memoryPort.search({
               companyId,
               actor,
-              data: { query: searchQuery, topK: 8, roomId: memoryRoomId },
-            },
-            state.traceId,
-          );
+              data: {
+                query: searchQuery,
+                topK: 8,
+                roomId: memoryRoomId,
+                pipelineTraceId: state.traceId,
+              },
+            });
+          } else {
+            bundle.memorySearch = await this.rpc(
+              'memory.search',
+              {
+                companyId,
+                actor,
+                data: { query: searchQuery, topK: 8, roomId: memoryRoomId },
+              },
+              state.traceId,
+            );
+          }
+        } catch (e: unknown) {
+          if (this.isMemoryNamespaceForbidden(e)) {
+            bundle.memorySearch = [];
+            return;
+          }
+          throw e;
         }
       }),
       safe('budgets', async () => {
@@ -636,7 +781,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         );
       }),
       safe('ceoAgents', async () => {
-        bundle.ceoAgents = await this.rpc(
+        bundle.ceoAgents = await this.rpcInteractive<{ items?: unknown[]; total?: number }>(
           'agents.findAll',
           {
             companyId,
@@ -646,7 +791,6 @@ export class AutonomousOrchestratorService implements OnModuleInit {
             pageSize: 10,
             page: 1,
           },
-          state.traceId,
         );
       }),
     ]);
@@ -704,6 +848,10 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     } catch {
       ceoAgentId = '';
     }
+    if (ceoAgentId) {
+      const now = Date.now();
+      this.ceoAgentIdCache.set(companyId, { agentId: ceoAgentId, expiresAt: now + 5 * 60_000 });
+    }
 
     return {
       contextBundle: JSON.stringify(bundle),
@@ -749,6 +897,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       const empty: CeoPlanOutput = {
         summary: skipPlanReason,
         tasks: [],
+        neededSkills: [],
         requiresHumanApproval: false,
       };
       return {
@@ -779,20 +928,90 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const orgTree = (parsed.organizationTree ?? []) as OrgTreeNodeShape[];
     const orgPrompt = orgTree.length ? compactOrgTreeForPrompt(orgTree) : '(无组织树)';
 
+    // 显式拼“最近记忆 + 教训”供模型参考，减少空洞计划
+    const memoryLines: string[] = [];
+    const memArr = Array.isArray(parsed.memorySearch) ? parsed.memorySearch : [];
+    for (let i = 0; i < Math.min(3, memArr.length); i += 1) {
+      const it = memArr[i] as Record<string, unknown>;
+      const snippet =
+        typeof it?.snippet === 'string'
+          ? it.snippet
+          : typeof it?.content === 'string'
+            ? it.content
+            : '';
+      if (snippet?.trim()) {
+        memoryLines.push(`- Memory#${i + 1}: ${snippet.trim().slice(0, 260)}`);
+      }
+    }
+    const supArr = Array.isArray(parsed.supervisorLessons) ? parsed.supervisorLessons : [];
+    for (let i = 0; i < Math.min(3, supArr.length); i += 1) {
+      const it = supArr[i] as Record<string, unknown>;
+      const snippet =
+        typeof it?.snippet === 'string'
+          ? it.snippet
+          : typeof it?.content === 'string'
+            ? it.content
+            : '';
+      if (snippet?.trim()) {
+        memoryLines.push(`- Lesson#${i + 1}: ${snippet.trim().slice(0, 260)}`);
+      }
+    }
+    const recentContext = memoryLines.join('\n').slice(0, 1200);
+
     let llmInvokeStartedAt = 0;
     try {
       const fixedLlmKeyId =
         typeof ceo?.llmKeyId === 'string' && ceo.llmKeyId.trim() ? ceo.llmKeyId.trim() : undefined;
 
+      // For breakdown runs (Layer-3 heavy), prefer per-layer key pool candidates when available.
+      let candidateLlmKeyIds: string[] = [];
+      if (state.runKind === 'breakdown') {
+        try {
+          const pool = await this.rpcInteractive<{ llmKeyIds?: string[]; source?: string }>(
+            'agents.llmKeyPoolCandidates',
+            {
+              companyId: state.companyId,
+              actor: this.actor(),
+              id: state.ceoAgentId || undefined,
+              ceoContext: 'heavy',
+            } as Record<string, unknown>,
+          );
+          candidateLlmKeyIds = Array.isArray(pool?.llmKeyIds)
+            ? pool.llmKeyIds.map((x) => String(x).trim()).filter(Boolean)
+            : [];
+          this.logger.log(`${COLLAB_LLM_TRACE} | layer3.key_pool`, {
+            traceId: state.traceId,
+            sourceMessageId: state.triggerRef || null,
+            companyId: state.companyId,
+            rootTaskId: state.rootTaskId ?? null,
+            candidateCount: candidateLlmKeyIds.length,
+            candidateIdsPreview: candidateLlmKeyIds.slice(0, 8),
+            source: pool?.source ?? null,
+          });
+        } catch (e: unknown) {
+          this.logger.warn(`${COLLAB_LLM_TRACE} | layer3.key_pool_failed`, {
+            traceId: state.traceId,
+            sourceMessageId: state.triggerRef || null,
+            companyId: state.companyId,
+            message: this.formatErrorMessage(e).slice(0, 800),
+          });
+        }
+      }
+
       const tKey = Date.now();
       const llmKey = await this.llmKeyResolver.acquireWithFallback({
         requestedModelName: modelName,
         fixedLlmKeyId,
+        candidateLlmKeyIds,
       });
       this.logger.log('CEO plan llmKey acquire', {
         traceId: state.traceId,
         ms: Date.now() - tKey,
         modelName,
+        llmKeyId: llmKey.llmKeyId,
+        resolvedModelName: llmKey.modelName ?? null,
+        providerKind: llmKey.providerKind ?? null,
+        baseUrl: safeLlmBaseUrlForLog(llmKey.requestUrl),
       });
 
       const effectiveModelName = llmKey.modelName || modelName;
@@ -819,18 +1038,33 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         glmMaxOut,
       );
       const soMethod = structuredOutputMethodForCeoPlan(effectiveModelName);
-      const structuredOpts = soMethod === 'jsonSchema' ? undefined : { method: 'jsonMode' as const };
-      const structured = (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(
-        ceoPlanSchema,
+      const structuredOpts =
+        soMethod === 'jsonSchema' ? ({ method: 'jsonSchema' as const } as object) : { method: 'jsonMode' as const };
+      const structuredIntent = (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(
+        ceoPlanIntentSchema,
+        structuredOpts,
+      );
+      const structuredTasks = (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(
+        ceoPlanTasksExpansionSchema,
         structuredOpts,
       );
 
-      const systemFull = `${systemPrompt}\n\n组织树（仅允许将任务关联到以下节点 id）：\n${orgPrompt}\n\n预算利用率: ${modelRouter?.utilization ?? 'n/a'}；模型降级: ${modelRouter?.degraded ? '是' : '否'}。`;
+      const neededSkillsSpec =
+        '输出字段约束：`neededSkills` 为可选数组（skill slug，kebab-case），仅在确有必要时填写；最多 5 个。';
+      const strictJsonRule = [
+        'You MUST respond with NOTHING but a single valid JSON object matching the schema.',
+        'No markdown, no explanations, no code blocks, no leading/trailing text.',
+      ].join('\n');
+      const intentSchemaHint =
+        '{"summary":"string(10-800)","nextStep":"generate_tasks|summary_only","requiresHumanApproval":"boolean","approvalReason?":"string","neededSkills?":"string[]<=5(kebab-case)"}';
+      const taskSchemaHint =
+        '{"tasks":[{"title":"string","description?":"string","organizationNodeId?":"uuid","assigneeAgentId?":"uuid","priority?":"low|normal|high|urgent"}]<=20}';
+      const systemFull = `${systemPrompt}\n\n${strictJsonRule}\n\nIntent Schema:\n${intentSchemaHint}\n\n${neededSkillsSpec}\n\n组织树（仅允许将任务关联到以下节点 id）：\n${orgPrompt}\n\n最近公司上下文（记忆 + 教训，可能已截断）:\n${recentContext || '(无)'}\n\n预算利用率: ${modelRouter?.utilization ?? 'n/a'}；模型降级: ${modelRouter?.degraded ? '是' : '否'}。\n\nIntent Schema(end):\n${intentSchemaHint}`;
       const systemForLlm = isGlmBreakdown
-        ? `${systemPrompt.slice(0, 2200)}\n\n组织树（节点 id）：\n${orgPrompt.slice(0, 3200)}\n\n预算: ${modelRouter?.utilization ?? 'n/a'}；降级: ${modelRouter?.degraded ? '是' : '否'}。`
+        ? `${systemPrompt.slice(0, 2200)}\n\n${strictJsonRule}\n\nIntent Schema:\n${intentSchemaHint}\n\n${neededSkillsSpec}\n\n组织树（节点 id）：\n${orgPrompt.slice(0, 3200)}\n\n预算: ${modelRouter?.utilization ?? 'n/a'}；降级: ${modelRouter?.degraded ? '是' : '否'}。\n\nIntent Schema(end):\n${intentSchemaHint}`
         : systemFull;
 
-      let raw: unknown;
+      let rawIntent: unknown;
       let usedContextChars = contextSliceChars;
       let lastUserContent = '';
       llmInvokeStartedAt = Date.now();
@@ -895,11 +1129,16 @@ export class AutonomousOrchestratorService implements OnModuleInit {
             attempt,
             maxAttempts: maxLlmAttempts,
             systemChars: sysForAttempt.length,
+            systemPreview: this.clip(sysForAttempt, 600),
+            userPreview: this.clip(userContent, 900),
+            runKind: state.runKind,
+            rootTaskId: state.rootTaskId ?? null,
+            sourceMessageId: state.triggerRef || null,
           },
         );
 
         try {
-          raw = (await structured.invoke([
+          rawIntent = (await structuredIntent.invoke([
             new SystemMessage(sysForAttempt),
             new HumanMessage(userContent),
           ])) as unknown;
@@ -936,7 +1175,187 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         contextPayloadCharsUsed: usedContextChars,
       });
 
-      const result = raw as CeoPlanOutput;
+      let intentRepairAttempts = 0;
+      let tasksRepairAttempts = 0;
+      let intentFallbackUsed = false;
+      let tasksFallbackUsed = false;
+      const checkedIntent = ceoPlanIntentSchema.safeParse(rawIntent);
+      const safeIntent = checkedIntent.success
+        ? checkedIntent.data
+        : await this.repairStructuredOutputByLlm(
+            model as unknown as { invoke: (msgs: unknown[]) => Promise<unknown> },
+            'intent',
+            ceoPlanIntentSchema,
+            intentSchemaHint,
+            systemForLlm,
+            lastUserContent,
+            rawIntent,
+            checkedIntent.error.issues,
+            2,
+            (attempt) => {
+              intentRepairAttempts = attempt;
+            },
+          );
+      if (!safeIntent) {
+        intentFallbackUsed = true;
+        const fallbackResult = ceoPlanSchema.parse({
+          summary:
+            '本轮 CEO 心跳规划输出格式异常，已切换为安全兜底方案。建议人工补充本周期的关键战略目标与优先级，然后重新触发 Heartbeat。',
+          tasks: [
+            {
+              title: '补充本周期的公司关键目标与优先级（兜底占位任务）',
+              description:
+                '大模型规划失败，系统自动生成的默认任务。请由公司负责人在协作群内补充：1) 本周期最重要的 1-3 个业务目标；2) 关键风险与约束；3) 希望 CEO Agent 聚焦的方向。',
+              priority: 'high',
+            },
+          ],
+          neededSkills: [],
+          requiresHumanApproval: true,
+          approvalReason: '规划输出异常，需人工确认默认任务与后续战略方向。',
+        });
+        this.logger.warn('CEO plan intent unrecoverable; fallback used', {
+          traceId: state.traceId,
+          model: effectiveModelName,
+          issues: checkedIntent.success ? [] : checkedIntent.error.issues.map((i) => `${i.path.join('.') || 'root'}:${i.message}`).slice(0, 10),
+        });
+        this.monitoring?.incStructuredOutputParseFailure('ceo_heartbeat', 'plan_intent_fallback');
+        this.monitoring?.incCeoPlanningFallback();
+        await this.executionLog.appendForRun(state.companyId, state.traceId, {
+          stepType: 'ceo.plan.intent',
+          traceId: state.traceId,
+          message: 'fallback',
+          outputSnapshot: {
+            systemPromptPreview: systemForLlm.slice(0, 800),
+            userPromptPreview: lastUserContent.slice(0, 800),
+            rawPreview: JSON.stringify(rawIntent).slice(0, 1200),
+            repaired: false,
+            repairAttempts: intentRepairAttempts,
+          },
+        });
+        return {
+          skipPlanReason: 'intent_structured_output_failed',
+          planResultJson: JSON.stringify(fallbackResult),
+          llmMetaJson: JSON.stringify({ error: true, stage: 'intent' }),
+        };
+      }
+
+      if (checkedIntent.success) {
+        this.monitoring?.incCeoPlanningNativeStructuredSuccess('intent');
+      } else {
+        this.monitoring?.incStructuredOutputParseFailure('ceo_heartbeat', 'plan_intent_repaired');
+        await this.executionLog.appendForRun(state.companyId, state.traceId, {
+          stepType: 'ceo.plan.intent',
+          traceId: state.traceId,
+          message: 'repaired',
+          outputSnapshot: {
+            systemPromptPreview: systemForLlm.slice(0, 800),
+            userPromptPreview: lastUserContent.slice(0, 800),
+            rawPreview: JSON.stringify(rawIntent).slice(0, 1200),
+            repairedOutputPreview: JSON.stringify(safeIntent).slice(0, 1200),
+          },
+        });
+      }
+
+      let tasks: CeoPlanOutput['tasks'] = [];
+      if (safeIntent.nextStep === 'generate_tasks') {
+        const taskSystem = `${systemPrompt}\n\n${strictJsonRule}\n\nTask Schema:\n${taskSchemaHint}\n\n组织树（仅允许将任务关联到以下节点 id）：\n${orgPrompt}\n\nTask Schema(end):\n${taskSchemaHint}`;
+        const taskUser = [
+          `trigger=${state.triggerSource}`,
+          state.triggerRef ? `triggerRef=${state.triggerRef}` : null,
+          state.runKind === 'breakdown' ? `goal=${state.goal.slice(0, 2000)}` : null,
+          `intent_summary=${safeIntent.summary.slice(0, 600)}`,
+          `requires_approval=${safeIntent.requiresHumanApproval ? 'true' : 'false'}`,
+          safeIntent.approvalReason ? `approval_reason=${safeIntent.approvalReason.slice(0, 500)}` : null,
+          `context=${state.contextBundle.slice(0, Math.max(2000, Math.floor(usedContextChars * 0.6)))}`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        const rawTasks = (await structuredTasks.invoke([
+          new SystemMessage(taskSystem),
+          new HumanMessage(taskUser),
+        ])) as unknown;
+        const checkedTasks = ceoPlanTasksExpansionSchema.safeParse(rawTasks);
+        const safeTasks = checkedTasks.success
+          ? checkedTasks.data
+          : await this.repairStructuredOutputByLlm(
+              model as unknown as { invoke: (msgs: unknown[]) => Promise<unknown> },
+              'tasks',
+              ceoPlanTasksExpansionSchema,
+              taskSchemaHint,
+              taskSystem,
+              taskUser,
+              rawTasks,
+              checkedTasks.error.issues,
+              2,
+              (attempt) => {
+                tasksRepairAttempts = attempt;
+              },
+            );
+        if (safeTasks) {
+          tasks = safeTasks.tasks;
+          if (checkedTasks.success) {
+            this.monitoring?.incCeoPlanningNativeStructuredSuccess('tasks');
+          } else {
+            this.monitoring?.incStructuredOutputParseFailure('ceo_heartbeat', 'plan_tasks_repaired');
+            await this.executionLog.appendForRun(state.companyId, state.traceId, {
+              stepType: 'ceo.plan.tasks',
+              traceId: state.traceId,
+              message: 'repaired',
+              outputSnapshot: {
+                systemPromptPreview: taskSystem.slice(0, 800),
+                userPromptPreview: taskUser.slice(0, 800),
+                rawPreview: JSON.stringify(rawTasks).slice(0, 1200),
+                repairedOutputPreview: JSON.stringify(safeTasks).slice(0, 1200),
+              },
+            });
+          }
+        } else {
+          tasksFallbackUsed = true;
+          this.logger.warn('CEO plan tasks unrecoverable; downgrade to summary_only', {
+            traceId: state.traceId,
+            model: effectiveModelName,
+          });
+          this.monitoring?.incStructuredOutputParseFailure('ceo_heartbeat', 'plan_tasks_fallback');
+          this.monitoring?.incCeoPlanningFallback();
+          await this.executionLog.appendForRun(state.companyId, state.traceId, {
+            stepType: 'ceo.plan.tasks',
+            traceId: state.traceId,
+            message: 'fallback',
+            outputSnapshot: {
+              systemPromptPreview: taskSystem.slice(0, 800),
+              userPromptPreview: taskUser.slice(0, 800),
+              rawPreview: JSON.stringify(rawTasks).slice(0, 1200),
+              repaired: false,
+              repairAttempts: tasksRepairAttempts,
+            },
+          });
+        }
+      }
+
+      const result: CeoPlanOutput = ceoPlanSchema.parse({
+        summary: safeIntent.summary,
+        tasks,
+        neededSkills: safeIntent.neededSkills ?? [],
+        requiresHumanApproval: safeIntent.requiresHumanApproval,
+        approvalReason: safeIntent.approvalReason,
+      });
+
+      // Layer-3 (Heavy/Breakdown) response log: what the LLM produced (clipped)
+      if (state.runKind === 'breakdown') {
+        this.logger.log(`${COLLAB_LLM_TRACE} | layer3.plan.response`, {
+          traceId: state.traceId,
+          sourceMessageId: state.triggerRef || null,
+          companyId: state.companyId,
+          rootTaskId: state.rootTaskId ?? null,
+          modelName: effectiveModelName,
+          llmKeyId: llmKey.llmKeyId,
+          baseUrl: safeLlmBaseUrlForLog(llmKey.requestUrl),
+          summaryPreview: this.clip(result.summary, 800),
+          tasksCount: result.tasks.length,
+          tasksPreview: this.clip(JSON.stringify(result.tasks.slice(0, 3)), 1200),
+          requiresHumanApproval: result.requiresHumanApproval,
+        });
+      }
 
       const userContentForBilling = lastUserContent;
 
@@ -946,10 +1365,10 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       };
 
       const usage =
-        (raw as any)?.usage ||
-        (raw as any)?.response_metadata?.usage ||
-        (raw as any)?.llmOutput?.tokenUsage ||
-        (raw as any)?.tokenUsage;
+        (rawIntent as any)?.usage ||
+        (rawIntent as any)?.response_metadata?.usage ||
+        (rawIntent as any)?.llmOutput?.tokenUsage ||
+        (rawIntent as any)?.tokenUsage;
 
       const inputTokens =
         typeof usage?.prompt_tokens === 'number'
@@ -996,8 +1415,17 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           : `规划失败: ${msg}`;
       const fallback: CeoPlanOutput = {
         summary: friendlyTimeout,
-        tasks: [],
-        requiresHumanApproval: false,
+        tasks: [
+          {
+            title: '确认 CEO Heartbeat 规划失败原因并补充战略输入（兜底占位任务）',
+            description:
+              '本轮 CEO 规划调用失败（包含可能的超时/网络问题）。请由负责人在协作群内说明：1) 当前周期的核心业务目标；2) 是否需要立刻重新触发 Heartbeat；3) 是否需要更换模型或缩短上下文。',
+            priority: 'high',
+          },
+        ],
+        neededSkills: [],
+        requiresHumanApproval: true,
+        approvalReason: '规划执行失败，需人工检查并决定后续动作。',
       };
       return {
         skipPlanReason: friendlyTimeout,
@@ -1041,14 +1469,16 @@ export class AutonomousOrchestratorService implements OnModuleInit {
    * CEO → 部门：对带 organizationNodeId 但未指定 assigneeAgentId 的任务，按节点解析默认执行 Agent。
    */
   private async hierarchicalExpand(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
-    let plan: CeoPlanOutput;
-    try {
-      plan = JSON.parse(state.planResultJson || '{}') as CeoPlanOutput;
-    } catch {
-      return {
-        hierarchicalMetaJson: JSON.stringify({ error: 'invalid_plan_json' }),
-      };
-    }
+    const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'hierarchicalExpand');
+
+    // plan 输出的 neededSkills：异步触发绑定，不阻塞本轮 pipeline（后续执行阶段自然走 snapshots 注入）
+    void this.handleNeededSkills(state, plan).catch((e) => {
+      this.logger.warn('CEO neededSkills preload failed', {
+        traceId: state.traceId,
+        companyId: state.companyId,
+        message: this.formatErrorMessage(e).slice(0, 800),
+      });
+    });
 
     const actor = this.actor();
     const meta: {
@@ -1107,13 +1537,187 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     };
   }
 
-  private async validatePersist(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
-    let plan: CeoPlanOutput;
-    try {
-      plan = JSON.parse(state.planResultJson || '{}') as CeoPlanOutput;
-    } catch {
-      plan = { summary: '无效 plan JSON', tasks: [], requiresHumanApproval: false };
+  private normalizeNeededSkills(raw?: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    const items = raw.map((x) => String(x ?? '').trim()).filter(Boolean);
+    // hard guard: avoid context/tool explosion even if upstream schema/prompt is bypassed
+    return [...new Set(items)].slice(0, 5);
+  }
+
+  /**
+   * Worker 侧统一处理 CEO plan 的 neededSkills：
+   * - 将 skill name/slug 解析为 skillId（当前仅支持 platform-global skills）
+   * - 幂等 bind 到 CEO agent，触发 agent.skills.changed 事件刷新 ToolRegistry
+   * - 异步执行，不阻塞本轮 graph
+   */
+  private async handleNeededSkills(state: CeoSupervisorState, plan: CeoPlanOutput): Promise<void> {
+    const companyId = state.companyId;
+    const ceoAgentId = state.ceoAgentId?.trim();
+    if (!companyId || !ceoAgentId) return;
+
+    const needed = this.normalizeNeededSkills((plan as any)?.neededSkills);
+    if (needed.length === 0) return;
+
+    const actor = this.actor();
+    const startedAt = Date.now();
+    const tracer = trace.getTracer('foundry-worker-autonomous');
+    await tracer.startActiveSpan('ceo.skills.preload', async (span) => {
+      span.setAttribute('foundry.company_id', companyId);
+      span.setAttribute('foundry.correlation_trace_id', state.traceId);
+      span.setAttribute('foundry.agent_id', ceoAgentId);
+      span.setAttribute('foundry.needed_skills_count', needed.length);
+      span.setAttribute('foundry.supervisor_run_id', state.supervisorRunId || state.traceId);
+      try {
+        const skillIds = await this.resolveNeededSkillIds(companyId, needed);
+
+        if (!skillIds.length) {
+          this.logger.log('CEO neededSkills resolved to empty skillIds', {
+            traceId: state.traceId,
+            companyId,
+            ceoAgentId,
+            neededSkills: needed,
+            ms: Date.now() - startedAt,
+          });
+          await this.executionLog.appendForRun(companyId, state.traceId, {
+            stepType: 'ceo.skills.preload',
+            traceId: state.traceId,
+            message: 'resolved_empty',
+            outputSnapshot: { ceoAgentId, neededSkills: needed, resolvedSkillIds: [] },
+          });
+          span.setStatus({ code: SpanStatusCode.OK });
+          return;
+        }
+
+        await this.rpcInteractive('agents.bindSkills', {
+          companyId,
+          actor,
+          id: ceoAgentId,
+          data: {
+            skillIds,
+            source: 'ceo-plan-node',
+            isTemporary: true,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          },
+        });
+
+        const ms = Date.now() - startedAt;
+        this.logger.log('CEO neededSkills preload triggered (bindSkills)', {
+          traceId: state.traceId,
+          companyId,
+          ceoAgentId,
+          neededSkills: needed,
+          boundSkillIds: skillIds,
+          ms,
+        });
+        await this.executionLog.appendForRun(companyId, state.traceId, {
+          stepType: 'ceo.skills.preload',
+          traceId: state.traceId,
+          message: `ok skills=${skillIds.length} ms=${ms}`,
+          outputSnapshot: { ceoAgentId, neededSkills: needed, resolvedSkillIds: skillIds, ms },
+        });
+        span.setStatus({ code: SpanStatusCode.OK });
+      } catch (e: unknown) {
+        const msg = this.formatErrorMessage(e);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: msg.slice(0, 240) });
+        await this.executionLog.appendForRun(companyId, state.traceId, {
+          stepType: 'ceo.skills.preload',
+          traceId: state.traceId,
+          message: `error: ${msg.slice(0, 300)}`,
+          outputSnapshot: { ceoAgentId, neededSkills: needed, error: msg.slice(0, 1500) },
+        });
+        throw e;
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  private async resolveNeededSkillIds(companyId: string, needed: string[]): Promise<string[]> {
+    const actor = this.actor();
+    const direct = await this.rpcInteractive<string[]>('skills.resolveGlobalSkillIdsByNames', {
+      names: needed,
+    });
+    if (direct.length) return direct;
+
+    // Fallback: model may output display-ish names; try a lightweight search in visible skills.
+    // QuerySkillsDto.search is tenant-scoped by default; companyOnly=false keeps global visible.
+    const resolved: string[] = [];
+    for (const term of needed) {
+      try {
+        const res = await this.rpcInteractive<{
+          items?: { id: string; name?: string }[];
+        }>('skills.findAll', {
+          companyId,
+          actor,
+          search: term,
+          page: 1,
+          pageSize: 20,
+          companyOnly: false,
+        });
+        const items = Array.isArray(res?.items) ? res.items : [];
+        const exact =
+          items.find((s) => (s?.name ?? '').trim().toLowerCase() === term.trim().toLowerCase()) ??
+          items[0];
+        if (exact?.id) resolved.push(exact.id);
+      } catch {
+        // ignore per-term fallback errors; overall preload remains best-effort
+      }
     }
+    return [...new Set(resolved)];
+  }
+
+  private async prewarmCeoTools(initial: CeoSupervisorState): Promise<void> {
+    const companyId = initial.companyId;
+    const actor = this.actor();
+    const startedAt = Date.now();
+
+    const now = Date.now();
+    const cached = this.ceoAgentIdCache.get(companyId);
+    let ceoAgentId = cached && cached.expiresAt > now ? cached.agentId : '';
+    if (!ceoAgentId) {
+      const res = await this.rpcInteractive<{ items?: { id: string }[] }>('agents.findAll', {
+        companyId,
+        actor,
+        role: 'ceo',
+        status: 'active',
+        pageSize: 1,
+        page: 1,
+      });
+      ceoAgentId = res?.items?.[0]?.id?.trim() ?? '';
+      if (ceoAgentId) {
+        this.ceoAgentIdCache.set(companyId, { agentId: ceoAgentId, expiresAt: now + 5 * 60_000 });
+      }
+    }
+    if (!ceoAgentId) return;
+
+    const hydrated = await this.rpcInteractive<{ skills?: SkillToolSnapshot[] }>(
+      'agents.effectiveSkillSnapshots',
+      {
+      companyId,
+      actor,
+      id: ceoAgentId,
+      },
+    );
+    const skills = Array.isArray(hydrated?.skills) ? hydrated.skills : [];
+    this.registry.setAgentTools(companyId, ceoAgentId, skills);
+
+    await this.executionLog.appendForRun(companyId, initial.traceId, {
+      stepType: 'ceo.tools.prewarm',
+      traceId: initial.traceId,
+      message: `skills=${skills.length}`,
+      outputSnapshot: { ceoAgentId, skillCount: skills.length },
+    });
+    this.logger.log('CEO tools prewarmed', {
+      traceId: initial.traceId,
+      companyId,
+      ceoAgentId,
+      skillCount: skills.length,
+      ms: Date.now() - startedAt,
+    });
+  }
+
+  private async validatePersist(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
+    const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'validatePersist');
 
     let parsedCtx: Record<string, unknown> = {};
     try {
@@ -1192,28 +1796,119 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           assigneeId = t.organizationNodeId;
         }
 
-        const createdTask = await this.rpc<Record<string, unknown>>(
-          'tasks.create',
-          {
-            companyId: state.companyId,
-            actor,
-            source: 'autonomous',
-            data: {
-              title: t.title,
-              description: t.description,
-              priority: t.priority ?? 'normal',
-              assigneeType,
-              assigneeId,
-              requiresHumanApproval: plan.requiresHumanApproval,
-              metadata: {
-                ceoTraceId: state.traceId,
-                organizationNodeId: t.organizationNodeId,
-                ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
+        let createdTask: Record<string, unknown>;
+        let delegatedByCeo = false;
+        if (t.assigneeAgentId && state.ceoAgentId) {
+          try {
+            const target = await this.rpc<Record<string, unknown>>(
+              'agents.findOne',
+              {
+                companyId: state.companyId,
+                actor,
+                id: t.assigneeAgentId,
+              },
+              state.traceId,
+            );
+            if (target?.role === 'director') {
+              createdTask = await this.rpc<Record<string, unknown>>(
+                'tasks.ceo.delegateToDirector',
+                {
+                  companyId: state.companyId,
+                  actor,
+                  data: {
+                    ceoAgentId: state.ceoAgentId,
+                    directorAgentId: t.assigneeAgentId,
+                    title: t.title,
+                    description: t.description,
+                    priority: t.priority ?? 'normal',
+                    requiresHumanApproval: plan.requiresHumanApproval,
+                    traceId: state.traceId,
+                    source: 'ceo-strategic-breakdown',
+                  },
+                },
+                state.traceId,
+              );
+              delegatedByCeo = true;
+            } else {
+              createdTask = await this.rpc<Record<string, unknown>>(
+                'tasks.create',
+                {
+                  companyId: state.companyId,
+                  actor,
+                  source: 'autonomous',
+                  data: {
+                    title: t.title,
+                    description: t.description,
+                    priority: t.priority ?? 'normal',
+                    assigneeType,
+                    assigneeId,
+                    requiresHumanApproval: plan.requiresHumanApproval,
+                    metadata: {
+                      ceoTraceId: state.traceId,
+                      organizationNodeId: t.organizationNodeId,
+                      ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
+                    },
+                  },
+                },
+                state.traceId,
+              );
+            }
+          } catch {
+            createdTask = await this.rpc<Record<string, unknown>>(
+              'tasks.create',
+              {
+                companyId: state.companyId,
+                actor,
+                source: 'autonomous',
+                data: {
+                  title: t.title,
+                  description: t.description,
+                  priority: t.priority ?? 'normal',
+                  assigneeType,
+                  assigneeId,
+                  requiresHumanApproval: plan.requiresHumanApproval,
+                  metadata: {
+                    ceoTraceId: state.traceId,
+                    organizationNodeId: t.organizationNodeId,
+                    ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
+                  },
+                },
+              },
+              state.traceId,
+            );
+          }
+        } else {
+          createdTask = await this.rpc<Record<string, unknown>>(
+            'tasks.create',
+            {
+              companyId: state.companyId,
+              actor,
+              source: 'autonomous',
+              data: {
+                title: t.title,
+                description: t.description,
+                priority: t.priority ?? 'normal',
+                assigneeType,
+                assigneeId,
+                requiresHumanApproval: plan.requiresHumanApproval,
+                metadata: {
+                  ceoTraceId: state.traceId,
+                  organizationNodeId: t.organizationNodeId,
+                  ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
+                },
               },
             },
-          },
-          state.traceId,
-        );
+            state.traceId,
+          );
+        }
+        if (delegatedByCeo) {
+          this.logger.log('CEO delegated task to director via facade', {
+            companyId: state.companyId,
+            traceId: state.traceId,
+            directorAgentId: t.assigneeAgentId,
+            title: t.title,
+          });
+        }
         const id = createdTask.id as string;
         created.push(id);
       } catch (e: unknown) {
@@ -1230,35 +1925,40 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     try {
       if (dynamicsRoomId) {
         const orgNodeIds = [...new Set(plan.tasks.map((x) => x.organizationNodeId).filter(Boolean))] as string[];
+        // Always include explicit assignees as a safety-net:
+        // org-node pull may fail due permissions/policy, but direct assignee join should still proceed.
         const explicitAgentIds = [
           ...new Set(
             plan.tasks
-              .filter((x) => x.assigneeAgentId && !x.organizationNodeId)
+              .filter((x) => x.assigneeAgentId)
               .map((x) => x.assigneeAgentId as string),
           ),
         ];
 
-        for (const nodeId of orgNodeIds) {
-          try {
-            await this.rpc(
-              'collaboration.members.addFromOrganizationNode',
-              {
+        const isCollabMentionRun = state.triggerSource === 'collaboration_mention';
+        if (!isCollabMentionRun) {
+          for (const nodeId of orgNodeIds) {
+            try {
+              await this.rpc(
+                'collaboration.members.addFromOrganizationNode',
+                {
+                  companyId: state.companyId,
+                  actor,
+                  roomId: dynamicsRoomId,
+                  organizationNodeId: nodeId,
+                  scope: 'subtree',
+                },
+                state.traceId,
+              );
+            } catch (e: unknown) {
+              const msg = this.formatErrorMessage(e);
+              this.logger.warn('pull org members into collaboration room failed', {
                 companyId: state.companyId,
-                actor,
                 roomId: dynamicsRoomId,
                 organizationNodeId: nodeId,
-                scope: 'subtree',
-              },
-              state.traceId,
-            );
-          } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            this.logger.warn('pull org members into collaboration room failed', {
-              companyId: state.companyId,
-              roomId: dynamicsRoomId,
-              organizationNodeId: nodeId,
-              error: msg,
-            });
+                error: msg,
+              });
+            }
           }
         }
 
@@ -1293,12 +1993,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
   }
 
   private async summarize(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
-    let plan: CeoPlanOutput;
-    try {
-      plan = JSON.parse(state.planResultJson || '{}') as CeoPlanOutput;
-    } catch {
-      plan = { summary: '', tasks: [], requiresHumanApproval: false };
-    }
+    const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'summarize');
     let created: string[] = [];
     let persistErrors: { title?: string; error: string }[] = [];
     try {
@@ -1489,12 +2184,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       });
     }
 
-    let plan: CeoPlanOutput;
-    try {
-      plan = JSON.parse(state.planResultJson || '{}') as CeoPlanOutput;
-    } catch {
-      plan = { summary: '', tasks: [], requiresHumanApproval: false };
-    }
+    const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'notify');
 
     if (plan.requiresHumanApproval && postRoomId && state.ceoAgentId) {
       const approvalId = randomUUID();

@@ -16,14 +16,17 @@ import { ConfigModule } from './common/config/config.module.js';
 import { IdempotencyModule } from './common/idempotency/idempotency.module.js';
 import { TenantModule } from '@service/tenant';
 import { WorkerApiRpcModule } from './common/rpc/worker-api-rpc.module.js';
+import { WorkerRunnerRpcModule } from './common/rpc/worker-runner-rpc.module.js';
 import { ObservabilityWorkerModule } from './common/observability/observability-worker.module.js';
 import { AlertsWorkerModule } from './modules/alerts/alerts-worker.module.js';
+import { CompanyRuntimeModule } from './modules/company-runtime/company-runtime.module.js';
 
 @Module({
   imports: [
     // 统一配置管理模块（全局模块）
     ConfigModule,
     WorkerApiRpcModule,
+    WorkerRunnerRpcModule,
     ObservabilityWorkerModule,
     // 消息队列模块（全局注册）
     MessagingModule.forRoot(),
@@ -39,6 +42,7 @@ import { AlertsWorkerModule } from './modules/alerts/alerts-worker.module.js';
     OrganizationModule,
     AgentsModule,
     CollaborationModule,
+    CompanyRuntimeModule,
     MemoryWorkerModule,
     TasksWorkerModule,
     BillingWorkerModule,

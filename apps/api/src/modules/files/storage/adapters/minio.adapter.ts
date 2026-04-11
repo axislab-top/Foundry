@@ -55,12 +55,27 @@ export class MinIOStorageAdapter
     // MinIO 客户端不需要显式关闭
   }
 
+  private assertTenantObjectKey(key: string): void {
+    if (
+      key.startsWith('companies/') ||
+      key.startsWith('memory/') ||
+      key.startsWith('skills/') ||
+      key.startsWith('platform/')
+    ) {
+      return;
+    }
+    throw new Error(
+      'MinIO object key must be tenant-scoped (companies/..., memory/..., skills/..., or platform/...)',
+    );
+  }
+
   async upload(
     file: Express.Multer.File,
     path?: string,
     options?: UploadOptions,
   ): Promise<FileInfo> {
     const objectName = path || this.generatePath(file.originalname);
+    this.assertTenantObjectKey(objectName);
     const contentType = options?.contentType || file.mimetype;
 
     await this.client.putObject(
@@ -89,6 +104,7 @@ export class MinIOStorageAdapter
   }
 
   async download(path: string): Promise<Buffer> {
+    this.assertTenantObjectKey(path);
     const dataStream = await this.client.getObject(this.bucketName, path);
     const chunks: Buffer[] = [];
     return await new Promise((resolve, reject) => {
@@ -105,6 +121,7 @@ export class MinIOStorageAdapter
   }
 
   async getUrl(path: string, expiresIn: number = 7 * 24 * 60 * 60): Promise<string> {
+    this.assertTenantObjectKey(path);
     try {
       // 生成预签名 URL
       const url = await this.client.presignedGetObject(
@@ -120,6 +137,7 @@ export class MinIOStorageAdapter
   }
 
   async delete(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       await this.client.removeObject(this.bucketName, path);
       return true;
@@ -129,6 +147,7 @@ export class MinIOStorageAdapter
   }
 
   async exists(path: string): Promise<boolean> {
+    this.assertTenantObjectKey(path);
     try {
       await this.client.statObject(this.bucketName, path);
       return true;
@@ -138,6 +157,7 @@ export class MinIOStorageAdapter
   }
 
   async getFileInfo(path: string): Promise<FileInfo> {
+    this.assertTenantObjectKey(path);
     const stat = await this.client.statObject(this.bucketName, path);
     const fileName = path.split('/').pop() || path;
 
@@ -154,6 +174,9 @@ export class MinIOStorageAdapter
   }
 
   async list(prefix?: string, options?: ListOptions): Promise<FileInfo[]> {
+    if (prefix != null && prefix !== '') {
+      this.assertTenantObjectKey(prefix);
+    }
     const files: FileInfo[] = [];
     const stream = this.client.listObjects(
       this.bucketName,

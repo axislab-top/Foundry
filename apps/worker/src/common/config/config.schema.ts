@@ -22,14 +22,28 @@ export const configSchema = Joi.object({
   RABBITMQ_RECONNECT_DELAY: Joi.number().default(5000),
   RABBITMQ_MAX_RETRIES: Joi.number().default(10),
 
+  // Redis（Phase 2: llm_prep cache）
+  REDIS_HOST: Joi.string().default('localhost'),
+  REDIS_PORT: Joi.number().default(6379),
+  REDIS_PASSWORD: Joi.string().allow('').optional(),
+  REDIS_DB: Joi.number().default(0),
+  REDIS_URL: Joi.string().optional(),
+  REDIS_KEY_PREFIX: Joi.string().allow('').optional(),
+
   /** 与 API 对齐的 AMQP URL（优先于 RABBITMQ_* 拼装） */
   RMQ_URL: Joi.string().optional(),
+  /** Worker → apps/runner RMQ 队列（shell/exec 唯一入口） */
+  RUNNER_RMQ_RPC_QUEUE: Joi.string().default('runner-rpc-queue'),
   /** 兼容旧配置：若未设置 WORKER_API_RMQ_RPC_QUEUE，则回退到该值 */
   API_RMQ_RPC_QUEUE: Joi.string().default('api-rpc-queue'),
   /** API 自治/后台 RPC 队列名（Worker 默认应使用此队列） */
   API_RMQ_RPC_QUEUE_AUTONOMOUS: Joi.string().default('api-rpc-autonomous-queue'),
   /** Worker 专用 API RPC 队列（最高优先级，覆盖上面两个） */
   WORKER_API_RMQ_RPC_QUEUE: Joi.string().default('api-rpc-autonomous-queue'),
+  CEO_INTERACTIVE_QUEUE_ENABLED: Joi.boolean().default(false),
+  CEO_INTERACTIVE_QUEUE_NAME: Joi.string().default('ceo-interactive-queue'),
+  CEO_INTERACTIVE_PREFETCH: Joi.number().integer().min(1).max(200).default(25),
+  CEO_INTERACTIVE_TIMEOUT_MS: Joi.number().integer().min(500).max(120000).default(8000),
   /**
    * Worker → API 的 Nest RMQ RPC 客户端超时（毫秒）。
    * api-rpc-queue 积压时，过短会导致 billing.signals.refresh 等调用在排队阶段就超时。
@@ -52,6 +66,12 @@ export const configSchema = Joi.object({
    * temporal：由 Temporal Schedule + temporal-worker 调内部 HTTP，禁止双重心跳。
    */
   TASK_HEARTBEAT_SOURCE: Joi.string().valid('nest_timer', 'temporal').default('nest_timer'),
+  /** Company heartbeat: stuck task detection/recovery config */
+  COMPANY_STUCK_TASK_DETECTION_ENABLED: Joi.boolean().default(true),
+  COMPANY_STUCK_MAX_HOURS_IN_PROGRESS: Joi.number().min(0.1).max(720).default(4),
+  COMPANY_STUCK_MAX_HOURS_BLOCKED: Joi.number().min(0.1).max(720).default(2),
+  COMPANY_STUCK_EMERGENCY_THRESHOLD: Joi.number().integer().min(1).max(200).default(3),
+  COMPANY_STUCK_MAX_SELF_MENTION_RETRIES: Joi.number().integer().min(0).max(20).default(2),
   /** POST /api/internal/temporal/* 校验头 X-Internal-Auth；不设则内部路由返回 503 */
   WORKER_INTERNAL_API_SECRET: Joi.string().allow('').optional(),
 
@@ -100,6 +120,7 @@ export const configSchema = Joi.object({
     .default('ceo_autonomous'),
 
   ENABLE_MEMORY_CONSOLIDATION: Joi.boolean().default(false),
+  ENABLE_LAYERED_GRAPH: Joi.boolean().default(false),
   MEMORY_CONSOLIDATION_WINDOW_MESSAGES: Joi.number().integer().min(10).max(500).default(50),
 
   /** 可选：LangGraph Postgres Checkpoint；未设置则使用 MemorySaver */
@@ -114,12 +135,32 @@ export const configSchema = Joi.object({
    * CEO 群聊路由决策专用模型；未设置时回退到 COLLAB_INTENT_MODEL。
    * 不设且 COLLAB_INTENT_MODEL 也为空则仅用启发式。
    */
+  CEO_CLASSIFIER_MODEL: Joi.string().allow('').optional(),
+  /** CEO 轻量回复模型（casual/direct 简单场景） */
+  CEO_LIGHT_MODEL: Joi.string().allow('').optional(),
+  /** CEO 重推理模型（执行编排/复杂场景） */
+  CEO_HEAVY_MODEL: Joi.string().allow('').optional(),
   CEO_DECISION_MODEL: Joi.string().allow('').optional(),
   CEO_DECISION_LLM_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).optional(),
   CEO_DECISION_MAX_OUTPUT_TOKENS: Joi.number().integer().min(256).max(2048).default(512),
   CEO_DECISION_MAX_CONTEXT_MESSAGES: Joi.number().integer().min(5).max(200).default(40),
   CEO_DECISION_CACHE_ENABLED: Joi.boolean().default(true),
   CEO_DECISION_CACHE_TTL_MS: Joi.number().integer().min(0).max(3600000).default(120000),
+  CEO_LLM_PREP_CACHE_ENABLED: Joi.boolean().default(false),
+  CEO_LLM_PREP_CACHE_TTL_MS: Joi.number().integer().min(1000).max(600000).default(20000),
+  CEO_PRELOAD_ENABLED: Joi.boolean().default(false),
+  CEO_PRELOAD_PREFETCH: Joi.number().integer().min(1).max(200).default(10),
+  CEO_PRELOAD_MAX_CONCURRENCY: Joi.number().integer().min(1).max(200).default(15),
+  CEO_PRELOAD_COOLDOWN_MS: Joi.number().integer().min(1000).max(600000).default(30000),
+  CEO_FASTPATH_ENABLED: Joi.boolean().default(true),
+  CEO_FASTPATH_HIGH_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.92),
+  CEO_FASTPATH_MEDIUM_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.87),
+  CEO_FASTPATH_CONFIDENCE_GAP: Joi.number().min(0).max(1).default(0.08),
+  CEO_CLASSIFIER_TIMEOUT_MS: Joi.number().integer().min(100).max(120000).default(400),
+  CEO_LIGHT_TIMEOUT_MS: Joi.number().integer().min(200).max(180000).default(2500),
+  CEO_LIGHT_PRIMARY_TIMEOUT_MS: Joi.number().integer().min(500).max(180000).default(6000),
+  CEO_LIGHT_FALLBACK_TIMEOUT_MS: Joi.number().integer().min(500).max(180000).default(4000),
+  CEO_HEAVY_TIMEOUT_MS: Joi.number().integer().min(500).max(600000).default(12000),
   /** 高于此置信度的启发式结果将跳过 CEO LLM */
   CEO_DECISION_HEURISTIC_MIN_CONFIDENCE: Joi.number().min(0).max(1).default(0.85),
   /** CEO 决策后是否回写 collaboration.rooms.collaborationMode（供前端只读展示） */
@@ -137,11 +178,31 @@ export const configSchema = Joi.object({
    * CEO/Agent 直聊注入的近期房间消息条数（人机交替计条数，0=关闭多轮上下文）。
    * 仅同 room；有 threadId 时只带该线程内消息，否则只带主时间线（thread_id 为空）。
    */
-  WORKER_COLLAB_DIRECT_HISTORY_LIMIT: Joi.number().integer().min(0).max(100).default(48),
+  WORKER_COLLAB_DIRECT_HISTORY_LIMIT: Joi.number().integer().min(0).max(100).default(8),
   /** 群聊直聊/纪要是否对当前用户句做 memory.search（分层检索） */
   WORKER_GROUP_CHAT_MEMORY_RETRIEVAL: Joi.boolean().default(true),
   WORKER_GROUP_CHAT_MEMORY_TOP_K: Joi.number().integer().min(1).max(24).default(8),
   WORKER_GROUP_CHAT_DIGEST_TRANSCRIPT_LIMIT: Joi.number().integer().min(10).max(200).default(40),
+  /** P3: allow rollback of async memory consolidation request in direct structured replies */
+  WORKER_DIRECT_REPLY_AUTO_CONSOLIDATE: Joi.boolean().default(true),
+  /** 流式回复 chunk 合并：最小时间窗（毫秒） */
+  WORKER_COLLAB_STREAM_MIN_INTERVAL_MS: Joi.number().integer().min(10).max(500).default(60),
+  /** 流式回复 chunk 合并：最小字符数 */
+  WORKER_COLLAB_STREAM_MIN_CHARS: Joi.number().integer().min(1).max(200).default(12),
+  /** structured 模式可使用更稳的合并参数 */
+  WORKER_COLLAB_STREAM_STRUCTURED_MIN_INTERVAL_MS: Joi.number().integer().min(10).max(500).default(75),
+  WORKER_COLLAB_STREAM_STRUCTURED_MIN_CHARS: Joi.number().integer().min(1).max(300).default(15),
+  /** G1: structured 后 Supervisor 复盘开关（非阻塞） */
+  WORKER_SUPERVISOR_POST_REVIEW_ENABLED: Joi.boolean().default(true),
+  /** G1: 复盘最多输出多少条发现项 */
+  WORKER_SUPERVISOR_POST_REVIEW_MAX_FINDINGS: Joi.number().integer().min(1).max(10).default(3),
+  /** G1: 是否把复盘短评发回群聊 */
+  WORKER_SUPERVISOR_POST_REVIEW_CHAT_ENABLED: Joi.boolean().default(true),
+  /** G1: Supervisor 复盘专用模型（空则复用 WORKER_COLLAB_DIRECT_MODEL） */
+  WORKER_SUPERVISOR_POST_REVIEW_MODEL: Joi.string().allow('').optional(),
+  WORKER_SUPERVISOR_POST_REVIEW_LLM_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).default(12000),
+  /** G1: 日报/周报聚合结果是否推送群聊简讯 */
+  WORKER_SUPERVISOR_REVIEW_CHAT_SUMMARY_ENABLED: Joi.boolean().default(true),
 
   /** 仅开发环境：启用 file-read / code-run 占位 builtin（生产应保持 false） */
   WORKER_ALLOW_UNSAFE_SKILL_STUBS: Joi.boolean().default(false),
@@ -168,7 +229,8 @@ export const configSchema = Joi.object({
   CONSUL_PORT: Joi.number().default(8500),
   CONSUL_CONFIG_PREFIX: Joi.string().default('config/'),
   CONSUL_SECURE: Joi.boolean().default(false),
-  CONSUL_TOKEN: Joi.string().optional(),
+  // Allow empty token in local dev when CONSUL is disabled.
+  CONSUL_TOKEN: Joi.string().allow('').optional(),
   CONSUL_DATACENTER: Joi.string().optional(),
 });
 
