@@ -105,7 +105,7 @@ export const MainLayout: React.FC = () => {
             </div>
             <div className="admin-user-meta">
               <div className="admin-user-name">Super Admin</div>
-              <div className="admin-user-email">root@admin.system</div>
+              <div className="admin-user-email">admin@example.com</div>
             </div>
           </div>
         </div>

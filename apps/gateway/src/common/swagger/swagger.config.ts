@@ -28,10 +28,10 @@ export function createSwaggerConfig(configService: ConfigService) {
     .addTag('admin/ip-filter', 'IP 过滤管理')
     .addTag('admin/audit', '审计日志')
     .addTag('health', '健康检查')
-    .setContact('Gateway Team', '', 'gateway@example.com')
+    .setContact('Foundry Team', '', 'postmaster@axislab.top')
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')
     .addServer(`http://localhost:${appConfig.port}`, '本地开发环境')
-    .addServer('https://gateway.example.com', '生产环境')
+    .addServer('https://your-domain.com', '生产环境（请替换为实际域名）')
     .build();
 }
 

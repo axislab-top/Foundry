@@ -1,0 +1,87 @@
+name: Bug 报告
+description: 提交一个 Bug 报告
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间提交 Bug 报告！请尽量填写以下信息，帮助我们快速定位和修复问题。
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及组件
+      description: Bug 出现在哪个组件？
+      options:
+        - API 服务 (apps/api)
+        - Gateway 服务 (apps/gateway)
+        - Worker 服务 (apps/worker)
+        - 用户端前端 (client-frontend)
+        - 管理后台 (admin-system)
+        - Docker / 基础设施
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 清晰描述你遇到的问题
+      placeholder: 例如：创建公司后，CEO Agent 没有自动启动...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 如何复现这个问题？
+      placeholder: |
+        1. 登录系统
+        2. 点击 '创建公司'
+        3. 输入公司名称和行业
+        4. 看到错误...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你期望发生什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志/截图
+      description: 如有错误日志或截图，请粘贴在这里
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 你使用的版本号（git commit 或 tag）
+      placeholder: "例如: v1.0.0 或 abc1234"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Docker
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js 版本
+      placeholder: "例如: 20.11.0"

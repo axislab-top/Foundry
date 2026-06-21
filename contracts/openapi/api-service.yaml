@@ -34,7 +34,7 @@ paths:
               $ref: '#/components/schemas/ValidateCredentialsRequest'
             example:
               email: user@example.com
-              password: password123
+              password: your-password-here
       responses:
         '200':
           description: 验证成功

@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { createLogger, LogLevel } from '@service/logging';
+import { warnWeakSecurityDefaults } from '@service/security';
 import { ConfigService } from './common/config/config.service.js';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
@@ -77,6 +78,8 @@ if (!envLoaded) {
 }
 
 async function bootstrap() {
+  warnWeakSecurityDefaults();
+
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
@@ -128,7 +131,7 @@ async function bootstrap() {
   // 连接 RMQ microservice（用于 Gateway ClientProxy）
   // 与 HTTP server 同进程运行：HTTP + RMQ 双协议（可灰度迁移与快速回滚）
   const rmqUrl =
-    process.env.RMQ_URL || 'amqp://admin:admin123@localhost:5672';
+    process.env.RMQ_URL || 'amqp://guest:guest@localhost:5672';
   const rmqQueue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
   const autonomousRmqQueue =
     process.env.API_RMQ_RPC_QUEUE_AUTONOMOUS || 'api-rpc-autonomous-queue';

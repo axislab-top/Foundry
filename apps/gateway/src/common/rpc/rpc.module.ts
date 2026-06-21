@@ -13,7 +13,7 @@ import { RMQ_NEST_SOCKET_OPTIONS } from '@service/messaging';
         useFactory: async () => {
           const rmqUrl =
             process.env.RMQ_URL ||
-            'amqp://admin:admin123@localhost:5672';
+            'amqp://guest:guest@localhost:5672';
           const queue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
 
           return {
@@ -33,7 +33,7 @@ import { RMQ_NEST_SOCKET_OPTIONS } from '@service/messaging';
         useFactory: async () => {
           const rmqUrl =
             process.env.RMQ_URL ||
-            'amqp://admin:admin123@localhost:5672';
+            'amqp://guest:guest@localhost:5672';
           const queue =
             process.env.WEBHOOKS_RMQ_RPC_QUEUE || 'webhooks-rpc-queue';
 

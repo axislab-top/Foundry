@@ -36,7 +36,7 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
             example:
               email: user@example.com
-              password: password123
+              password: your-password-here
       responses:
         '200':
           description: 登录成功

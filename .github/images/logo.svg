@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <rect width="200" height="200" rx="40" fill="#1a1a2e"/>
+  <path d="M60 60h80v20H80v20h40v20H80v40H60V60z" fill="#e94560"/>
+  <circle cx="140" cy="140" r="20" fill="#0f3460"/>
+  <path d="M130 140l10-10v20l-10-10z" fill="#e94560"/>
+  <text x="100" y="190" text-anchor="middle" fill="#e94560" font-family="monospace" font-size="14" font-weight="bold">FOUNDRY</text>
+</svg>

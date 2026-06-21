@@ -1,7 +1,8 @@
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Environment variables (仅忽略根目录的 .env，基础设施的 .env 使用安全默认值可提交)
+/.env
+/.env.local
+/.env.shared
+/.env.*.local
 
 # PostgreSQL data directory (contains database files)
 infrastructure/postgres/data/
@@ -37,4 +38,41 @@ dist/
 build/
 *.tsbuildinfo
 
+# Turborepo cache
+.turbo/
 
+# Understand-Anything analysis
+.understand-anything/
+
+# SSL certificates and private keys
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+*.keystore
+!infrastructure/nginx/ssl/.gitkeep
+!infrastructure/nginx/ssl/README.md
+
+# Test credentials and secrets
+scripts/.e2e-run-creds.json
+**/cypress/fixtures/creds.json
+
+# Vite cache
+.vite/
+
+# Coverage reports
+coverage/
+
+# Development-only scripts (not for production)
+scripts/e2e-*.mjs
+scripts/benchmark-*.mjs
+scripts/diagnose-*.mjs
+scripts/ci-local.mjs
+
+# Load testing tools
+tools/loadtests/
+
+# Misc
+*.tgz
+*.tar.gz

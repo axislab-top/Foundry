@@ -15,7 +15,7 @@ export class CsrfProtectionMiddleware implements NestMiddleware {
     this.middleware = csrfMiddleware({
       // 默认关闭，显式开启才启用，避免影响纯 API/JWT 调用
       enabled: process.env.CSRF_ENABLED === 'true',
-      secret: process.env.CSRF_SECRET || process.env.JWT_SECRET || 'csrf-secret',
+      secret: process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-only-csrf-secret-change-me',
       cookieName: '_csrf',
       headerName: 'x-csrf-token',
     });

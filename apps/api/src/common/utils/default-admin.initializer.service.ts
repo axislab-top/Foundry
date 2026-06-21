@@ -42,7 +42,7 @@ export class DefaultAdminInitializerService implements OnModuleInit {
 
     const email = process.env.DEFAULT_ADMIN_EMAIL ?? 'admin@example.com';
     const username = process.env.DEFAULT_ADMIN_USERNAME ?? 'admin';
-    const password = process.env.DEFAULT_ADMIN_PASSWORD ?? 'admin123';
+    const password = process.env.DEFAULT_ADMIN_PASSWORD ?? 'changeme';
 
     // 支持通过 env 自定义可登录的管理员角色
     const rolesEnv = process.env.DEFAULT_ADMIN_ROLES ?? 'admin';

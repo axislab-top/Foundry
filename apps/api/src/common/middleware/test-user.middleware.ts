@@ -48,8 +48,8 @@ export class TestUserMiddleware implements NestMiddleware {
     if (!user) {
       user = {
         id: '00000000-0000-0000-0000-000000000001',
-        email: 'right123@admin.local',
-        username: 'right123',
+        email: 'test@example.com',
+        username: 'testuser',
         roles: ['admin'],
         permissions: [],
       };

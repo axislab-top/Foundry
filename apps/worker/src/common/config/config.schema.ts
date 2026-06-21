@@ -14,8 +14,8 @@ export const configSchema = Joi.object({
   // RabbitMQ 配置
   RABBITMQ_HOST: Joi.string().default('localhost'),
   RABBITMQ_PORT: Joi.number().default(5672),
-  RABBITMQ_USER: Joi.string().default('admin'),
-  RABBITMQ_PASSWORD: Joi.string().default('admin123'),
+  RABBITMQ_USER: Joi.string().default('guest'),
+  RABBITMQ_PASSWORD: Joi.string().default('guest'),
   RABBITMQ_VHOST: Joi.string().default('/'),
   RABBITMQ_URI: Joi.string().optional(),
   RABBITMQ_PREFETCH_COUNT: Joi.number().default(10),

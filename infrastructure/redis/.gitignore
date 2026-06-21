@@ -1,7 +1,6 @@
-# Environment files
-.env
-.env.local
-.env.*.local
+# Environment files (根目录 .env 已提交，含安全默认值)
+/.env.local
+/.env.*.local
 
 # Data files
 data/

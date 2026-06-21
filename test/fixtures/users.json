@@ -12,7 +12,7 @@
     "id": "user-456",
     "username": "admin",
     "email": "admin@example.com",
-    "password": "admin123",
+    "password": "password123",
     "roles": ["admin", "user"],
     "permissions": ["read:all", "write:all"],
     "enabled": true

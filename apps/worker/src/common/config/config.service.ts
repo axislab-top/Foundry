@@ -37,8 +37,8 @@ export class ConfigService {
     return {
       host: this.configManager.get<string>('RABBITMQ_HOST', 'localhost'),
       port: this.configManager.get<number>('RABBITMQ_PORT', 5672),
-      user: this.configManager.get<string>('RABBITMQ_USER', 'admin'),
-      password: this.configManager.get<string>('RABBITMQ_PASSWORD', 'admin123'),
+      user: this.configManager.get<string>('RABBITMQ_USER', 'guest'),
+      password: this.configManager.get<string>('RABBITMQ_PASSWORD', 'guest'),
       vhost: this.configManager.get<string>('RABBITMQ_VHOST', '/'),
       uri: this.configManager.get<string>('RABBITMQ_URI'),
       prefetchCount: this.configManager.get<number>('RABBITMQ_PREFETCH_COUNT', 10),

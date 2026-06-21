@@ -9,7 +9,7 @@ export const LoginPage: React.FC = () => {
   const defaultCreds = useMemo(
     () => ({
       email: 'admin@example.com',
-      password: 'admin123',
+      password: '',
     }),
     [],
   );

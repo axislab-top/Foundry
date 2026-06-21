@@ -29,6 +29,9 @@ import { ListFilesDto } from './dto/list-files.dto.js';
 import { Permissions } from '../../common/decorators/permissions.decorator.js';
 import { FILES_PERMISSIONS } from './constants/permissions.constants.js';
 
+/** 单文件上传大小上限（默认 50MB，可通过环境变量 FILE_UPLOAD_MAX_SIZE 覆盖） */
+const MAX_FILE_SIZE = parseInt(process.env.FILE_UPLOAD_MAX_SIZE || '', 10) || 50 * 1024 * 1024;
+
 type RequestWithCompany = Request & { companyId?: string };
 
 @ApiTags('files')
@@ -48,7 +51,7 @@ export class FilesController {
   }
 
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   @Permissions(FILES_PERMISSIONS.CREATE, FILES_PERMISSIONS.WRITE)
   @ApiOperation({ summary: '上传文件', description: '上传文件到对象存储' })
   @ApiConsumes('multipart/form-data')

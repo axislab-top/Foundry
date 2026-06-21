@@ -454,9 +454,8 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
     const {
       host = 'localhost',
       port = 5672,
-      /** 与 docker-compose / .env.shared 默认一致；避免遗漏 env 时误用 guest 触发 broker 拒绝 */
-      username = 'admin',
-      password = 'admin123',
+      username = 'guest',
+      password = 'guest',
       vhost = '/',
     } = this.options;
 

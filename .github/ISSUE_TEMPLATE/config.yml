@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 查看文档
+    url: https://github.com/AxisLab-OPC/Foundry/blob/main/docs/ARCHITECTURE.md
+    about: 查看项目架构文档
