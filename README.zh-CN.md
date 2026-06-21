@@ -48,7 +48,7 @@ Foundry 是一套**开源的 AI 驱动数字公司平台**。不同于 Agent 框
 
 | 群聊协作 | 管理后台 |
 |:---:|:---:|
-| ![群聊协作](.github/images/screenshot-chat.png) | *即将上线* |
+| ![群聊协作](.github/images/screenshot-chat.png) | ![管理后台](.github/images/screenshot-dashboard.png) |
 
 ---
 

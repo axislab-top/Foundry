@@ -48,7 +48,7 @@ Foundry is an **open-source AI-powered digital company platform**. Unlike agent 
 
 | Group Chat | Admin Dashboard |
 |:---:|:---:|
-| ![Group Chat](.github/images/screenshot-chat.png) | *Coming Soon* |
+| ![Group Chat](.github/images/screenshot-chat.png) | ![Admin Dashboard](.github/images/screenshot-dashboard.png) |
 
 ---
 
