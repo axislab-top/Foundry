@@ -20,10 +20,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AxisLab-OPC/Foundry/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
-  <a href="https://github.com/AxisLab-OPC/Foundry/stargazers"><img src="https://img.shields.io/github/stars/AxisLab-OPC/Foundry?style=social" alt="Stars"></a>
-  <a href="https://github.com/AxisLab-OPC/Foundry/network/members"><img src="https://img.shields.io/github/forks/AxisLab-OPC/Foundry?style=social" alt="Forks"></a>
-  <a href="https://github.com/AxisLab-OPC/Foundry/issues"><img src="https://img.shields.io/github/issues/AxisLab-OPC/Foundry" alt="Issues"></a>
+  <a href="https://github.com/axislab-top/Foundry/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
+  <a href="https://github.com/axislab-top/Foundry/stargazers"><img src="https://img.shields.io/github/stars/axislab-top/Foundry?style=social" alt="Stars"></a>
+  <a href="https://github.com/axislab-top/Foundry/network/members"><img src="https://img.shields.io/github/forks/axislab-top/Foundry?style=social" alt="Forks"></a>
+  <a href="https://github.com/axislab-top/Foundry/issues"><img src="https://img.shields.io/github/issues/axislab-top/Foundry" alt="Issues"></a>
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6" alt="TypeScript">
   <img src="https://img.shields.io/badge/NestJS-10-e0234e" alt="NestJS">
   <img src="https://img.shields.io/badge/React-18-61dafb" alt="React">
@@ -42,16 +42,13 @@ Foundry 是一套**开源的 AI 驱动数字公司平台**。不同于 Agent 框
 
 ### 📸 产品预览
 
-<p align="center">
-  <img src=".github/images/screenshot-login.png" width="45%" alt="注册页">
-  <img src=".github/images/screenshot-org.png" width="45%" alt="组织架构">
-</p>
-<p align="center">
-  <img src=".github/images/screenshot-chat.png" width="45%" alt="群聊协作">
-  <img src=".github/images/screenshot-dashboard.png" width="45%" alt="管理后台">
-</p>
+| 注册页 | 组织架构 |
+|:---:|:---:|
+| ![注册页](.github/images/screenshot-register.png) | ![组织架构](.github/images/screenshot-org.png) |
 
-> 📷 截图存放目录：`.github/images/`
+| 群聊协作 | 管理后台 |
+|:---:|:---:|
+| ![群聊协作](.github/images/screenshot-chat.png) | *即将上线* |
 
 ---
 
@@ -67,7 +64,7 @@ Foundry 是一套**开源的 AI 驱动数字公司平台**。不同于 Agent 框
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/AxisLab-OPC/Foundry.git && cd Foundry_01
+git clone https://github.com/axislab-top/Foundry.git && cd Foundry_01
 
 # 2. 安装依赖
 pnpm install
@@ -314,8 +311,8 @@ Foundry 是 **AI 数字公司平台** — 你注册账号、创建公司，AI �
 
 | 类型 | 说明 |
 |------|------|
-| 🐛 Bug 报告 | [提交 Issue](https://github.com/AxisLab-OPC/Foundry/issues/new?template=bug_report.yml) |
-| 💡 功能建议 | [提交 Issue](https://github.com/AxisLab-OPC/Foundry/issues/new?template=feature_request.yml) |
+| 🐛 Bug 报告 | [提交 Issue](https://github.com/axislab-top/Foundry/issues/new?template=bug_report.yml) |
+| 💡 功能建议 | [提交 Issue](https://github.com/axislab-top/Foundry/issues/new?template=feature_request.yml) |
 | 📝 文档改进 | 直接提交 PR |
 | 🔧 代码贡献 | Fork → Branch → PR |
 
@@ -323,8 +320,8 @@ Foundry 是 **AI 数字公司平台** — 你注册账号、创建公司，AI �
 
 ### 贡献者
 
-<a href="https://github.com/AxisLab-OPC/Foundry/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=AxisLab-OPC/Foundry" />
+<a href="https://github.com/axislab-top/Foundry/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=axislab-top/Foundry" />
 </a>
 
 ---
@@ -337,13 +334,13 @@ Foundry 是 **AI 数字公司平台** — 你注册账号、创建公司，AI �
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=AxisLab-OPC/Foundry&type=Date)](https://star-history.com/#AxisLab-OPC/Foundry&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=axislab-top/Foundry&type=Date)](https://star-history.com/#axislab-top/Foundry&Date)
 
 ---
 
 <p align="center">
   如果觉得有用，请给个 ⭐ Star 支持一下！<br>
-  <a href="https://github.com/AxisLab-OPC/Foundry/stargazers">⭐ 给个 Star</a> •
-  <a href="https://github.com/AxisLab-OPC/Foundry/fork">🍴 Fork 一下</a> •
-  <a href="https://github.com/AxisLab-OPC/Foundry/issues/new?template=bug_report.yml">🐛 报告 Bug</a>
+  <a href="https://github.com/axislab-top/Foundry/stargazers">⭐ 给个 Star</a> •
+  <a href="https://github.com/axislab-top/Foundry/fork">🍴 Fork 一下</a> •
+  <a href="https://github.com/axislab-top/Foundry/issues/new?template=bug_report.yml">🐛 报告 Bug</a>
 </p>

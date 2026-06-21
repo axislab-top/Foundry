@@ -42,16 +42,13 @@ Foundry is an **open-source AI-powered digital company platform**. Unlike agent 
 
 ### 📸 Product Preview
 
-<p align="center">
-  <img src=".github/images/screenshot-login.png" width="45%" alt="Registration">
-  <img src=".github/images/screenshot-org.png" width="45%" alt="Organization Chart">
-</p>
-<p align="center">
-  <img src=".github/images/screenshot-chat.png" width="45%" alt="Group Chat">
-  <img src=".github/images/screenshot-dashboard.png" width="45%" alt="Admin Dashboard">
-</p>
+| Registration | Organization Chart |
+|:---:|:---:|
+| ![Registration](.github/images/screenshot-register.png) | ![Organization Chart](.github/images/screenshot-org.png) |
 
-> 📷 Screenshots directory: `.github/images/`
+| Group Chat | Admin Dashboard |
+|:---:|:---:|
+| ![Group Chat](.github/images/screenshot-chat.png) | *Coming Soon* |
 
 ---
 
