@@ -6,7 +6,7 @@
 
 ### 报告 Bug
 
-使用 [Bug 报告模板](https://github.com/AxisLab-OPC/Foundry/issues/new?template=bug_report.yml) 提交 Issue。请尽量提供：
+使用 [Bug 报告模板](https://github.com/axislab-top/Foundry/issues/new?template=bug_report.yml) 提交 Issue。请尽量提供：
 
 - 清晰的问题描述
 - 复现步骤
@@ -16,7 +16,7 @@
 
 ### 提出功能建议
 
-使用 [功能建议模板](https://github.com/AxisLab-OPC/Foundry/issues/new?template=feature_request.yml) 提交 Issue。
+使用 [功能建议模板](https://github.com/axislab-top/Foundry/issues/new?template=feature_request.yml) 提交 Issue。
 
 ### 提交代码
 
@@ -67,7 +67,7 @@ docs: 更新 README 快速开始指南
 
 ```bash
 # 克隆
-git clone https://github.com/AxisLab-OPC/Foundry.git
+git clone https://github.com/axislab-top/Foundry.git
 cd Foundry_01
 
 # 安装依赖
@@ -115,4 +115,4 @@ contracts/      # 事件契约和 OpenAPI
 
 ## 问题？
 
-如有任何问题，欢迎在 [Discussions](https://github.com/AxisLab-OPC/Foundry/discussions) 中提问。
+如有任何问题，欢迎在 [Discussions](https://github.com/axislab-top/Foundry/discussions) 中提问。

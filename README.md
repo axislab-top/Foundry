@@ -20,10 +20,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AxisLab-OPC/Foundry/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
-  <a href="https://github.com/AxisLab-OPC/Foundry/stargazers"><img src="https://img.shields.io/github/stars/AxisLab-OPC/Foundry?style=social" alt="Stars"></a>
-  <a href="https://github.com/AxisLab-OPC/Foundry/network/members"><img src="https://img.shields.io/github/forks/AxisLab-OPC/Foundry?style=social" alt="Forks"></a>
-  <a href="https://github.com/AxisLab-OPC/Foundry/issues"><img src="https://img.shields.io/github/issues/AxisLab-OPC/Foundry" alt="Issues"></a>
+  <a href="https://github.com/axislab-top/Foundry/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
+  <a href="https://github.com/axislab-top/Foundry/stargazers"><img src="https://img.shields.io/github/stars/axislab-top/Foundry?style=social" alt="Stars"></a>
+  <a href="https://github.com/axislab-top/Foundry/network/members"><img src="https://img.shields.io/github/forks/axislab-top/Foundry?style=social" alt="Forks"></a>
+  <a href="https://github.com/axislab-top/Foundry/issues"><img src="https://img.shields.io/github/issues/axislab-top/Foundry" alt="Issues"></a>
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6" alt="TypeScript">
   <img src="https://img.shields.io/badge/NestJS-10-e0234e" alt="NestJS">
   <img src="https://img.shields.io/badge/React-18-61dafb" alt="React">
@@ -67,7 +67,7 @@ Foundry is an **open-source AI-powered digital company platform**. Unlike agent 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/AxisLab-OPC/Foundry.git && cd Foundry_01
+git clone https://github.com/axislab-top/Foundry.git && cd Foundry_01
 
 # 2. Install dependencies
 pnpm install
@@ -314,8 +314,8 @@ We welcome all forms of contribution!
 
 | Type | How |
 |------|-----|
-| 🐛 Bug Report | [Open an Issue](https://github.com/AxisLab-OPC/Foundry/issues/new?template=bug_report.yml) |
-| 💡 Feature Request | [Open an Issue](https://github.com/AxisLab-OPC/Foundry/issues/new?template=feature_request.yml) |
+| 🐛 Bug Report | [Open an Issue](https://github.com/axislab-top/Foundry/issues/new?template=bug_report.yml) |
+| 💡 Feature Request | [Open an Issue](https://github.com/axislab-top/Foundry/issues/new?template=feature_request.yml) |
 | 📝 Documentation | Submit a PR directly |
 | 🔧 Code | Fork → Branch → PR |
 
@@ -323,8 +323,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ### Contributors
 
-<a href="https://github.com/AxisLab-OPC/Foundry/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=AxisLab-OPC/Foundry" />
+<a href="https://github.com/axislab-top/Foundry/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=axislab-top/Foundry" />
 </a>
 
 ---
@@ -337,13 +337,13 @@ This project is licensed under [GPL-3.0](LICENSE).
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=AxisLab-OPC/Foundry&type=Date)](https://star-history.com/#AxisLab-OPC/Foundry&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=axislab-top/Foundry&type=Date)](https://star-history.com/#axislab-top/Foundry&Date)
 
 ---
 
 <p align="center">
   If you find this useful, please give us a ⭐ Star!<br>
-  <a href="https://github.com/AxisLab-OPC/Foundry/stargazers">⭐ Star</a> •
-  <a href="https://github.com/AxisLab-OPC/Foundry/fork">🍴 Fork</a> •
-  <a href="https://github.com/AxisLab-OPC/Foundry/issues/new?template=bug_report.yml">🐛 Report Bug</a>
+  <a href="https://github.com/axislab-top/Foundry/stargazers">⭐ Star</a> •
+  <a href="https://github.com/axislab-top/Foundry/fork">🍴 Fork</a> •
+  <a href="https://github.com/axislab-top/Foundry/issues/new?template=bug_report.yml">🐛 Report Bug</a>
 </p>
