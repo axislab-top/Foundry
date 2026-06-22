@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --concurrency=24 --continue",
-    "dev:minimal": "turbo run dev --filter='@service/api' --filter='@service/gateway' --filter='@web/client-frontend' --filter='@web/admin-system' --continue",
+    "dev:minimal": "turbo run dev --filter=@service/api --filter=@service/gateway --filter=@web/client-frontend --filter=@web/admin-system --continue",
     "start": "turbo run start",
     "test": "turbo run test",
     "test:pact": "pnpm --filter @service/api run test:pact",
