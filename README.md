@@ -359,6 +359,71 @@ graph TB
     style gate fill:#fff9c4,stroke:#f9a825,color:#000
 ```
 
+### End-to-End Core Flow
+
+> The full lifecycle: from user goal to agent execution, cost tracking, failure review, and memory feedback — forming a **self-improving loop**.
+
+```mermaid
+graph TB
+    subgraph trigger["🎯 Triggers"]
+        user["💬 User @CEO in chat"]
+        heartbeat["⏰ Heartbeat ~30min"]
+        webhook_trig["🪝 External Webhook"]
+    end
+
+    plan["🧠 CEO LLM<br/>Break down goal into tasks<br/><i>Structured output + Zod repair</i>"]
+
+    assign["📋 Task Assignment<br/>DAG: parent → sub-tasks<br/>Assign to department agents"]
+
+    subgraph exec["⚙️ Agent Execution"]
+        agent["🤖 Agent LLM<br/>Execute with skills + context"]
+        skills["🔧 Skill Engine<br/>Tool calling (function schema)"]
+        runner["🏃 Runner Sandbox<br/>gVisor K8s Job"]
+    end
+
+    result{{"✅❌ Task Result"}}
+
+    subgraph cost["💰 Cost Control"]
+        billing["📊 Token Billing<br/>per LLM call"]
+        budget["💵 Budget Check<br/>company / dept / agent"]
+        degrade["📉 Model Degradation<br/>fallback to cheaper model"]
+        pause["🚫 Budget Exceeded<br/>pause autonomous ops"]
+    end
+
+    subgraph feedback["🔄 Memory Feedback Loop"]
+        sup["🔍 Supervisor Review<br/>Post-mortem on failures"]
+        lessons["📝 Lessons Learned<br/>LLM-generated insights"]
+        memory["🧠 Memory RAG<br/>pgvector embeddings<br/>company → dept → agent"]
+    end
+
+    chat_out["💬 Streaming Report<br/>→ Chat Room (200-char chunks)<br/>→ Socket.IO → Client"]
+
+    trigger --> plan
+    plan --> assign
+    assign --> exec
+    agent --> skills
+    skills -->|"code/commands"| runner
+    runner --> result
+    agent --> result
+
+    result -->|"completed"| chat_out
+    result -->|"failed"| sup
+    sup --> lessons
+    lessons --> memory
+    memory -.->|"RAG search<br/>next heartbeat"| plan
+
+    agent --> billing
+    billing --> budget
+    budget -->|"warning"| degrade
+    budget -->|"exceeded"| pause
+    degrade -.->|"cheaper model"| agent
+
+    style trigger fill:#e3f2fd,stroke:#1565c0,color:#000
+    style cost fill:#fff3e0,stroke:#e65100,color:#000
+    style feedback fill:#e8f5e9,stroke:#2e7d32,color:#000
+    style exec fill:#f3e5f5,stroke:#6a1b9a,color:#000
+```
+
 > 📄 Full architecture documentation → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---

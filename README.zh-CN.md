@@ -359,6 +359,71 @@ graph TB
     style gate fill:#fff9c4,stroke:#f9a825,color:#000
 ```
 
+### 端到端核心链路
+
+> 完整生命周期：从用户目标到 Agent 执行、成本追踪、失败审查、记忆回流 — 形成一个**自我改进的闭环**。
+
+```mermaid
+graph TB
+    subgraph trigger["🎯 触发源"]
+        user["💬 用户在聊天中 @CEO"]
+        heartbeat["⏰ 心跳 ~30min"]
+        webhook_trig["🪝 外部 Webhook"]
+    end
+
+    plan["🧠 CEO LLM<br/>将目标拆解为任务<br/><i>结构化输出 + Zod 修复</i>"]
+
+    assign["📋 任务分配<br/>DAG: 父任务 → 子任务<br/>分配到部门 Agent"]
+
+    subgraph exec["⚙️ Agent 执行"]
+        agent["🤖 Agent LLM<br/>使用技能 + 上下文执行"]
+        skills["🔧 技能引擎<br/>Function Calling"]
+        runner["🏃 Runner 沙箱<br/>gVisor K8s Job"]
+    end
+
+    result{{"✅❌ 任务结果"}}
+
+    subgraph cost["💰 成本控制"]
+        billing["📊 Token 计费<br/>每次 LLM 调用"]
+        budget["💵 预算检查<br/>公司/部门/Agent 级"]
+        degrade["📉 模型降级<br/>回退到更便宜的模型"]
+        pause["🚫 预算耗尽<br/>暂停自治操作"]
+    end
+
+    subgraph feedback["🔄 记忆反馈循环"]
+        sup["🔍 主管审查<br/>失败事后分析"]
+        lessons["📝 经验教训<br/>LLM 生成的洞察"]
+        memory["🧠 记忆 RAG<br/>pgvector 向量嵌入<br/>公司 → 部门 → Agent"]
+    end
+
+    chat_out["💬 流式报告<br/>→ 聊天室 (200字符分块)<br/>→ Socket.IO → 客户端"]
+
+    trigger --> plan
+    plan --> assign
+    assign --> exec
+    agent --> skills
+    skills -->|"代码/命令"| runner
+    runner --> result
+    agent --> result
+
+    result -->|"完成"| chat_out
+    result -->|"失败"| sup
+    sup --> lessons
+    lessons --> memory
+    memory -.->|"RAG 搜索<br/>下次心跳召回"| plan
+
+    agent --> billing
+    billing --> budget
+    budget -->|"警告"| degrade
+    budget -->|"超限"| pause
+    degrade -.->|"降级模型"| agent
+
+    style trigger fill:#e3f2fd,stroke:#1565c0,color:#000
+    style cost fill:#fff3e0,stroke:#e65100,color:#000
+    style feedback fill:#e8f5e9,stroke:#2e7d32,color:#000
+    style exec fill:#f3e5f5,stroke:#6a1b9a,color:#000
+```
+
 > 📄 完整架构文档 → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---
