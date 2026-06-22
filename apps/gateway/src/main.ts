@@ -16,6 +16,7 @@ const possibleEnvPaths = [
   resolve(__dirname, '.env'),
   resolve(__dirname, '../.env'),
   resolve(__dirname, '../../.env'),
+  resolve(__dirname, '../../.env.shared'),
 ];
 
 let envLoaded = false;

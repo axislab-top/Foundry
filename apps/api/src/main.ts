@@ -26,6 +26,7 @@ function readBooleanEnv(name: string, defaultValue: boolean): boolean {
 // Load .env before app bootstrap.
 const possibleEnvPaths = [
   resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), '.env.shared'),
   resolve(process.cwd(), 'apps/api/.env'),
   resolve(process.cwd(), '../.env'),
 ];
