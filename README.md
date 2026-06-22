@@ -231,30 +231,151 @@ After completing the 5 steps above:
 
 ## 🏗️ Architecture
 
+### System Overview
+
 ```
-                         ┌─────────────────────┐
-                         │  React Frontends (×2) │
-                         │  Client / Admin Panel │
-                         └──────────┬──────────┘
-                                    │
-                         ┌──────────▼──────────┐
-                         │   Nginx Reverse Proxy│
-                         └──────────┬──────────┘
-                                    │
-                         ┌──────────▼──────────┐
-                         │ Gateway (Auth/Route) │
-                         └──────────┬──────────┘
-                                    │
-           ┌────────────┬───────────┼───────────┬────────────┐
-           │            │           │           │            │
-     ┌─────▼─────┐ ┌────▼────┐ ┌────▼────┐ ┌────▼────┐ ┌────▼─────┐
-     │    API    │ │ Worker  │ │ Webhook │ │Temporal │ │  Runner  │
-     │  Service  │ │ Service │ │ Service │ │ Worker  │ │ Service  │
-     └─────┬─────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬─────┘
-           │            │           │           │            │
-     ┌─────▼────────────▼───────────▼───────────▼────────────▼─────┐
-     │  PostgreSQL · Redis · RabbitMQ · MinIO · LangGraph · Temporal │
-     └──────────────────────────────────────────────────────────────┘
+                           ┌──────────────────────────────────┐
+                           │           User Layer              │
+                           │                                  │
+                           │   💬 Chat UI          🖥️ Admin   │
+                           │   (Real-time WebSocket)  Panel   │
+                           └──────────────┬───────────────────┘
+                                          │
+                                ┌─────────▼─────────┐
+                                │  Nginx Reverse     │
+                                │  Proxy + SSL       │
+                                └─────────┬─────────┘
+                                          │
+                          ┌───────────────▼───────────────┐
+                          │   Gateway (port 3002)         │
+                          │                               │
+                          │  🔐 JWT Auth + RBAC           │
+                          │  🔌 Socket.IO Hub ────────────┼──→ Redis Pub/Sub
+                          │  🛡️ HMAC Signature / CSRF     │      (collab:notify)
+                          │  📊 Rate Limiting / Circuit   │
+                          │  🔀 Dynamic Route Proxy       │
+                          └───────────┬──────────────────┘
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        │                             │                             │
+┌───────▼────────┐     ┌──────────────▼──────────────┐    ┌────────▼────────┐
+│ API Service    │     │   Worker Service            │    │  Webhook Svc   │
+│ (port 3000)    │     │   (port 3004)               │    │  (port 3003)   │
+│                │     │                             │    │                │
+│ Business CRUD  │◄═══►│  🧠 LangGraph Pipelines     │    │ External event │
+│ 46 entities    │ RPC │    ├─ CEO Heartbeat          │    │ receive/       │
+│ RLS multi-     │     │    └─ Collaboration Room     │    │ forward/retry  │
+│ tenancy        │     │  📋 Task Scheduler          │    └────────────────┘
+│ Billing &      │     │  💰 Billing Consumer        │
+│ Budget control │     │  🧩 Memory Consolidation    │
+│ Approval mgmt  │     │  🔧 Tool Registry           │
+│ Memory + RAG   │     │                             │
+│ Skill engine   │     │  RPC──►Runner (sandbox)     │
+└───────┬────────┘     │  RPC──►API  (data access)   │
+        │              └─────────────────────────────┘
+        │
+┌───────▼────────────────────────────────────────────────────────────┐
+│                    Infrastructure Layer                             │
+│                                                                    │
+│  PostgreSQL + pgvector     Redis 7            RabbitMQ             │
+│  ├─ RLS multi-tenancy      ├─ Cache           ├─ Event Bus         │
+│  ├─ 46 entity tables       ├─ Session         ├─ RPC Queues        │
+│  └─ Vector embeddings      └─ Pub/Sub         └─ 15 event domains │
+│                                                                    │
+│  MinIO / S3 / OSS          Temporal (optional)    Grafana Stack    │
+│  └─ File storage           ├─ Heartbeat fanout    ├─ Loki (logs)   │
+│                            ├─ Approval wait       ├─ Promtail      │
+│                            └─ Supervisor review   └─ Grafana       │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Core Differentiator: Autonomous Heartbeat Loop
+
+```
+    ┌─────────────────────────────────────────────────────────┐
+    │  ⏰ TaskHeartbeatScheduler (round-robin across companies)│
+    └──────────────────────────┬──────────────────────────────┘
+                               │  every ~30min
+                               ▼
+              ┌─────────────────────────────────┐
+              │  AutonomousOrchestrator          │
+              │  (LangGraph StateGraph)          │
+              │                                  │
+              │  ┌───────┐    ┌──────┐           │
+              │  │ingest │───►│ plan │           │
+              │  └───┬───┘    └──┬───┘           │
+              │      │           │                │
+              │      │    ┌──────▼──────┐        │
+              │      │    │ CEO LLM     │        │
+              │      │    │ (structured │        │
+              │      │    │  output +   │        │
+              │      │    │  Zod repair)│        │
+              │      │    └──────┬──────┘        │
+              │      │           │                │
+              │      │    ┌──────▼──────────┐    │
+              │      │    │ validatePersist │    │
+              │      │    │ (create tasks)  │    │
+              │      │    └──────┬──────────┘    │
+              │      │           │                │
+              │      │    ┌──────▼──────┐        │
+              │      │    │  summarize  │        │
+              │      │    │  + notify   │──► Chat (streaming)
+              │      │    └──────┬──────┘        │
+              │      │           │                │
+              │      │           ▼                │
+              │      │    Memory + Approval       │
+              │      │    (if needed)             │
+              └──────┘                           │
+                 ▲                               │
+                 └───── repeat every ~30min ──────┘
+
+    Context gathered per cycle:
+    ┌────────────────────────────────────────────┐
+    │ Dashboard summary · Memory RAG search      │
+    │ Supervisor lessons · Budget status         │
+    │ Pending/active/review tasks                │
+    │ Organization tree · CEO agent config       │
+    │ Model routing decision (cost-aware)        │
+    └────────────────────────────────────────────┘
+```
+
+### Core Differentiator: Collaboration Pipeline
+
+```
+    💬 User message in chat room (@CEO or @Agent)
+                    │
+                    ▼
+    ┌───────────────────────────────────┐
+    │ CollaborationRoomPipeline         │
+    │ (LangGraph with interrupt/resume) │
+    │                                   │
+    │         ┌───────────────┐         │
+    │         │resolveDecision│         │
+    │         │ (CEO LLM)    │         │
+    │         └───────┬───────┘         │
+    │                 │                 │
+    │    ┌────────┬───┴───┬────────┐    │
+    │    ▼        ▼       ▼        ▼    │
+    │ 💬💬💬    🤖💬    📋✅     ⏸️👤   │
+    │ discuss  direct  execute  approve │
+    │ (multi-  (single (CEO     (human │
+    │  agent)   agent)  breaks   in the │
+    │                  down to   loop)  │
+    │                  tasks)           │
+    │                                   │
+    │              ┌────────┐           │
+    │              │approval│◄──────────┤
+    │              │  gate  │ LangGraph │
+    │              │(pause) │ interrupt │
+    │              └───┬────┘           │
+    │                  │ resume         │
+    │                  ▼                │
+    │             📋 Execute tasks      │
+    └───────────────────────────────────┘
+                    │
+                    ▼
+    Agent responses → API persist → Redis pub/sub → Socket.IO → Client
+    (streaming 200-char chunks for progressive rendering)
 ```
 
 > 📄 Full architecture documentation → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
