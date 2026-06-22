@@ -56,5 +56,17 @@
   },
   "dependencies": {
     "axios": "^1.13.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@swc/core",
+      "argon2",
+      "bcrypt",
+      "esbuild",
+      "protobufjs",
+      "snappy",
+      "unix-dgram"
+    ]
   }
 }
