@@ -1,4 +1,4 @@
-import * as Joi from 'joi';
+import Joi from 'joi';
 
 export const runnerEnvSchema = Joi.object({
   RMQ_URL: Joi.string().default('amqp://guest:guest@localhost:5672'),

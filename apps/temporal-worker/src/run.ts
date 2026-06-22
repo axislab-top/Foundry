@@ -12,14 +12,20 @@ const bundlePath = existsSync(resolve(__dirname, 'workflow-bundle.js'))
   : resolve(__dirname, '../dist/workflow-bundle.js');
 const workflowBundle = { code: readFileSync(bundlePath) };
 
-const connection = await NativeConnection.connect({ address });
-const worker = await Worker.create({
-  connection,
-  namespace: process.env.TEMPORAL_NAMESPACE ?? 'default',
-  taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? 'foundry-company',
-  // 1.15+ 类型要求含 sourceMap；仅 code 运行时已足够
-  workflowBundle: workflowBundle as never,
-  activities,
-});
+try {
+  const connection = await NativeConnection.connect({ address });
+  const worker = await Worker.create({
+    connection,
+    namespace: process.env.TEMPORAL_NAMESPACE ?? 'default',
+    taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? 'foundry-company',
+    workflowBundle: workflowBundle as never,
+    activities,
+  });
 
-await worker.run();
+  await worker.run();
+} catch (err) {
+  console.warn(`⚠️  Temporal worker could not connect to ${address}. Skipping (Temporal is optional).`);
+  console.warn(`   Set TEMPORAL_ADDRESS env var or start Temporal server to enable.`);
+  // Exit cleanly so turbo doesn't treat this as a fatal error
+  process.exit(0);
+}

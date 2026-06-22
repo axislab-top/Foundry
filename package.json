@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --concurrency=24",
+    "dev": "turbo run dev --concurrency=24 --continue",
     "start": "turbo run start",
     "test": "turbo run test",
     "test:pact": "pnpm --filter @service/api run test:pact",
@@ -22,7 +22,8 @@
     "infra:test:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.test.yml down",
     "start:all": "pnpm infra:start",
     "start:dev": "pnpm infra:start",
-    "setup:dev": "node -e \"const fs=require('fs');if(!fs.existsSync('.env.shared')){fs.copyFileSync('env.shared.example','.env.shared');console.log('✅ Created .env.shared from env.shared.example');}else{console.log('ℹ️  .env.shared already exists, skipping.');}\" && pnpm install && pnpm start:dev:local && pnpm migrate:run",
+    "setup:dev": "node -e \"const fs=require('fs');if(!fs.existsSync('.env.shared')){fs.copyFileSync('env.shared.example','.env.shared');console.log('✅ Created .env.shared from env.shared.example');}else{console.log('ℹ️  .env.shared already exists, skipping.');}\" && pnpm install && pnpm build:packages && pnpm infra:start && node -e \"setTimeout(() => process.exit(0), 10000)\" && pnpm migrate:run && pnpm dev",
+"build:packages": "turbo run build --filter='./infrastructure/*' --filter='./packages/*' --filter='./contracts/*' --filter='./apps/api' --filter='./apps/gateway' --filter='./apps/worker' --filter='./apps/webhooks' --filter='./apps/runner' --filter='./apps/logging' --continue",
     "start:dev:local": "pnpm infra:start && node -e \"setTimeout(() => process.exit(0), 10000)\" && pnpm dev",
     "start:prod": "pnpm infra:prod:start && pnpm build && pnpm start",
     "stop:all": "pnpm infra:stop",
