@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --concurrency=16",
+    "dev": "turbo run dev --concurrency=24",
     "start": "turbo run start",
     "test": "turbo run test",
     "test:pact": "pnpm --filter @service/api run test:pact",

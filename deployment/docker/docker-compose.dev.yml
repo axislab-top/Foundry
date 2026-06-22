@@ -16,9 +16,6 @@ services:
       - service-network
     env_file:
       - ../../infrastructure/postgres/.env
-    # 应用开发环境配置
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-service_db_dev}
 
   # Grafana Loki - 日志聚合系统（开发环境）
   loki:
