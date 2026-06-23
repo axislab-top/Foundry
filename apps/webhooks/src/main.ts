@@ -2,10 +2,13 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
+// turbo 运行时 process.cwd() = 包目录 (apps/webhooks)，不是项目根
+// 项目根 = process.cwd()/../../
 const possibleEnvPaths = [
+  resolve(process.cwd(), '../../.env'),
+  resolve(process.cwd(), '../../.env.shared'),
   resolve(process.cwd(), '.env'),
   resolve(process.cwd(), '.env.shared'),
-  resolve(process.cwd(), 'apps/webhooks/.env'),
 ];
 
 let envLoaded = false;

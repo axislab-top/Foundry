@@ -24,11 +24,14 @@ function readBooleanEnv(name: string, defaultValue: boolean): boolean {
 }
 
 // Load .env before app bootstrap.
+// turbo 运行时 process.cwd() = 包目录 (apps/api)，不是项目根
+// 项目根 = process.cwd()/../../
 const possibleEnvPaths = [
+  resolve(process.cwd(), '../../.env'),
+  resolve(process.cwd(), '../../.env.shared'),
+  resolve(process.cwd(), '../.env'),
   resolve(process.cwd(), '.env'),
   resolve(process.cwd(), '.env.shared'),
-  resolve(process.cwd(), 'apps/api/.env'),
-  resolve(process.cwd(), '../.env'),
 ];
 
 let envLoaded = false;

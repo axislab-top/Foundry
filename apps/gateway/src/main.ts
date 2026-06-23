@@ -9,16 +9,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // 尝试从多个可能的位置加载 .env 文件
-// 1. 项目根目录（turbo 运行时 process.cwd() 为项目根目录）
-// 2. 当前编译输出目录 (dist)
-// 3. 上一级目录 (apps/gateway)
+// turbo 运行时 process.cwd() = 包目录 (apps/gateway)，不是项目根
+// __dirname = 编译输出目录 (apps/gateway/dist)
+// 项目根 = __dirname/../../../
 const possibleEnvPaths = [
-  resolve(process.cwd(), '.env'),
-  resolve(process.cwd(), '.env.shared'),
-  resolve(__dirname, '.env'),
-  resolve(__dirname, '../.env'),
+  resolve(__dirname, '../../../.env'),
+  resolve(__dirname, '../../../.env.shared'),
   resolve(__dirname, '../../.env'),
   resolve(__dirname, '../../.env.shared'),
+  resolve(__dirname, '../.env'),
+  resolve(__dirname, '.env'),
 ];
 
 let envLoaded = false;
