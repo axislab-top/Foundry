@@ -61,10 +61,12 @@ Foundry is an **open-source AI-powered digital company platform**. Unlike agent 
 | **OS** | Windows 10+, macOS 12+, Ubuntu 20.04+ | Any 64-bit OS |
 | **CPU** | 2 cores | 4+ cores |
 | **RAM** | 8 GB | 16 GB |
-| **Disk** | 10 GB free | 20 GB+ free |
+| **Disk** | 5 GB free | 10 GB+ free |
 | **Docker** | 20.10+ | Latest stable |
 | **Node.js** | 20+ | 22 LTS |
 | **pnpm** | 10+ | Latest |
+
+> 💡 **Disk breakdown**: Project ~1.5 GB + Docker images ~1 GB + build cache ~1 GB. SSD recommended for faster Docker startup.
 
 ### What's Included (No Separate Installation Needed)
 
