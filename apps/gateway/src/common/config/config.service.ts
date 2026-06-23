@@ -67,10 +67,10 @@ export class ConfigService {
       logging: this.configManager.get<boolean>('DB_LOGGING', false),
       ssl: this.configManager.get<boolean>('DB_SSL', false),
       sslRejectUnauthorized: this.configManager.get<boolean>('DB_SSL_REJECT_UNAUTHORIZED', true),
-      connectionTimeout: this.configManager.get<number>('DB_CONNECTION_TIMEOUT', 2000),
+      connectionTimeout: this.configManager.get<number>('DB_CONNECTION_TIMEOUT', 10000),
       queryTimeout: this.configManager.get<number>('DB_QUERY_TIMEOUT', 30000),
       maxConnections: this.configManager.get<number>('DB_MAX_CONNECTIONS', 20),
-      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 5),
+      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 2),
       transactionIsolation: this.configManager.get<'READ UNCOMMITTED' | 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE'>(
         'DB_TRANSACTION_ISOLATION',
         'READ COMMITTED',

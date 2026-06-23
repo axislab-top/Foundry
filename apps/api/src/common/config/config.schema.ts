@@ -22,10 +22,10 @@ export const configSchema = Joi.object({
   DB_SSL: Joi.boolean().default(false),
   DB_SSL_REJECT_UNAUTHORIZED: Joi.boolean().default(true),
   // 数据库连接池配置
-  DB_CONNECTION_TIMEOUT: Joi.number().default(2000),
+  DB_CONNECTION_TIMEOUT: Joi.number().default(10000),
   DB_QUERY_TIMEOUT: Joi.number().default(30000),
   DB_MAX_CONNECTIONS: Joi.number().default(20),
-  DB_MIN_CONNECTIONS: Joi.number().default(5),
+  DB_MIN_CONNECTIONS: Joi.number().default(2),
   // 数据库事务隔离级别
   DB_TRANSACTION_ISOLATION: Joi.string()
     .valid('READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE')

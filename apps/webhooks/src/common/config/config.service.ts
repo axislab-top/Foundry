@@ -49,10 +49,10 @@ export class ConfigService {
         true,
       ),
       maxConnections: this.configManager.get<number>('DB_MAX_CONNECTIONS', 20),
-      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 5),
+      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 2),
       connectionTimeout: this.configManager.get<number>(
         'DB_CONNECTION_TIMEOUT',
-        2000,
+        10000,
       ),
       queryTimeout: this.configManager.get<number>('DB_QUERY_TIMEOUT', 30000),
     };

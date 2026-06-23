@@ -22,8 +22,8 @@ export const configSchema = Joi.object({
   DB_SSL: Joi.boolean().default(false),
   DB_SSL_REJECT_UNAUTHORIZED: Joi.boolean().default(true),
   DB_MAX_CONNECTIONS: Joi.number().default(20),
-  DB_MIN_CONNECTIONS: Joi.number().default(5),
-  DB_CONNECTION_TIMEOUT: Joi.number().default(2000),
+  DB_MIN_CONNECTIONS: Joi.number().default(2),
+  DB_CONNECTION_TIMEOUT: Joi.number().default(10000),
   DB_QUERY_TIMEOUT: Joi.number().default(30000),
 
   // HTTP 配置

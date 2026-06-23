@@ -1,8 +1,10 @@
 /**
- * 创建 Gateway 数据库
+ * 创建 Gateway 和 API 数据库
  * 用法: node scripts/create-dbs.js
  */
 const { Client } = require('pg');
+
+const DATABASES = ['gateway_db', 'service_db'];
 
 async function createDatabases() {
   // 连接到默认 postgres 数据库来创建新数据库
@@ -18,24 +20,30 @@ async function createDatabases() {
   try {
     await client.connect();
 
-    // 检查 gateway_db 是否存在
-    const check = await client.query(
-      "SELECT 1 FROM pg_database WHERE datname = 'gateway_db'"
-    );
+    for (const dbName of DATABASES) {
+      try {
+        const check = await client.query(
+          "SELECT 1 FROM pg_database WHERE datname = $1",
+          [dbName]
+        );
 
-    if (check.rows.length === 0) {
-      await client.query('CREATE DATABASE gateway_db');
-      console.log('✅ Created gateway_db');
-    } else {
-      console.log('ℹ️  gateway_db already exists');
+        if (check.rows.length === 0) {
+          await client.query(`CREATE DATABASE ${dbName}`);
+          console.log(`✅ Created ${dbName}`);
+        } else {
+          console.log(`ℹ️  ${dbName} already exists`);
+        }
+      } catch (err) {
+        if (err.message && err.message.includes('already exists')) {
+          console.log(`ℹ️  ${dbName} already exists`);
+        } else {
+          console.error(`❌ Failed to create ${dbName}:`, err.message);
+        }
+      }
     }
   } catch (err) {
-    if (err.message && err.message.includes('already exists')) {
-      console.log('ℹ️  gateway_db already exists');
-    } else {
-      console.error('❌ Failed to create gateway_db:', err.message);
-      process.exit(1);
-    }
+    console.error('❌ Failed to connect to PostgreSQL:', err.message);
+    process.exit(1);
   } finally {
     await client.end();
   }
