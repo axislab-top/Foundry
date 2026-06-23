@@ -13,11 +13,13 @@ const __dirname = dirname(__filename);
 // __dirname = 编译输出目录 (apps/gateway/dist)
 // 项目根 = __dirname/../../../
 const possibleEnvPaths = [
-  resolve(__dirname, '../../../.env'),
   resolve(__dirname, '../../../.env.shared'),
-  resolve(__dirname, '../../.env'),
+  resolve(__dirname, '../../../.env'),
   resolve(__dirname, '../../.env.shared'),
+  resolve(__dirname, '../../.env'),
+  resolve(__dirname, '../.env.shared'),
   resolve(__dirname, '../.env'),
+  resolve(__dirname, '.env.shared'),
   resolve(__dirname, '.env'),
 ];
 

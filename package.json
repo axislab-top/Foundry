@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo run build",
-    "preflight:env": "node -e \"const fs=require('fs');if(!fs.existsSync('.env.shared')&&fs.existsSync('env.shared.example')){fs.copyFileSync('env.shared.example','.env.shared');console.log('✅ Created .env.shared from env.shared.example');}if(!fs.existsSync('.env')&&fs.existsSync('deployment/docker/env.example')){fs.copyFileSync('deployment/docker/env.example','.env');console.log('✅ Created .env from deployment/docker/env.example');}\"",
+    "preflight:env": "node -e \"const fs=require('fs');if(!fs.existsSync('.env.shared')&&fs.existsSync('env.shared.example')){fs.copyFileSync('env.shared.example','.env.shared');console.log('✅ Created .env.shared from env.shared.example');}\"",
     "dev": "pnpm preflight:env && turbo run dev --concurrency=24 --continue",
     "dev:minimal": "pnpm preflight:env && turbo run dev --filter=@service/api --filter=@service/gateway --filter=@web/client-frontend --filter=@web/admin-system --continue",
     "start": "turbo run start",

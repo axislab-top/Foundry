@@ -5,10 +5,10 @@ import { resolve } from 'path';
 // turbo 运行时 process.cwd() = 包目录 (apps/runner)，不是项目根
 // 项目根 = process.cwd()/../../
 const possibleEnvPaths = [
-  resolve(process.cwd(), '../../.env'),
   resolve(process.cwd(), '../../.env.shared'),
-  resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), '../../.env'),
   resolve(process.cwd(), '.env.shared'),
+  resolve(process.cwd(), '.env'),
 ];
 
 let envLoaded = false;
