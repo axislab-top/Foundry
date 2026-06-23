@@ -112,18 +112,22 @@ After containers are healthy and migrations complete, visit:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| 🖥️ Client UI | http://localhost:3000 | Main interface |
-| 🔧 Admin Panel | http://localhost:5173 | Administrator dashboard |
-| 📡 API Docs | http://localhost:3000/api-docs | Swagger UI (dev environment) |
-| 🐰 RabbitMQ | http://localhost:15672 | Message queue management |
-| 🔍 Consul | http://localhost:8500 | Service discovery UI |
+| 🖥️ Client UI | http://localhost:5173 | Main interface (Vite dev server) |
+| 🔧 Admin Panel | http://localhost:3105 | Administrator dashboard |
+| 📡 API Service | http://localhost:3000/api-docs | API Swagger docs |
+| 📡 Gateway | http://localhost:3002/api-docs | Gateway Swagger docs |
+| 📊 Grafana | http://localhost:4000 | Log visualization (admin/admin) |
+| 🐰 RabbitMQ | http://localhost:15672 | Message queue management (guest/guest) |
 
-### Default Admin
+### Default Admin Account
 
-```
-Email: admin@example.com
-Password: changeme
-```
+The admin account is **automatically created** on first startup:
+
+| Field | Value |
+|-------|-------|
+| Email | `admin@example.com` |
+| Username | `admin` |
+| Password | `changeme` |
 
 > ⚠️ Change `DEFAULT_ADMIN_PASSWORD` in production environments.
 
@@ -144,21 +148,26 @@ pnpm infra:restart   # Restart all containers
 | Docker not running | Start Docker Desktop and wait for it to be ready |
 | Out of memory | Increase Docker memory limit to 8 GB+ in Docker Desktop settings |
 | Slow on Windows | Enable WSL 2 backend for Docker Desktop |
+| `getaddrinfo ENOTFOUND postgres` | You have a stale `.env` file with Docker hostnames. Delete `.env` and re-run `pnpm setup:dev` |
+| RabbitMQ `ACCESS_REFUSED` | RabbitMQ container was created with wrong credentials. Run `pnpm infra:stop` then `pnpm setup:dev` again |
+| Database connection timeout | PostgreSQL may be slow to start on Windows. The app will retry automatically (10s timeout) |
+
+> 💡 **Diagnose database issues**: Run `node scripts/diagnose-db.js` in a separate terminal while the project is running.
 
 ### First Time Setup
 
-After completing the 5 steps above:
+After completing the steps above:
 
 ```bash
-# 1. Open http://localhost:3000 and register your first account
-#    The first registered account automatically becomes admin
+# 1. Login to Admin Panel at http://localhost:3105
+#    Email: admin@example.com  Password: changeme
 
-# 2. Login to Admin Panel (http://localhost:5173) and configure:
-#    - LLM Keys (OpenAI, Claude, etc.) in Settings → LLM Keys
-#    - Company profile in Settings → Company
+# 2. Configure LLM Keys (required for AI agents):
+#    Admin Panel → LLM Keys → Add your OpenAI/Claude API key
+
+# 3. Open Client UI at http://localhost:5173
+#    Register a new account or login to start using the platform
 ```
-
-> ⚠️ **Important**: The first registered account automatically becomes admin. No default credentials are provided for security reasons.
 
 ### What's NOT Included (You Need to Configure)
 
@@ -168,6 +177,8 @@ After completing the 5 steps above:
 | Company Info | Admin Panel → Company | Your company name and industry |
 | Agent Skills | Admin Panel → Skills | Enable/disable and configure skills |
 | Email Settings | Admin Panel → Settings | For notifications (optional) |
+
+> 💡 **Tip**: After logging into the Admin Panel, go to **LLM Keys** first and add at least one API key (OpenAI, Claude, etc.) — otherwise AI agents won't be able to respond.
 
 ---
 

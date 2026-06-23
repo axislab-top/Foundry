@@ -112,18 +112,22 @@ pnpm migrate:run
 
 | 服务 | 地址 | 说明 |
 |------|------|------|
-| 🖥️ 用户端 | http://localhost:3000 | 主界面 |
-| 🔧 管理后台 | http://localhost:5173 | 管理员仪表盘 |
-| 📡 API 文档 | http://localhost:3000/api-docs | Swagger UI（开发环境） |
-| 🐰 RabbitMQ | http://localhost:15672 | 消息队列管理 |
-| 🔍 Consul | http://localhost:8500 | 服务发现界面 |
+| 🖥️ 用户端 | http://localhost:5173 | 主界面（Vite 开发服务器） |
+| 🔧 管理后台 | http://localhost:3105 | 管理员仪表盘 |
+| 📡 API 服务 | http://localhost:3000/api-docs | API Swagger 文档 |
+| 📡 网关服务 | http://localhost:3002/api-docs | 网关 Swagger 文档 |
+| 📊 Grafana | http://localhost:4000 | 日志可视化（admin/admin） |
+| 🐰 RabbitMQ | http://localhost:15672 | 消息队列管理（guest/guest） |
 
-### 默认管理员
+### 默认管理员账号
 
-```
-邮箱: admin@example.com
-密码: changeme
-```
+管理员账号在首次启动时**自动创建**：
+
+| 字段 | 值 |
+|------|-----|
+| 邮箱 | `admin@example.com` |
+| 用户名 | `admin` |
+| 密码 | `changeme` |
 
 > ⚠️ 生产环境必须修改 `DEFAULT_ADMIN_PASSWORD` 环境变量。
 
@@ -144,21 +148,26 @@ pnpm infra:restart   # 重启所有容器
 | Docker 未运行 | 启动 Docker Desktop 并等待就绪 |
 | 内存不足 | 在 Docker Desktop 设置中将内存限制提高到 8 GB 以上 |
 | Windows 下运行慢 | 启用 Docker Desktop 的 WSL 2 后端 |
+| `getaddrinfo ENOTFOUND postgres` | 有残留的 `.env` 文件使用了 Docker 主机名。删除 `.env` 后重新运行 `pnpm setup:dev` |
+| RabbitMQ `ACCESS_REFUSED` | RabbitMQ 容器凭据不正确。运行 `pnpm infra:stop` 后重新 `pnpm setup:dev` |
+| 数据库连接超时 | Windows 下 PostgreSQL 启动较慢，应用会自动重试（10秒超时） |
+
+> 💡 **诊断数据库问题**：项目运行时在另一个终端执行 `node scripts/diagnose-db.js`
 
 ### 首次使用
 
-完成上述 5 步后：
+完成上述步骤后：
 
 ```bash
-# 1. 打开 http://localhost:3000 注册第一个账号
-#    第一个注册的账号自动成为管理员
+# 1. 登录管理后台 http://localhost:3105
+#    邮箱: admin@example.com  密码: changeme
 
-# 2. 登录管理后台（http://localhost:5173）配置：
-#    - LLM Key（OpenAI、Claude 等）在 设置 → LLM Keys
-#    - 公司信息在 设置 → 公司
+# 2. 配置 LLM Key（AI Agent 运行必需）：
+#    管理后台 → LLM Keys → 添加你的 OpenAI/Claude API Key
+
+# 3. 打开用户端 http://localhost:5173
+#    注册新账号或登录，开始使用平台
 ```
-
-> ⚠️ **重要**：第一个注册的账号自动成为管理员。出于安全考虑，不提供默认凭据。
 
 ### 需要你配置的内容
 
@@ -168,6 +177,8 @@ pnpm infra:restart   # 重启所有容器
 | 公司信息 | 管理后台 → 公司 | 公司名称和行业 |
 | Agent 技能 | 管理后台 → 技能 | 启用/禁用和配置技能 |
 | 邮件设置 | 管理后台 → 设置 | 用于通知（可选） |
+
+> 💡 **提示**：登录管理后台后，先去 **LLM Keys** 添加至少一个 API Key（OpenAI、Claude 等），否则 AI Agent 无法工作。
 
 ---
 
