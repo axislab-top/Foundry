@@ -68,7 +68,7 @@ docs: 更新 README 快速开始指南
 ```bash
 # 克隆
 git clone https://github.com/axislab-top/Foundry.git
-cd Foundry_01
+cd Foundry
 
 # 安装依赖
 pnpm install
