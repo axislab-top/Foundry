@@ -76,3 +76,6 @@ tools/loadtests/
 # Misc
 *.tgz
 *.tar.gz
+
+# Local reference documents (not for GitHub)
+更新.md
