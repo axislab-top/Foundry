@@ -9,5 +9,5 @@ packages:
   - 'tooling/*'
   - 'contracts/types'
   - 'contracts/events'
-  - 'client-frontend'
-  - 'admin-system'
+  - 'client'
+  - 'admin'

@@ -1,0 +1,15 @@
+{
+  "name": "@foundry/web-auth-session",
+  "version": "1.0.0",
+  "description": "Cross-tab session refresh coordination for Foundry web apps",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "license": "ISC"
+}
