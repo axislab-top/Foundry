@@ -1,0 +1,85 @@
+{
+  "name": "@foundry/contracts",
+  "version": "1.0.0",
+  "description": "Platform-wide contract definitions (departments, codegen source)",
+  "type": "module",
+  "main": "./dist/departments.js",
+  "types": "./dist/departments.d.ts",
+  "exports": {
+    "./types/departments": {
+      "types": "./types/departments.ts",
+      "import": "./dist/departments.js",
+      "default": "./dist/departments.js"
+    },
+    "./types/mcp.protocol": {
+      "types": "./types/mcp.protocol.ts",
+      "import": "./dist/mcp.protocol.js",
+      "default": "./dist/mcp.protocol.js"
+    },
+    "./types/ceo-hierarchical.types": {
+      "types": "./types/ceo-hierarchical.types.ts",
+      "import": "./dist/ceo-hierarchical.types.js",
+      "default": "./dist/ceo-hierarchical.types.js"
+    },
+    "./types/collaboration": {
+      "types": "./types/collaboration.ts",
+      "import": "./dist/collaboration.js",
+      "default": "./dist/collaboration.js"
+    },
+    "./types/collaboration-2026": {
+      "types": "./types/collaboration-2026.ts",
+      "import": "./dist/collaboration-2026.js",
+      "default": "./dist/collaboration-2026.js"
+    },
+    "./types/ceo-alignment": {
+      "types": "./types/ceo-alignment.ts",
+      "import": "./dist/ceo-alignment.js",
+      "default": "./dist/ceo-alignment.js"
+    },
+    "./types/orchestration-lifecycle": {
+      "types": "./types/orchestration-lifecycle.ts",
+      "import": "./dist/orchestration-lifecycle.js",
+      "default": "./dist/orchestration-lifecycle.js"
+    },
+    "./types/collaboration-program": {
+      "types": "./types/collaboration-program.ts",
+      "import": "./dist/collaboration-program.js",
+      "default": "./dist/collaboration-program.js"
+    },
+    "./types/collaboration-turn": {
+      "types": "./types/collaboration-turn.ts",
+      "import": "./dist/collaboration-turn.js",
+      "default": "./dist/collaboration-turn.js"
+    },
+    "./types/billing-units": {
+      "types": "./types/billing-units.ts",
+      "import": "./dist/billing-units.js",
+      "default": "./dist/billing-units.js"
+    },
+    "./types/billing-activities": {
+      "types": "./types/billing-activities.ts",
+      "import": "./dist/billing-activities.js",
+      "default": "./dist/billing-activities.js"
+    },
+    "./types/department-assignment": {
+      "types": "./types/department-assignment.ts",
+      "import": "./dist/department-assignment.js",
+      "default": "./dist/department-assignment.js"
+    },
+    "./types/projects": {
+      "types": "./types/projects.ts",
+      "import": "./dist/projects.js",
+      "default": "./dist/projects.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist"
+  },
+  "license": "ISC",
+  "private": true,
+  "devDependencies": {
+    "rimraf": "^6.1.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -5,6 +5,23 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./collab-redis-keys": {
+      "types": "./dist/collab-redis-keys.d.ts",
+      "import": "./dist/collab-redis-keys.js",
+      "default": "./dist/collab-redis-keys.js"
+    },
+    "./daily-brief": {
+      "types": "./dist/daily-brief.d.ts",
+      "import": "./dist/daily-brief.js",
+      "default": "./dist/daily-brief.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -21,6 +38,9 @@
   ],
   "devDependencies": {
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@foundry/contracts": "workspace:*"
   }
 }
 
