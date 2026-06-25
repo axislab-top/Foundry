@@ -1,0 +1,30 @@
+{
+  "name": "foundry-admin",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:lan": "tsx scripts/dev-lan.mjs",
+    "lan:check": "tsx scripts/lan-diagnostics.mjs",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@contracts/types": "workspace:*",
+    "@foundry/web-auth-session": "workspace:*",
+    "@ant-design/icons": "^6.1.1",
+    "antd": "^6.3.6",
+    "dayjs": "^1.11.13",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

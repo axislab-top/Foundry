@@ -1,0 +1,788 @@
+.page {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  background: #000;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+}
+
+.page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+}
+
+.container {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  position: relative;
+  overflow: hidden;
+  width: 1024px;
+  max-width: 100%;
+  min-height: 720px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.formContainer {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transition: all 0.6s ease-in-out;
+}
+
+.form {
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 48px 56px;
+  height: 100%;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  font-weight: 800;
+  margin: 0;
+  color: #111827;
+}
+
+.hint {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.socialContainer {
+  width: 100%;
+  margin: 18px 0 0;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.socialButton {
+  border-radius: 12px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  height: 40px;
+  width: 100%;
+  border: 1px solid rgba(17, 24, 39, 0.10);
+  background: #fff;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
+  box-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
+  color: #374151;
+  font-weight: 700;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.socialButton:hover {
+  border-color: rgba(17, 24, 39, 0.2);
+  background: #f9fafb;
+}
+
+.socialButton:active {
+  transform: scale(0.96);
+}
+
+.input {
+  background: #f9fafb;
+  border: 1px solid rgba(17, 24, 39, 0.10);
+  padding: 10px 12px;
+  margin: 0;
+  width: 100%;
+  border-radius: 12px;
+  outline: none;
+  font-size: 14px;
+  color: #111827;
+  transition: box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.input:focus {
+  border-color: rgba(17, 24, 39, 0.3);
+  box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.06);
+  background: #ffffff;
+}
+
+.passwordCaptchaRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+}
+
+.passwordCaptchaRow .input {
+  width: auto;
+  margin: 0;
+  flex: 1;
+}
+
+.getCodeLink {
+  color: #2563eb;
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  background: rgba(37, 99, 235, 0.08);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.getCodeLinkDisabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inputError {
+  border-color: rgba(220, 38, 38, 0.6);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.10);
+}
+
+.errorMessage {
+  color: #dc2626;
+  font-size: 12px;
+  margin-top: -4px;
+  margin-bottom: 2px;
+  width: 100%;
+  text-align: left;
+}
+
+.primaryButton {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #fff;
+  color: #000;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 12px 16px;
+  letter-spacing: 0.2px;
+  transition: transform 80ms ease-in, background 120ms ease;
+  margin-top: 6px;
+  cursor: pointer;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2);
+}
+
+.primaryButton:active {
+  transform: scale(0.95);
+}
+
+.primaryButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.ghostButton {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 10px 18px;
+  letter-spacing: 0.2px;
+  transition: transform 80ms ease-in, border-color 120ms ease;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.ghostButton:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.ghostButton:active {
+  transform: scale(0.95);
+}
+
+.signInContainer {
+  left: 0;
+  width: 50%;
+  z-index: 2;
+}
+
+.signUpContainer {
+  left: 0;
+  width: 50%;
+  z-index: 1;
+  opacity: 0;
+}
+
+.overlayContainer {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 50%;
+  height: 100%;
+  overflow: hidden;
+  transition: transform 0.6s ease-in-out;
+  z-index: 100;
+}
+
+.overlay {
+  background: linear-gradient(135deg, #0a0a0a 0%, #111827 55%, #1f2937 100%) no-repeat 0 0 / cover;
+  color: #fff;
+  position: relative;
+  left: -100%;
+  height: 100%;
+  width: 200%;
+  transform: translateY(0);
+  transition: transform 0.6s ease-in-out;
+  border-left: 1px solid rgba(255,255,255,0.06);
+}
+
+.overlayPanel {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 56px;
+  height: 100%;
+  width: 50%;
+  text-align: left;
+  transform: translateY(0);
+  transition: transform 0.6s ease-in-out;
+}
+
+.overlayRight {
+  right: 0;
+  transform: translateY(0);
+}
+
+.overlayLeft {
+  transform: translateY(-20%);
+}
+
+.rightPanelActive .signInContainer {
+  transform: translateY(100%);
+}
+
+.rightPanelActive .overlayContainer {
+  transform: translateX(-100%);
+}
+
+.rightPanelActive .signUpContainer {
+  transform: translateX(100%);
+  opacity: 1;
+  z-index: 5;
+}
+
+.rightPanelActive .overlay {
+  transform: translateX(50%);
+}
+
+.rightPanelActive .overlayLeft {
+  transform: translateY(0);
+}
+
+.rightPanelActive .overlayRight {
+  transform: translateY(20%);
+}
+
+.link {
+  color: #111827;
+  font-size: 12px;
+  text-decoration: none;
+  margin: 0;
+  font-weight: 700;
+}
+
+.link:hover {
+  color: #000;
+}
+
+.globalError {
+  width: 100%;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  background: rgba(220, 38, 38, 0.06);
+  color: #991b1b;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  margin: 8px 0 0;
+  text-align: left;
+}
+
+.captchaModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.captchaModal {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.captchaModalHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-weight: 700;
+  color: #0e263d;
+}
+
+.captchaModalBody {
+  padding: 16px;
+}
+
+.captchaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.captchaInput {
+  flex: 1;
+  background: #f9fafb;
+  border: 1px solid rgba(17, 24, 39, 0.10);
+  padding: 10px 12px;
+  border-radius: 10px;
+  outline: none;
+}
+
+.captchaImage {
+  width: 100px;
+  height: 40px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.captchaModalFooter {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.secondaryButton {
+  border-radius: 999px;
+  border: 1px solid rgba(17, 24, 39, 0.14);
+  background: transparent;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 10px 14px;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .page {
+    padding: 0;
+    align-items: flex-start;
+  }
+
+  .page::before {
+    display: none;
+  }
+
+  .container {
+    width: 100%;
+    min-height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .formContainer {
+    position: relative;
+    width: 100% !important;
+    height: auto;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .signInContainer {
+    left: 0;
+    z-index: 2;
+  }
+
+  .signUpContainer {
+    left: 0;
+    z-index: 1;
+  }
+
+  .form {
+    padding: 40px 24px;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .formInner {
+    max-width: 100%;
+    gap: 16px;
+  }
+
+  .overlayContainer {
+    display: none;
+  }
+
+  .rightPanelActive .signInContainer {
+    transform: none;
+  }
+
+  .rightPanelActive .signUpContainer {
+    transform: none;
+    opacity: 1;
+    z-index: 5;
+  }
+
+  .rightPanelActive .overlayContainer {
+    transform: none;
+  }
+
+  /* 移动端标签页切换 */
+  .mobileTabBar {
+    display: flex;
+    background: #fff;
+    border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+    padding: 0 24px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .mobileTab {
+    flex: 1;
+    padding: 16px 0;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    color: #6b7280;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .mobileTabActive {
+    color: #111827;
+    border-bottom-color: #111827;
+  }
+
+  /* 调整标题大小 */
+  .title {
+    font-size: 24px;
+  }
+
+  .overlayHeading {
+    font-size: 28px;
+  }
+
+  .brandMark {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+
+  /* 优化输入框触摸区域 */
+  .input {
+    padding: 14px 16px;
+    font-size: 16px; /* 防止 iOS 自动缩放 */
+  }
+
+  .inputWithLeftIcon {
+    padding-left: 44px;
+  }
+
+  .inputWithRightIcon {
+    padding-right: 44px;
+  }
+
+  .leftIcon {
+    left: 14px;
+  }
+
+  .rightIconButton {
+    right: 12px;
+  }
+
+  /* 优化按钮触摸区域 */
+  .primaryButton {
+    padding: 16px;
+    font-size: 16px;
+  }
+
+  .sendCodeButton {
+    padding: 14px 16px;
+    min-width: 100px;
+  }
+
+  /* 验证码输入行：保持横排，按钮在输入框右侧 */
+  .codeInputRow {
+    gap: 10px;
+  }
+
+  .sendCodeButton {
+    min-width: 96px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  /* 调整间距 */
+  .formHeader {
+    margin-bottom: 24px;
+  }
+
+  .globalError {
+    padding: 14px 16px;
+    font-size: 14px;
+  }
+}
+
+/* 桌面端隐藏移动端标签页 */
+@media (min-width: 769px) {
+  .mobileTabBar {
+    display: none;
+  }
+}
+
+/* 移动端隐藏非激活表单 */
+@media (max-width: 768px) {
+  .mobileHidden {
+    display: none !important;
+  }
+}
+
+.formInner {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.brandMark {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #111827;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 22px;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
+  margin: 0 auto 14px;
+}
+
+.formHeader {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.labelRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #6b7280;
+}
+
+.inputWrap {
+  position: relative;
+  width: 100%;
+}
+
+.leftIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+}
+
+.rightIconButton {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #9ca3af;
+}
+
+.rightIconButton:hover {
+  color: #6b7280;
+}
+
+.inputWithLeftIcon {
+  padding-left: 40px;
+}
+
+.inputWithRightIcon {
+  padding-right: 40px;
+}
+
+.codeInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.codeInputRow .inputWrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.sendCodeButton {
+  flex-shrink: 0;
+  align-self: stretch;
+  min-width: 108px;
+  border-radius: 10px;
+  border: 1px solid rgba(17, 24, 39, 0.14);
+  background: #f9fafb;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sendCodeButton:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.sendCodeButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+.dividerLine {
+  flex: 1;
+  height: 1px;
+  background: rgba(17, 24, 39, 0.10);
+}
+
+.dividerText {
+  font-size: 11px;
+  font-weight: 800;
+  color: #9ca3af;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.twoColButtons {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.overlayHeading {
+  font-size: 34px;
+  line-height: 1.05;
+  font-weight: 900;
+  margin: 0 0 14px;
+}
+
+.overlayText {
+  margin: 0 0 20px;
+  max-width: 360px;
+  color: rgba(219, 234, 254, 0.95);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.overlayBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  color: rgba(239, 246, 255, 0.95);
+  font-size: 13px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.overlayDecor1 {
+  position: absolute;
+  top: -12%;
+  right: -12%;
+  width: 280px;
+  height: 280px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  filter: blur(40px);
+}
+
+.overlayDecor2 {
+  position: absolute;
+  bottom: -8%;
+  left: -8%;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: rgba(147, 197, 253, 0.22);
+  filter: blur(32px);
+}
+
