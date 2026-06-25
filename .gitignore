@@ -26,6 +26,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Vendored third-party content (e.g. agency-agents import)
 vendor/agency-agents/
 vendor/agency-agents-zh/
