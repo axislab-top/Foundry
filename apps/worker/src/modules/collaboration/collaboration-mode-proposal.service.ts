@@ -7,6 +7,7 @@ import { MessagingService } from '@service/messaging';
 import type { CollaborationModeProposedEvent } from '@contracts/events';
 import { ConfigService } from '../../common/config/config.service.js';
 import { CollaborationLlmBridgeService } from './collaboration-llm-bridge.service.js';
+import { CeoLayerConfigResolverService } from './ceo/resolver/ceo-layer-config-resolver.service.js';
 
 type TargetMode = 'discussion' | 'direct' | 'execution' | 'approval_wait';
 
@@ -17,6 +18,7 @@ export class CollaborationModeProposalService {
   constructor(
     private readonly config: ConfigService,
     private readonly collabLlm: CollaborationLlmBridgeService,
+    private readonly ceoLayerConfigResolver: CeoLayerConfigResolverService,
     private readonly messaging: MessagingService,
     @Inject('API_RPC_CLIENT_INTERACTIVE') private readonly apiRpc: ClientProxy,
   ) {}
@@ -126,7 +128,11 @@ export class CollaborationModeProposalService {
     const ceoId = ceoRes?.items?.[0]?.id;
     if (!ceoId) return false;
 
-    const modelName = this.config.getCollabIntentModel() || this.config.getCollabDirectReplyModel();
+    const layerSetting = await this.ceoLayerConfigResolver.resolveLayerSetting(companyId, 'strategy');
+    const modelName = String(layerSetting.modelName ?? '').trim();
+    if (!modelName) {
+      return false;
+    }
     try {
       const model = await this.collabLlm.createChatModel({
         companyId,
@@ -135,13 +141,30 @@ export class CollaborationModeProposalService {
         llmTimeoutMs: this.config.getCollabIntentLlmTimeoutMs(),
         maxOutputTokens: 128,
         taskPriority: 'high',
+        ceoContext: 'strategy',
+        trace: {
+          callsite: 'collaboration_mode_proposal:ceo_arbitrate',
+        },
+        meteringAgentId: ceoId,
       });
-      const res = await model.invoke([
-        new SystemMessage(
-          'You are the CEO. An agent proposed changing collaboration mode. Reply JSON only: {"approve":true|false}',
-        ),
-        new HumanMessage(`targetMode=${targetMode}\nreason=${reason.slice(0, 1500)}`),
-      ]);
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const res = await Promise.race([
+        model.invoke([
+          new SystemMessage(
+            'You are the CEO. An agent proposed changing collaboration mode. Reply JSON only: {"approve":true|false}',
+          ),
+          new HumanMessage(`targetMode=${targetMode}\nreason=${reason.slice(0, 1500)}`),
+        ]),
+        new Promise<never>((_, reject) => {
+          const hardTimeoutMs = Math.max(2500, this.config.getCollabIntentLlmTimeoutMs() + 1000);
+          timer = setTimeout(
+            () => reject(new Error(`mode_proposal.ceo_arbitrate hard timeout after ${hardTimeoutMs}ms`)),
+            hardTimeoutMs,
+          );
+        }),
+      ]).finally(() => {
+        if (timer) clearTimeout(timer);
+      });
       const raw =
         typeof res.content === 'string'
           ? res.content
