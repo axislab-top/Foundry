@@ -4,7 +4,7 @@ import type { BaseEvent } from './base-event.js';
 export interface SkillToolSnapshot {
   id: string;
   name: string;
-  category: string | null;
+  category?: string[] | null;
   description: string | null;
   toolSchema: Record<string, unknown> | null;
   promptTemplate: string | null;
@@ -14,6 +14,8 @@ export interface SkillToolSnapshot {
   version: number;
   isPublic: boolean;
   isSystem: boolean;
+  maxOutputTokens?: number | null;
+  maxInputSizeBytes?: number | null;
 }
 
 export interface SkillExecutedEvent extends BaseEvent {
