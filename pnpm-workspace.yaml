@@ -5,6 +5,7 @@ packages:
   - 'packages/core/approval'
   - 'packages/core/observability'
   - 'packages/core/supervisor'
+  - 'packages/core/multi-agent'
   - 'infrastructure/*'
   - 'tooling/*'
   - 'contracts/types'

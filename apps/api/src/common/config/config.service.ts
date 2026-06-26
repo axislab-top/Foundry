@@ -79,6 +79,20 @@ export class ConfigService {
     };
   }
 
+  /**
+   * 跨 API/Worker 共享的协作 KV。
+   * 优先 COLLAB_REDIS_URL；否则用 REDIS_HOST + REDIS_DB_COLLAB（默认 0），避免各服务 REDIS_DB_* 隔离导致读不到 Worker 写入。
+   */
+  getCollabRedisUrl(): string | undefined {
+    const collab = this.configManager.get<string>('COLLAB_REDIS_URL', '');
+    if (collab?.trim()) return collab.trim();
+    const { host, port, password } = this.getRedisConfig();
+    if (!host?.trim()) return undefined;
+    const collabDb = this.configManager.get<number>('REDIS_DB_COLLAB', 0);
+    const auth = password?.trim() ? `:${encodeURIComponent(password.trim())}@` : '';
+    return `redis://${auth}${host.trim()}:${port ?? 6379}/${collabDb}`;
+  }
+
   /** Gateway/API 经 Redis Pub/Sub 推送协作消息（需与 Gateway 使用同一 Redis） */
   isCollaborationRedisNotifyEnabled(): boolean {
     return this.configManager.get<boolean>('COLLAB_REDIS_NOTIFY', true);

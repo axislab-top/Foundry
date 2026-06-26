@@ -55,7 +55,9 @@ export class CollaborationRealtimePublisher implements OnModuleDestroy {
     if (this.client?.isOpen) {
       return this.client;
     }
-    const url = buildRedisUrl(this.config.getRedisConfig());
+    // Use collab Redis URL (DB 0) to match Gateway's subscriber — general REDIS_DB may differ.
+    const collabUrl = this.config.getCollabRedisUrl();
+    const url = collabUrl ?? buildRedisUrl(this.config.getRedisConfig());
     const c = createClient({ url });
     await c.connect();
     this.client = c as RedisClientType;
@@ -81,6 +83,39 @@ export class CollaborationRealtimePublisher implements OnModuleDestroy {
     }
   }
 
+  /** Worker/API metadata patch → Gateway `message:metadata_updated`（ceoAlignment / replayDecision 等） */
+  async publishMessageMetadataUpdated(companyId: string, message: ChatMessage): Promise<void> {
+    try {
+      const c = await this.ensureClient();
+      if (!c) return;
+      await c.publish(
+        COLLAB_NOTIFY_CHANNEL,
+        JSON.stringify({
+          v: 1,
+          companyId,
+          roomId: message.roomId,
+          event: 'message:metadata_updated',
+          message: serializableMessage(message),
+        }),
+      );
+      const meta = message.metadata && typeof message.metadata === 'object' ? message.metadata : null;
+      const skipped = meta?.dispatchFlushSkipped ?? meta?.dispatchSkipped;
+      if (Array.isArray(skipped) && skipped.length > 0) {
+        await this.publishEnvelope({
+          companyId,
+          roomId: message.roomId,
+          event: 'dispatch:partial_failed',
+          messageId: message.id,
+          skipped,
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn('Collaboration Redis notify message:metadata_updated failed', {
+        error: e?.message,
+      });
+    }
+  }
+
   /** stream_chunk：发布流式块事件（不走 message:new，避免刷屏） */
   async publishMessageChunk(companyId: string, message: ChatMessage): Promise<void> {
     try {
@@ -93,6 +128,7 @@ export class CollaborationRealtimePublisher implements OnModuleDestroy {
           : message.id;
 
       const payload: Record<string, unknown> = {
+        roomId: message.roomId,
         streamId,
         messageId: message.id,
         seq: message.seq,
@@ -118,6 +154,24 @@ export class CollaborationRealtimePublisher implements OnModuleDestroy {
         error: e?.message,
       });
     }
+  }
+
+  /** 房间 `collaboration_mode` 变更 → Gateway `collaboration_mode:updated`（需 COLLAB_REDIS_NOTIFY）。 */
+  async publishCollaborationModeUpdated(params: {
+    companyId: string;
+    roomId: string;
+    collaborationMode: string;
+    previousMode: string | null;
+    changedAt?: string;
+  }): Promise<void> {
+    await this.publishEnvelope({
+      companyId: params.companyId,
+      roomId: params.roomId,
+      event: 'collaboration_mode:updated',
+      collaborationMode: params.collaborationMode,
+      previousMode: params.previousMode ?? null,
+      changedAt: params.changedAt ?? new Date().toISOString(),
+    });
   }
 
   /** Gateway 订阅后转发 WebSocket（如 approval:needed、summary:ready） */

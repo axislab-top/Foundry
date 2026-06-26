@@ -54,6 +54,7 @@ export class CollaborationNotifySubscriber implements OnModuleInit, OnModuleDest
       await this.client.connect();
       await this.client.subscribe(COLLAB_NOTIFY_CHANNEL, (message) => {
         try {
+          this.logger.debug('collab:notify received', { raw: message.slice(0, 200) });
           const data = JSON.parse(message) as {
             event?: string;
             companyId?: string;
@@ -72,6 +73,75 @@ export class CollaborationNotifySubscriber implements OnModuleInit, OnModuleDest
               data.roomId,
               data.message,
             );
+            return;
+          }
+          if (
+            data.event === 'message:metadata_updated' &&
+            data.companyId &&
+            data.roomId &&
+            data.message
+          ) {
+            this.gateway.emitMessageMetadataUpdated(
+              data.companyId,
+              data.roomId,
+              data.message,
+            );
+            return;
+          }
+          if (
+            data.event === 'main_room_draft:updated' &&
+            data.companyId &&
+            data.roomId
+          ) {
+            const row = data as Record<string, unknown>;
+            const passthrough: Record<string, unknown> = {};
+            for (const k of ['kind', 'updatedAt', 'traceId'] as const) {
+              const v = row[k];
+              if (v !== undefined && v !== null) passthrough[k] = v;
+            }
+            this.gateway.emitMainRoomDraftUpdated(data.companyId, data.roomId, passthrough);
+            return;
+          }
+          if (
+            data.event === 'dispatch_plan_draft:updated' &&
+            data.companyId &&
+            data.roomId
+          ) {
+            const row = data as Record<string, unknown>;
+            const passthrough: Record<string, unknown> = {};
+            for (const k of ['kind', 'updatedAt', 'planRevision', 'threadId'] as const) {
+              const v = row[k];
+              if (v !== undefined && v !== null) passthrough[k] = v;
+            }
+            this.gateway.emitDispatchPlanDraftUpdated(data.companyId, data.roomId, passthrough);
+            return;
+          }
+          if (
+            data.event === 'dispatch:partial_failed' &&
+            data.companyId &&
+            data.roomId
+          ) {
+            const row = data as Record<string, unknown>;
+            const passthrough: Record<string, unknown> = {};
+            for (const k of ['messageId', 'skipped'] as const) {
+              const v = row[k];
+              if (v !== undefined && v !== null) passthrough[k] = v;
+            }
+            this.gateway.emitDispatchPartialFailed(data.companyId, data.roomId, passthrough);
+            return;
+          }
+          if (
+            data.event === 'collaboration_mode:updated' &&
+            data.companyId &&
+            data.roomId
+          ) {
+            const row = data as Record<string, unknown>;
+            const passthrough: Record<string, unknown> = {};
+            for (const k of ['collaborationMode', 'previousMode', 'changedAt'] as const) {
+              const v = row[k];
+              if (v !== undefined && v !== null) passthrough[k] = v;
+            }
+            this.gateway.emitCollaborationModeUpdated(data.companyId, data.roomId, passthrough);
             return;
           }
           if (
@@ -102,6 +172,20 @@ export class CollaborationNotifySubscriber implements OnModuleInit, OnModuleDest
             return;
           }
           if (
+            data.event === 'approval:status' &&
+            data.companyId &&
+            data.roomId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitApprovalResolved(
+              data.companyId,
+              data.roomId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
+          }
+          if (
             data.event === 'task:progress' &&
             data.companyId &&
             data.payload &&
@@ -114,12 +198,81 @@ export class CollaborationNotifySubscriber implements OnModuleInit, OnModuleDest
             return;
           }
           if (
+            data.event === 'run:step.appended' &&
+            data.companyId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitRunStepAppended(
+              data.companyId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
+          }
+          if (
+            (data.event === 'run:step.started' ||
+              data.event === 'run:step.completed' ||
+              data.event === 'run:step.failed') &&
+            data.companyId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitRunStep(data.event, data.companyId, data.payload as Record<string, unknown>);
+            return;
+          }
+          if (
+            data.event === 'run:updated' &&
+            data.companyId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitRunUpdated(
+              data.companyId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
+          }
+          if (
+            (data.event === 'run:succeeded' || data.event === 'run:failed') &&
+            data.companyId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitRunTerminal(data.event, data.companyId, data.payload as Record<string, unknown>);
+            return;
+          }
+          if (
+            data.event === 'run:intervention' &&
+            data.companyId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitRunIntervention(data.companyId, data.payload as Record<string, unknown>);
+            return;
+          }
+          if (
             data.event === 'org:structure_changed' &&
             data.companyId &&
             data.payload &&
             typeof data.payload === 'object'
           ) {
             this.gateway.emitOrgStructureChanged(
+              data.companyId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
+          }
+          if (
+            (data.event === 'memory:ingested' ||
+              data.event === 'memory:consolidated' ||
+              data.event === 'memory:retrieved' ||
+              data.event === 'memory:conflict_detected') &&
+            data.companyId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitMemoryEvent(
+              data.event,
               data.companyId,
               data.payload as Record<string, unknown>,
             );
@@ -137,6 +290,51 @@ export class CollaborationNotifySubscriber implements OnModuleInit, OnModuleDest
               data.roomId,
               data.payload as Record<string, unknown>,
             );
+            return;
+          }
+          if (
+            data.event === 'orchestration:updated' &&
+            data.companyId &&
+            data.roomId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitOrchestrationUpdated(
+              data.companyId,
+              data.roomId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
+          }
+
+          if (
+            data.event === 'responder:thinking' &&
+            data.companyId &&
+            data.roomId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitResponderThinking(
+              data.companyId,
+              data.roomId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
+          }
+
+          if (
+            data.event === 'agent-message:acked' &&
+            data.companyId &&
+            data.roomId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            this.gateway.emitAgentMessageAck(
+              data.companyId,
+              data.roomId,
+              data.payload as Record<string, unknown>,
+            );
+            return;
           }
 
           if (
@@ -163,6 +361,28 @@ export class CollaborationNotifySubscriber implements OnModuleInit, OnModuleDest
             this.adminNotify.emitAlertResolved(
               data.companyId,
               (payload.alert ?? payload) as Record<string, unknown>,
+            );
+            return;
+          }
+
+          if (
+            data.event === 'board:decision' &&
+            data.companyId &&
+            data.roomId &&
+            data.payload &&
+            typeof data.payload === 'object'
+          ) {
+            // Broadcast to collaboration clients; UI can render board decision widgets.
+            this.gateway.broadcastMessageNew(
+              data.companyId,
+              data.roomId,
+              {
+                senderType: 'system',
+                senderId: 'board',
+                messageType: 'board_decision',
+                content: 'board decision updated',
+                metadata: data.payload,
+              },
             );
             return;
           }

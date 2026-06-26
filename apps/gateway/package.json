@@ -29,6 +29,7 @@
   "packageManager": "pnpm@10.27.0",
   "dependencies": {
     "@contracts/types": "workspace:*",
+    "@foundry/multi-agent-core": "workspace:*",
     "@nestjs/axios": "^3.0.1",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.1",

@@ -127,6 +127,16 @@ export class ConfigService {
     return 'auto';
   }
 
+  /** 渐进启用 ACP 协议路径（默认关闭，保持旧链路稳定）。 */
+  isAcpProtocolEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ACP_PROTOCOL', false);
+  }
+
+  /** Phase 5: advanced multi-level approvals (default off). */
+  isAdvancedApprovalEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ADVANCED_APPROVAL', false);
+  }
+
   /**
    * Redis Adapter 连接失败时是否回退到内存适配器（单实例可用，多实例会分裂房间）。
    */
