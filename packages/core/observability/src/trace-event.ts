@@ -39,6 +39,13 @@ export interface TraceEventPayload {
   error?: StructuredTraceError;
   /** Small JSON-safe metadata (already redacted at source). */
   attributes?: Record<string, string | number | boolean | null>;
+  /** Correlates trace events with ACP message lifecycle. */
+  messageId?: string;
+  agentMessage?: {
+    fromAgentId: string;
+    toAgentId: string;
+    intent: string;
+  };
 }
 
 export interface RunStepRecorded extends TraceEventPayload {

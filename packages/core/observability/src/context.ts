@@ -5,6 +5,7 @@ export interface ObservabilityContext {
   requestId?: string;
   traceId?: string;
   spanId?: string;
+  messageId?: string;
   runId?: string;
   taskId?: string;
   companyId?: string;
@@ -18,6 +19,7 @@ export function pickObservabilityContext(
   if (partial.requestId != null) out.requestId = partial.requestId;
   if (partial.traceId != null) out.traceId = partial.traceId;
   if (partial.spanId != null) out.spanId = partial.spanId;
+  if (partial.messageId != null) out.messageId = partial.messageId;
   if (partial.runId != null) out.runId = partial.runId;
   if (partial.taskId != null) out.taskId = partial.taskId;
   if (partial.companyId != null) out.companyId = partial.companyId;

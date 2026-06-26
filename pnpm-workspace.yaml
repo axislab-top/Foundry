@@ -6,6 +6,7 @@ packages:
   - 'packages/core/observability'
   - 'packages/core/supervisor'
   - 'packages/core/multi-agent'
+  - 'packages/core/collaboration'
   - 'infrastructure/*'
   - 'tooling/*'
   - 'contracts/types'
