@@ -33,7 +33,7 @@ export function skillToSnapshot(skill: Skill): SkillToolSnapshot {
   return {
     id: skill.id,
     name: skill.name,
-    category: skill.category,
+    category: skill.category ? [skill.category] : null,
     description: skill.description,
     toolSchema: skill.toolSchema,
     promptTemplate: skill.promptTemplate,
@@ -50,7 +50,7 @@ export function revisionToSnapshot(rev: SkillRevision): SkillToolSnapshot {
   return {
     id: rev.skillId,
     name: rev.name,
-    category: rev.category,
+    category: rev.category ? [rev.category] : null,
     description: rev.description,
     toolSchema: rev.toolSchema,
     promptTemplate: rev.promptTemplate,
