@@ -1,8 +1,5 @@
-import {
-  DEPARTMENT_RESPONSIBILITY_SUMMARY_MIN_CHARS,
-  PLATFORM_DEPARTMENTS,
-  TASK_TYPE_KEYWORD_RULES,
-} from '@contracts/types';
+import { DEPARTMENT_RESPONSIBILITY_SUMMARY_MIN_CHARS, TASK_TYPE_KEYWORD_RULES } from '@foundry/contracts/types/department-assignment';
+import { PLATFORM_DEPARTMENTS } from '@foundry/contracts/types/departments';
 
 export { DEPARTMENT_RESPONSIBILITY_SUMMARY_MIN_CHARS };
 

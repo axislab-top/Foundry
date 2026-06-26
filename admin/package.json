@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@contracts/types": "workspace:*",
+    "@foundry/contracts": "workspace:*",
     "@foundry/web-auth-session": "workspace:*",
     "@ant-design/icons": "^6.1.1",
     "antd": "^6.3.6",

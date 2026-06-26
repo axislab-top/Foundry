@@ -39,6 +39,9 @@ importers:
       '@contracts/types':
         specifier: workspace:*
         version: link:../contracts/types
+      '@foundry/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
       '@foundry/web-auth-session':
         specifier: workspace:*
         version: link:../packages/web-auth-session
