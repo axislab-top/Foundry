@@ -12,6 +12,8 @@ export interface OrganizationNodeCreatedEvent extends BaseEvent {
     type: OrganizationNodeType;
     name: string;
     agentId?: string;
+    /** 平台部门 slug（Memory department:{slug} / Runner 路径） */
+    platformDepartmentSlug?: string;
   };
 }
 

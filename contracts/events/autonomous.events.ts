@@ -1,5 +1,15 @@
 import type { BaseEvent } from './base-event.js';
 
+/** 与 `CollaborationHeartbeatCorrelationPayload`（collaboration.events）字段对齐，供 autonomous 域事件引用。 */
+export type AutonomousHeartbeatCorrelationPayload = {
+  heartbeatRunId: string;
+  tickAt?: string;
+  triggerSource?: string;
+  runKind?: 'heartbeat' | 'breakdown' | 'graph';
+  mainRoomId?: string | null;
+  collaborationSurfaceRoomId?: string | null;
+};
+
 /** Worker：CEO LangGraph 单次 Heartbeat 流水线完成（可审计 / 下游可订阅） */
 export interface AutonomousCeoHeartbeatCompletedEvent extends BaseEvent {
   eventType: 'autonomous.ceo.heartbeat.completed';
@@ -7,9 +17,28 @@ export interface AutonomousCeoHeartbeatCompletedEvent extends BaseEvent {
   data: {
     companyId: string;
     tickAt: string;
-    runKind: 'heartbeat' | 'breakdown';
+    runKind: 'heartbeat' | 'breakdown' | 'graph';
     reportPreview: string;
     threadId: string;
+    runId?: string;
+    /**
+     * PR5：与协作群消息 metadata / `collaboration.intent.classified.*` 对齐的关联块；
+     * `heartbeatRunId` 与 heartbeat 场景下历史字段 `runId` 一致。
+     */
+    heartbeatCorrelation?: AutonomousHeartbeatCorrelationPayload;
+    directorStats?: {
+      total: number;
+      succeeded: number;
+      failed: number;
+    };
+    directorReports?: Array<{
+      directorAgentId: string;
+      ok: boolean;
+      messageId?: string;
+      error?: string;
+    }>;
+    companySummary?: string;
+    riskLevel?: 'low' | 'medium' | 'high';
   };
 }
 

@@ -14,6 +14,8 @@ export interface BaseEvent {
   occurredAt: string;
   version: number;
   companyId?: string;
+  /** 领域事件载荷（各 eventType 在 contracts/events 中有精确定义） */
+  data?: Record<string, unknown> | object;
   metadata?: Record<string, any>;
 }
 

@@ -99,6 +99,7 @@ export interface MemoryIngestAsyncRequestedEvent extends BaseEvent {
     maxChunkChars?: number;
     correlationId: string;
     requestedAt: string;
+    fileAssetId?: string | null;
   };
 }
 
