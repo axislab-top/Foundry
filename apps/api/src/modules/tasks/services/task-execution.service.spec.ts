@@ -8,6 +8,7 @@ import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
 import { TaskRun } from '../entities/task-run.entity.js';
 import { Task } from '../entities/task.entity.js';
 import { ClickhouseTraceService } from '../../observability/clickhouse-trace.service.js';
+import { CollaborationRealtimePublisher } from '../../collaboration/services/collaboration-realtime-publisher.service.js';
 import { TaskExecutionService } from './task-execution.service.js';
 
 describe('TaskExecutionService', () => {
@@ -41,6 +42,7 @@ describe('TaskExecutionService', () => {
     };
 
     const clickhouseTrace = { mirrorExecutionLog: jest.fn().mockResolvedValue(undefined) };
+    const collabRealtime = { publishExecutionLogAppended: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,6 +53,7 @@ describe('TaskExecutionService', () => {
         { provide: getRepositoryToken(CompanyMembership), useValue: membershipsRepo },
         { provide: TenantContextService, useValue: tenantContext },
         { provide: ClickhouseTraceService, useValue: clickhouseTrace },
+        { provide: CollaborationRealtimePublisher, useValue: collabRealtime },
       ],
     }).compile();
 

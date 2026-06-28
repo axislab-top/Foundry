@@ -8,7 +8,6 @@ import type { SkillImplementationType } from '../entities/skill.entity.js';
 @Injectable()
 export class SkillValidatorService {
   scanSkillRisk(dto: {
-    category?: string | null;
     toolSchema?: Record<string, unknown> | null;
     promptTemplate?: string | null;
     name?: string;
@@ -31,10 +30,6 @@ export class SkillValidatorService {
     const hasSensitive = sensitiveHints.some((h) => tool.includes(h) || prompt.includes(h));
     if (hasSensitive) {
       findings.push('toolSchema/promptTemplate 包含敏感操作提示（payment/DB modify 等）');
-    }
-
-    if (dto.category?.toLowerCase().includes('external') || dto.category?.toLowerCase().includes('api')) {
-      findings.push('category 可能属于外部 API（external-api）');
     }
 
     let riskLevel: 'low' | 'medium' | 'high' = 'low';
@@ -90,7 +85,52 @@ export class SkillValidatorService {
     }
 
     if (implementationType !== 'external') {
-      // For now, only enforce strict schema for external/http. Other types are extension points.
+      if (implementationType === 'builtin') {
+        const builtinTools = (handlerConfig as any).builtinTools;
+        if (builtinTools !== undefined) {
+          if (!Array.isArray(builtinTools)) {
+            throw new BadRequestException({
+              code: ErrorCode.BAD_REQUEST,
+              message: 'builtin handlerConfig.builtinTools 必须是数组',
+            });
+          }
+          const seen = new Set<string>();
+          for (const t of builtinTools as unknown[]) {
+            if (!t || typeof t !== 'object' || Array.isArray(t)) {
+              throw new BadRequestException({
+                code: ErrorCode.BAD_REQUEST,
+                message: 'builtinTools 项必须是对象',
+              });
+            }
+            const name = typeof (t as any).name === 'string' ? String((t as any).name).trim() : '';
+            if (!name) {
+              throw new BadRequestException({
+                code: ErrorCode.BAD_REQUEST,
+                message: 'builtinTools[].name 必填',
+              });
+            }
+            if (seen.has(name)) {
+              throw new BadRequestException({
+                code: ErrorCode.BAD_REQUEST,
+                message: `builtinTools 存在重复 name: ${name}`,
+              });
+            }
+            seen.add(name);
+            const schema = (t as any).inputSchema ?? (t as any).jsonSchema;
+            if (schema !== undefined && schema !== null) {
+              this.validateToolSchema(schema as Record<string, unknown>);
+            }
+            const perms = (t as any).requiredPermissions;
+            if (perms !== undefined && (!Array.isArray(perms) || perms.some((x) => !String(x ?? '').trim()))) {
+              throw new BadRequestException({
+                code: ErrorCode.BAD_REQUEST,
+                message: 'builtinTools[].requiredPermissions 必须是非空字符串数组',
+              });
+            }
+          }
+        }
+      }
+      // For now, only enforce strict schema for external/http; builtin does lightweight builtinTools checks.
       return;
     }
 

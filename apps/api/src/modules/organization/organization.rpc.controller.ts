@@ -19,6 +19,7 @@ import { QueryOrganizationTreeDto } from './dto/query-organization-tree.dto.js';
 import { MoveNodeDto } from './dto/move-node.dto.js';
 import { UpdateNodeDto } from './dto/update-node.dto.js';
 import { CreateOrganizationNodeDto } from './dto/create-organization-node.dto.js';
+import { AddDepartmentFromPlatformDto } from './dto/add-department-from-platform.dto.js';
 import { TenantContextService } from '@service/tenant';
 import { BindOrganizationNodeSkillsDto } from '../skills/dto/bind-organization-node-skills.dto.js';
 import { OrganizationNodeSkillsService } from '../skills/services/organization-node-skills.service.js';
@@ -84,6 +85,16 @@ class OrganizationCreateNodeRpcDto extends OrganizationBaseRpcContextDto {
   data: CreateOrganizationNodeDto;
 }
 
+class OrganizationAddDepartmentFromPlatformRpcDto extends OrganizationBaseRpcContextDto {
+  @ValidateNested()
+  @Type(() => OrganizationActorDto)
+  actor: OrganizationActorDto;
+
+  @ValidateNested()
+  @Type(() => AddDepartmentFromPlatformDto)
+  data: AddDepartmentFromPlatformDto;
+}
+
 class OrganizationTreeWithContextRpcDto extends OrganizationTreeRpcDto {
   @IsOptional()
   @ValidateNested()
@@ -104,6 +115,11 @@ class OrganizationNodeIdWithContextDto extends OrganizationNodeIdDto {
   @IsOptional()
   @IsUUID()
   companyId?: string;
+}
+
+class OrganizationRoomOrgSnapshotRpcDto extends OrganizationBaseRpcContextDto {
+  @IsUUID()
+  roomId: string;
 }
 
 class OrganizationNodeAgentsRpcDto extends OrganizationNodeIdWithContextDto {
@@ -167,12 +183,34 @@ export class OrganizationRpcController {
     }
   }
 
+  @MessagePattern('organization.nodes.getRoomOrgSnapshot')
+  async getRoomOrgSnapshot(@Payload() payload: any) {
+    try {
+      const dto = validateRpcDto(OrganizationRoomOrgSnapshotRpcDto, payload);
+      return await this.runWithCompanyContext(dto, () => this.organizationService.getRoomOrgSnapshot(dto.roomId));
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
   @MessagePattern('organization.node.create')
   async create(@Payload() payload: any) {
     try {
       const dto = validateRpcDto(OrganizationCreateNodeRpcDto, payload);
       return await this.runWithCompanyContext(dto, () =>
         this.organizationService.createNode(dto.data, dto.actor),
+      );
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('organization.department.addFromPlatform')
+  async addDepartmentFromPlatform(@Payload() payload: any) {
+    try {
+      const dto = validateRpcDto(OrganizationAddDepartmentFromPlatformRpcDto, payload);
+      return await this.runWithCompanyContext(dto, () =>
+        this.organizationService.addDepartmentFromPlatform(dto.data, dto.actor),
       );
     } catch (e: any) {
       throw this.toRpcError(e);

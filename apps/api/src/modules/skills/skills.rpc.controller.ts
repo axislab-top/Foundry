@@ -8,7 +8,8 @@ import { CreateSkillDto } from './dto/create-skill.dto.js';
 import { QuerySkillsDto } from './dto/query-skills.dto.js';
 import { UpdateSkillDto } from './dto/update-skill.dto.js';
 import { SkillsService } from './services/skills.service.js';
-import { SkillsAdminService } from './services/skills-admin.service.js';
+import { SkillBindingValidatorService } from './services/skill-binding-validator.service.js';
+import { SkillUsageAnalyticsService } from './services/skill-usage-analytics.service.js';
 import { TenantContextService } from '@service/tenant';
 
 class ActorDto {
@@ -38,6 +39,14 @@ class SkillsFindOneRpcDto extends SkillsBaseRpcDto {
 class SkillsRevisionPublishRpcDto extends SkillsFindOneRpcDto {
   @IsUUID()
   revisionId: string;
+}
+
+class SkillsRevisionDiffRpcDto extends SkillsFindOneRpcDto {
+  @IsUUID()
+  fromRevisionId: string;
+
+  @IsUUID()
+  toRevisionId: string;
 }
 
 class SkillsRevisionReviewRpcDto extends SkillsRevisionPublishRpcDto {
@@ -97,10 +106,6 @@ class GlobalSkillsAdminQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
-
-  @IsOptional()
-  @IsString()
-  category?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -255,6 +260,36 @@ class ResolveGlobalSkillIdsByNamesDto {
   names: string[];
 }
 
+class ResolveRequiredGlobalSkillIdsByNamesDto extends ResolveGlobalSkillIdsByNamesDto {
+  @IsOptional()
+  @IsString()
+  source?: string;
+
+  @IsOptional()
+  @IsString()
+  errorPrefix?: string;
+}
+
+class SkillsValidateCompanyBindingsRpcDto {
+  @ValidateNested()
+  @Type(() => ActorDto)
+  actor: ActorDto;
+
+  @IsUUID()
+  companyId: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  skillIds: string[];
+}
+
+class SkillsAnalyticsUsageRpcDto extends SkillsBaseRpcDto {
+  @IsOptional()
+  @IsString()
+  @IsIn(['24h', '7d', '30d'])
+  period?: '24h' | '7d' | '30d';
+}
+
 @Controller()
 export class SkillsRpcController {
   private readonly logger = new Logger(SkillsRpcController.name);
@@ -262,7 +297,8 @@ export class SkillsRpcController {
   constructor(
     private readonly skillsService: SkillsService,
     private readonly tenantContext: TenantContextService,
-    private readonly skillsAdminService: SkillsAdminService,
+    private readonly skillBindingValidator: SkillBindingValidatorService,
+    private readonly analyticsService: SkillUsageAnalyticsService,
   ) {}
 
   @MessagePattern('skills.findAll')
@@ -338,6 +374,18 @@ export class SkillsRpcController {
     try {
       const dto = validateRpcDto(SkillsFindOneRpcDto, payload);
       return await this.runWithCompanyContext(dto, () => this.skillsService.listRevisionsForTenant(dto.id));
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('skills.revisions.diff')
+  async revisionDiff(@Payload() payload: any) {
+    try {
+      const dto = validateRpcDto(SkillsRevisionDiffRpcDto, payload);
+      return await this.runWithCompanyContext(dto, () =>
+        this.skillsService.getRevisionDiff(dto.id, dto.fromRevisionId, dto.toRevisionId),
+      );
     } catch (e: any) {
       throw this.toRpcError(e);
     }
@@ -422,246 +470,99 @@ export class SkillsRpcController {
     }
   }
 
-  @MessagePattern('skills.admin.global.findAll')
-  async adminGlobalFindAll(@Payload() payload: any) {
+  @MessagePattern('skills.validateCompanyBindings')
+  async validateCompanyBindings(@Payload() payload: unknown) {
     try {
-      const dto = validateRpcDto(GlobalSkillsAdminFindAllDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
+      const dto = validateRpcDto(SkillsValidateCompanyBindingsRpcDto, payload);
       return await executeRpc({
         logger: this.logger,
-        pattern: 'skills.admin.global.findAll',
+        pattern: 'skills.validateCompanyBindings',
         payload,
         timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
         handler: () =>
-          this.skillsAdminService.findGlobalAll({
-            search: dto.search,
-            category: dto.category,
-            page: dto.page,
-            pageSize: dto.pageSize,
-          }, actor),
+          this.tenantContext.runWithCompanyId(dto.companyId, () =>
+            this.skillBindingValidator.validateSkillsBelongToCompany(dto.companyId, dto.skillIds, {
+              operatorId: dto.actor.id,
+              source: 'skills.validateCompanyBindings.rpc',
+            }),
+          ).then(() => ({ ok: true as const })),
       });
     } catch (e: any) {
       throw this.toRpcError(e);
     }
   }
 
-  @MessagePattern('skills.admin.global.findOne')
-  async adminGlobalFindOne(@Payload() payload: any) {
+  @MessagePattern('skills.analytics.usage')
+  async analyticsUsage(@Payload() payload: unknown) {
     try {
-      const dto = validateRpcDto(GlobalSkillsAdminFindOneDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
+      const dto = validateRpcDto(SkillsAnalyticsUsageRpcDto, payload);
       return await executeRpc({
         logger: this.logger,
-        pattern: 'skills.admin.global.findOne',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.findGlobalOne(dto.id, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.create')
-  async adminGlobalCreate(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminCreateDto, payload);
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.create',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.createGlobal(dto.data, { id: dto.actor.id, roles: dto.actor.roles }),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.update')
-  async adminGlobalUpdate(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminUpdateDto, payload);
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.update',
+        pattern: 'skills.analytics.usage',
         payload,
         timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
         handler: () =>
-          this.skillsAdminService.updateGlobal(dto.id, dto.data, {
-            id: dto.actor.id,
-            roles: dto.actor.roles,
+          this.runWithCompanyContext(dto, () =>
+            this.analyticsService.getSkillUsageStats(dto.companyId!, dto.period ?? '7d'),
+          ),
+      });
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('skills.analytics.dependencyGraph')
+  async analyticsDependencyGraph(@Payload() payload: unknown) {
+    try {
+      const dto = validateRpcDto(SkillsBaseRpcDto, payload);
+      return await executeRpc({
+        logger: this.logger,
+        pattern: 'skills.analytics.dependencyGraph',
+        payload,
+        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
+        handler: () =>
+          this.runWithCompanyContext(dto, () =>
+            this.analyticsService.getSkillDependencyGraph(dto.companyId!),
+          ),
+      });
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('skills.analytics.anomalies')
+  async analyticsAnomalies(@Payload() payload: unknown) {
+    try {
+      const dto = validateRpcDto(SkillsBaseRpcDto, payload);
+      return await executeRpc({
+        logger: this.logger,
+        pattern: 'skills.analytics.anomalies',
+        payload,
+        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
+        handler: () =>
+          this.runWithCompanyContext(dto, () =>
+            this.analyticsService.detectHighUsageAnomaly(dto.companyId!),
+          ),
+      });
+    } catch (e: any) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('skills.resolveRequiredGlobalSkillIdsByNames')
+  async resolveRequiredGlobalSkillIdsByNames(@Payload() payload: any) {
+    try {
+      const dto = validateRpcDto(ResolveRequiredGlobalSkillIdsByNamesDto, payload);
+      return await executeRpc({
+        logger: this.logger,
+        pattern: 'skills.resolveRequiredGlobalSkillIdsByNames',
+        payload,
+        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
+        handler: () =>
+          this.skillsService.resolveRequiredGlobalSkillIdsByNames(dto.names, {
+            source: dto.source,
+            errorPrefix: dto.errorPrefix,
           }),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.remove')
-  async adminGlobalRemove(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminRemoveDto, payload);
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.remove',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.removeGlobal(dto.id, { id: dto.actor.id, roles: dto.actor.roles }),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.usageStats')
-  async adminGlobalUsageStats(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminUsageStatsRpcDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      // Service handles permission checks.
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.usageStats',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () =>
-          this.skillsAdminService.usageStatsGlobal({
-            skillId: dto.skillId,
-            startDate: dto.startDate,
-            endDate: dto.endDate,
-            page: dto.page,
-            pageSize: dto.pageSize,
-          }, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.auditLogs')
-  async adminGlobalAuditLogs(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminAuditLogsRpcDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.auditLogs',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () =>
-          this.skillsAdminService.auditLogsGlobal({
-            skillId: dto.skillId,
-            actionType: dto.actionType,
-            page: dto.page,
-            pageSize: dto.pageSize,
-          }, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.revisions.list')
-  async adminGlobalRevisionsList(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminSkillIdDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.revisions.list',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.listRevisionsGlobal(dto.id, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.revisions.importFromArtifact')
-  async adminGlobalRevisionsImport(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminSkillIdDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.revisions.importFromArtifact',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 60000),
-        handler: () => this.skillsAdminService.importRevisionFromArtifactGlobal(dto.id, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.revisions.publish')
-  async adminGlobalRevisionsPublish(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminPublishRevisionDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.revisions.publish',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.publishRevisionGlobal(dto.id, dto.revisionId, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.revisions.review')
-  async adminGlobalRevisionsReview(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminReviewRevisionDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.revisions.review',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () =>
-          this.skillsAdminService.reviewRevisionGlobal(dto.id, dto.revisionId, actor, {
-            action: dto.action,
-            comment: dto.comment,
-          }),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.revisions.revoke')
-  async adminGlobalRevisionsRevoke(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminPublishRevisionDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.revisions.revoke',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.revokeRevisionGlobal(dto.id, dto.revisionId, actor),
-      });
-    } catch (e: any) {
-      throw this.toRpcError(e);
-    }
-  }
-
-  @MessagePattern('skills.admin.global.revisions.rollback')
-  async adminGlobalRevisionsRollback(@Payload() payload: any) {
-    try {
-      const dto = validateRpcDto(GlobalSkillsAdminPublishRevisionDto, payload);
-      const actor = { id: dto.actor.id, roles: dto.actor.roles };
-      return await executeRpc({
-        logger: this.logger,
-        pattern: 'skills.admin.global.revisions.rollback',
-        payload,
-        timeoutMs: Number(process.env.API_RPC_HANDLER_TIMEOUT_MS ?? 15000),
-        handler: () => this.skillsAdminService.rollbackRevisionGlobal(dto.id, dto.revisionId, actor),
       });
     } catch (e: any) {
       throw this.toRpcError(e);

@@ -1,12 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsEmail,
-  IsArray,
-  IsBoolean,
-  MinLength,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsBoolean, MinLength, MaxLength } from 'class-validator';
 
 /**
  * 更新用户DTO
@@ -29,22 +21,6 @@ export class UpdateUserDto {
   @IsEmail()
   @MaxLength(255)
   email?: string;
-
-  /**
-   * 角色列表
-   */
-  @IsArray()
-  @IsOptional()
-  @IsString({ each: true })
-  roles?: string[];
-
-  /**
-   * 权限列表
-   */
-  @IsArray()
-  @IsOptional()
-  @IsString({ each: true })
-  permissions?: string[];
 
   /**
    * 是否启用

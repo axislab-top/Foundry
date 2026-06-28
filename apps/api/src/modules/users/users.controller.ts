@@ -25,8 +25,14 @@ import type { IPaginatedResult } from './interfaces/user.interface.js';
 import { UsersService } from './users.service.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ResetPasswordWithCodeDto } from './dto/reset-password-with-code.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { QueryUserDto } from './dto/query-user.dto.js';
+import { PasswordResetService } from './services/password-reset.service.js';
+import { EmailVerificationService } from './services/email-verification.service.js';
+import { SendRegistrationCodeDto } from './dto/send-registration-code.dto.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Permissions } from '../../common/decorators/permissions.decorator.js';
@@ -42,7 +48,11 @@ import { USERS_PERMISSIONS } from './constants/permissions.constants.js';
 @ApiBearerAuth('JWT-auth')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly emailVerificationService: EmailVerificationService,
+  ) {}
 
   /**
    * 用户注册
@@ -61,6 +71,66 @@ export class UsersController {
     // 不返回密码哈希
     const { passwordHash, ...result } = user;
     return result;
+  }
+
+  /**
+   * 注册前发送邮箱验证码
+   */
+  @Post('register/send-verification-code')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @ApiOperation({ summary: '发送注册验证码', description: '向邮箱发送 6 位注册验证码' })
+  @ApiBody({ type: SendRegistrationCodeDto })
+  async sendRegistrationVerificationCode(@Body() dto: SendRegistrationCodeDto) {
+    return this.emailVerificationService.sendRegistrationCode(dto.email);
+  }
+
+  /**
+   * 忘记密码 — 发送重置邮件（统一响应，防止邮箱枚举）
+   */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @ApiOperation({ summary: '忘记密码', description: '向注册邮箱发送密码重置链接' })
+  @ApiBody({ type: ForgotPasswordDto })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.passwordResetService.requestReset(dto.email);
+  }
+
+  /**
+   * 发送重置密码验证码
+   */
+  @Post('forgot-password/send-code')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @ApiOperation({ summary: '发送重置密码验证码', description: '向邮箱发送 6 位重置密码验证码' })
+  @ApiBody({ type: ForgotPasswordDto })
+  async sendResetPasswordCode(@Body() dto: ForgotPasswordDto) {
+    return this.emailVerificationService.sendResetPasswordCode(dto.email);
+  }
+
+  /**
+   * 使用验证码重置密码
+   */
+  @Post('reset-password-with-code')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @ApiOperation({ summary: '使用验证码重置密码', description: '使用邮箱验证码设置新密码' })
+  @ApiBody({ type: ResetPasswordWithCodeDto })
+  async resetPasswordWithCode(@Body() dto: ResetPasswordWithCodeDto) {
+    return this.passwordResetService.resetPasswordWithCode(dto.email, dto.code, dto.newPassword);
+  }
+
+  /**
+   * 重置密码 — 使用邮件中的令牌设置新密码
+   */
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @ApiOperation({ summary: '重置密码', description: '使用重置令牌设置新密码' })
+  @ApiBody({ type: ResetPasswordDto })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.passwordResetService.resetPassword(dto.token, dto.password);
   }
 
   /**

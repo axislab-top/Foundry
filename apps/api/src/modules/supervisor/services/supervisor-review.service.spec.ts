@@ -74,7 +74,14 @@ describe('SupervisorReviewService', () => {
         {
           provide: ConfigService,
           useValue: {
-            getMemoryConfig: () => ({ openaiApiKey: '', openaiBaseUrl: 'https://api.openai.com/v1' }),
+            getMemoryConfig: () => ({
+              openaiApiKey: '',
+              openaiBaseUrl: 'https://api.openai.com/v1',
+              embeddingProjectionEnabled: false,
+              embeddingModelOutputDim: 1536,
+              embeddingTargetDim: 1536,
+              embeddingDimensions: 1536,
+            }),
           },
         },
         { provide: MessagingService, useValue: { publish: jest.fn() } },

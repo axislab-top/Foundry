@@ -55,13 +55,6 @@ export class QueryUserDto {
   search?: string;
 
   /**
-   * 角色筛选
-   */
-  @IsOptional()
-  @IsString()
-  role?: string;
-
-  /**
    * 是否启用筛选
    */
   @IsOptional()
@@ -79,6 +72,14 @@ export class QueryUserDto {
   @IsIn(['false', 'true', 'all'])
   @IsString()
   deleted?: 'false' | 'true' | 'all' = 'false';
+
+  /**
+   * 平台管理员列表：附带企业/购额统计（ownedCompanyCount 等）
+   */
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  includeStats?: boolean;
 }
 
 

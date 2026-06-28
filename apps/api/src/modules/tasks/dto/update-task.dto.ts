@@ -68,6 +68,10 @@ export class UpdateTaskDto {
   metadata?: Record<string, unknown>;
 
   @IsOptional()
+  @IsUUID()
+  projectId?: string | null;
+
+  @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })
   dependsOnTaskIds?: string[];

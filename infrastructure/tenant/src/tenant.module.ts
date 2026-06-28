@@ -6,6 +6,7 @@ import { TenantContextService } from './services/tenant-context.service.js';
 import { TenantRlsService } from './services/tenant-rls.service.js';
 import { TenantTypeormContextBootstrapper } from './services/tenant-typeorm-context-bootstrapper.service.js';
 import { TenantResolutionStrategy } from './strategies/tenant-resolution.strategy.js';
+import { DepartmentSlugGuard } from './guards/department-slug.guard.js';
 
 @Global()
 @Module({
@@ -24,6 +25,7 @@ import { TenantResolutionStrategy } from './strategies/tenant-resolution.strateg
     TenantTypeormContextBootstrapper,
     TenantResolutionStrategy,
     TenantGuard,
+    DepartmentSlugGuard,
   ],
   exports: [
     ClsModule,
@@ -33,6 +35,7 @@ import { TenantResolutionStrategy } from './strategies/tenant-resolution.strateg
     TenantTypeormContextBootstrapper,
     TenantResolutionStrategy,
     TenantGuard,
+    DepartmentSlugGuard,
   ],
 })
 export class TenantModule {}

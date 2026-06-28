@@ -1,12 +1,13 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
-import type { TaskAssigneeType, TaskStatus } from '../entities/task.entity.js';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import type { TaskAssigneeType, TaskPriority, TaskStatus } from '../entities/task.entity.js';
 
 const statuses = [
   'pending',
   'in_progress',
   'review',
   'awaiting_approval',
+  'awaiting_supervision',
   'completed',
   'blocked',
   'cancelled',
@@ -14,6 +15,7 @@ const statuses = [
 ] as const;
 
 const assigneeTypes = ['unassigned', 'agent', 'organization_node'] as const;
+const priorities = ['low', 'normal', 'high', 'urgent'] as const;
 
 export class QueryTasksDto {
   @IsOptional()
@@ -32,6 +34,15 @@ export class QueryTasksDto {
   @IsOptional()
   @IsEnum(statuses)
   status?: TaskStatus;
+
+  @IsOptional()
+  @IsEnum(priorities)
+  priority?: TaskPriority;
+
+  /** 标题关键词（不区分大小写，ILIKE） */
+  @IsOptional()
+  @IsString()
+  q?: string;
 
   @IsOptional()
   @IsUUID()
@@ -58,4 +69,8 @@ export class QueryTasksDto {
   @IsOptional()
   @IsUUID()
   departmentOrganizationNodeId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  projectId?: string;
 }

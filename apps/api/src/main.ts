@@ -4,8 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
-import { createLogger, LogLevel } from '@service/logging';
-import { warnWeakSecurityDefaults } from '@service/security';
+import { createLogger, LogLevel, getNestBootstrapLoggerLevels, resolveLogLevelFromEnv } from '@service/logging';
 import { ConfigService } from './common/config/config.service.js';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
@@ -13,6 +12,7 @@ import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor.js
 import { createSwaggerConfig } from './common/swagger/swagger.config.js';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { RMQ_NEST_SOCKET_OPTIONS } from '@service/messaging';
+import { startEventLoopLagMonitor } from '@service/monitoring';
 
 function readBooleanEnv(name: string, defaultValue: boolean): boolean {
   const raw = process.env[name];
@@ -23,16 +23,16 @@ function readBooleanEnv(name: string, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
-// Load .env before app bootstrap.
-// turbo 运行时 process.cwd() = 包目录 (apps/api)，不是项目根
-// 项目根 = process.cwd()/../../
+// Load .env before app bootstrap（合并多个文件：先 apps/api/.env，再根 .env.shared 等补键，避免 env-manager 白名单漏项时进程无 MEMORY_GRAPH_*）。
 const possibleEnvPaths = [
-  resolve(process.cwd(), '../../.env.shared'),
-  resolve(process.cwd(), '../../.env'),
-  resolve(process.cwd(), '../.env.shared'),
-  resolve(process.cwd(), '../.env'),
-  resolve(process.cwd(), '.env.shared'),
+  resolve(process.cwd(), 'apps/api/.env'),
   resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), '.env.shared'),
+  resolve(process.cwd(), 'apps/api/.env.shared'),
+  resolve(process.cwd(), '../.env'),
+  resolve(process.cwd(), '../.env.shared'),
+  resolve(process.cwd(), '../../.env'),
+  resolve(process.cwd(), '../../.env.shared'),
 ];
 
 let envLoaded = false;
@@ -71,7 +71,6 @@ for (const envPath of possibleEnvPaths) {
     });
 
     envLoaded = true;
-    break;
   } catch {
     // Try next candidate path.
     continue;
@@ -83,10 +82,8 @@ if (!envLoaded) {
 }
 
 async function bootstrap() {
-  warnWeakSecurityDefaults();
-
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    logger: getNestBootstrapLoggerLevels(),
   });
   app.enableShutdownHooks();
 
@@ -96,10 +93,8 @@ async function bootstrap() {
   const appConfig = configService.getAppConfig();
 
   // 从环境变量读取日志级别，默认为 INFO
-  const logLevelEnv = (process.env.LOG_LEVEL?.toLowerCase() || 'info') as LogLevel;
-  const logLevel = Object.values(LogLevel).includes(logLevelEnv) 
-    ? logLevelEnv 
-    : LogLevel.INFO;
+  const logLevelEnv = resolveLogLevelFromEnv();
+  const logLevel = logLevelEnv;
 
   // 创建应用日志器（需要在早期创建，以便后续使用）
   const logger = createLogger({
@@ -107,6 +102,7 @@ async function bootstrap() {
     environment: appConfig.nodeEnv,
     level: logLevel,
   });
+  startEventLoopLagMonitor(logger);
 
   // 启用 CORS
   app.enableCors({
@@ -136,7 +132,7 @@ async function bootstrap() {
   // 连接 RMQ microservice（用于 Gateway ClientProxy）
   // 与 HTTP server 同进程运行：HTTP + RMQ 双协议（可灰度迁移与快速回滚）
   const rmqUrl =
-    process.env.RMQ_URL || 'amqp://guest:guest@localhost:5672';
+    process.env.RMQ_URL || 'amqp://admin:admin123@localhost:5672';
   const rmqQueue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
   const autonomousRmqQueue =
     process.env.API_RMQ_RPC_QUEUE_AUTONOMOUS || 'api-rpc-autonomous-queue';

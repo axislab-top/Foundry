@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
-import type { SkillImplementationType } from '../entities/skill.entity.js';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import type { SkillChunkStrategy, SkillImplementationType } from '../entities/skill.entity.js';
 
 export class CreateSkillDto {
   @ApiPropertyOptional({ description: '公司私有 Skill；不传则使用当前租户 companyId' })
@@ -12,12 +23,6 @@ export class CreateSkillDto {
   @IsString()
   @MaxLength(255)
   name: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  category?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -34,9 +39,12 @@ export class CreateSkillDto {
   @IsString()
   promptTemplate?: string;
 
-  @ApiPropertyOptional({ enum: ['builtin', 'langgraph', 'api', 'external'], default: 'builtin' })
+  @ApiPropertyOptional({
+    enum: ['prompt', 'builtin', 'langgraph', 'api', 'external', 'mcp'],
+    default: 'builtin',
+  })
   @IsOptional()
-  @IsIn(['builtin', 'langgraph', 'api', 'external'])
+  @IsIn(['prompt', 'builtin', 'langgraph', 'api', 'external', 'mcp'])
   implementationType?: SkillImplementationType;
 
   @ApiPropertyOptional()
@@ -68,4 +76,51 @@ export class CreateSkillDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
+
+  @ApiProperty({ required: false, nullable: true, description: 'Max allowed input tokens', minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxInputTokens?: number | null;
+
+  @ApiProperty({ required: false, nullable: true, description: 'Max allowed output tokens', minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxOutputTokens?: number | null;
+
+  @ApiProperty({ required: false, nullable: true, description: 'Max input payload size in bytes', minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxInputSizeBytes?: number | null;
+
+  @ApiProperty({ required: false, nullable: true, default: 300, description: 'Execution timeout in seconds', minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  timeoutSeconds?: number | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    enum: ['none', 'fixed', 'semantic'],
+    default: 'none',
+    description: 'Chunking strategy for large inputs',
+  })
+  @IsOptional()
+  @IsIn(['none', 'fixed', 'semantic'])
+  chunkStrategy?: SkillChunkStrategy | null;
+
+  @ApiProperty({ required: false, nullable: true, type: [String], description: 'Governance categories/tags' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  category?: string[] | null;
+
+  @ApiProperty({ required: false, nullable: true, description: 'Icon URL or icon identifier' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  icon?: string | null;
 }

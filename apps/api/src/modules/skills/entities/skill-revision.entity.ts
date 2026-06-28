@@ -44,9 +44,6 @@ export class SkillRevision {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'varchar', length: 120, nullable: true })
-  category: string | null;
-
   @Column({ type: 'text', nullable: true })
   description: string | null;
 

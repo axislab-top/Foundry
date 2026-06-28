@@ -1,11 +1,15 @@
 # Nginx 负载均衡器 Docker Compose 配置
-# 用于 Gateway 服务的负载均衡和反向代理
+# 统一入口：静态前端 + 各后端反代
 
 services:
   nginx:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: infrastructure/nginx/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        VITE_PUBLIC_ORIGIN: ${VITE_PUBLIC_ORIGIN:-http://localhost}
+    image: ${NGINX_IMAGE:-service-nginx:latest}
     container_name: service-nginx
     restart: unless-stopped
     networks:
@@ -14,29 +18,25 @@ services:
       - "${NGINX_HTTP_PORT:-80}:80"
       - "${NGINX_HTTPS_PORT:-443}:443"
     volumes:
-      # Nginx 配置文件
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./conf.d:/etc/nginx/conf.d:ro
-      # SSL 证书（如果启用 HTTPS）
+      # 可选：本地调试 nginx 配置（不挂载则使用镜像内配置 + 内置静态资源）
       - ./ssl:/etc/nginx/ssl:ro
-      # 日志目录
       - nginx-logs:/var/log/nginx
     environment:
       - TZ=Asia/Shanghai
     depends_on:
-      - gateway-service
+      gateway-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    # 资源限制（可选）
     deploy:
       resources:
         limits:
@@ -53,9 +53,3 @@ volumes:
 networks:
   service-network:
     driver: bridge
-
-
-
-
-
-

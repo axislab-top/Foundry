@@ -7,7 +7,6 @@ describe('SkillsModule helpers', () => {
       id: 's1',
       companyId: null,
       name: 'echo',
-      category: 'coding',
       description: 'd',
       toolSchema: { type: 'object', properties: {} },
       promptTemplate: 'p',

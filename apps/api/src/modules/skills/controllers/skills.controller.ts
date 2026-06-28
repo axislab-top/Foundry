@@ -10,7 +10,9 @@ import {
   Patch,
   Post,
   Query,
+  SetMetadata,
 } from '@nestjs/common';
+import { IsIn, IsOptional } from 'class-validator';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import type { UserInfo } from '../../../common/types/user.types.js';
@@ -18,18 +20,69 @@ import { CreateSkillDto } from '../dto/create-skill.dto.js';
 import { QuerySkillsDto } from '../dto/query-skills.dto.js';
 import { UpdateSkillDto } from '../dto/update-skill.dto.js';
 import { SkillsService } from '../services/skills.service.js';
+import { SkillUsageAnalyticsService } from '../services/skill-usage-analytics.service.js';
+import { TENANT_REQUIRED_METADATA_KEY, TenantContextService } from '@service/tenant';
+
+class RevisionDiffQueryDto {
+  fromRevisionId: string;
+  toRevisionId: string;
+}
+
+class SkillAnalyticsUsageQueryDto {
+  @IsOptional()
+  @IsIn(['24h', '7d', '30d'])
+  period?: '24h' | '7d' | '30d';
+}
 
 @ApiTags('skills')
 @ApiBearerAuth('JWT-auth')
 @Controller('skills')
 export class SkillsController {
-  constructor(private readonly skillsService: SkillsService) {}
+  constructor(
+    private readonly skillsService: SkillsService,
+    private readonly analyticsService: SkillUsageAnalyticsService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Skill 列表（含平台全局 + 当前公司私有）' })
   async findAll(@Query() query: QuerySkillsDto) {
     return this.skillsService.findAll(query);
+  }
+
+  @Get('analytics/usage')
+  @SetMetadata(TENANT_REQUIRED_METADATA_KEY, false)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Skill 使用统计' })
+  async analyticsUsage(@Query() query: SkillAnalyticsUsageQueryDto) {
+    const companyId = this.tenantContext.getCompanyId();
+    return this.analyticsService.getSkillUsageStats(
+      companyId,
+      query.period ?? '7d',
+    );
+  }
+
+  @Get('analytics/dependency-graph')
+  @SetMetadata(TENANT_REQUIRED_METADATA_KEY, false)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Skill 依赖图' })
+  async analyticsDependencyGraph() {
+    const companyId = this.tenantContext.getCompanyId();
+    return this.analyticsService.getSkillDependencyGraph(
+      companyId,
+    );
+  }
+
+  @Get('analytics/anomalies')
+  @SetMetadata(TENANT_REQUIRED_METADATA_KEY, false)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Skill 异常消耗检测结果' })
+  async analyticsAnomalies() {
+    const companyId = this.tenantContext.getCompanyId();
+    return this.analyticsService.detectHighUsageAnomaly(
+      companyId,
+    );
   }
 
   @Get(':id')
@@ -71,6 +124,16 @@ export class SkillsController {
   @ApiOperation({ summary: '公司私有 Skill 版本列表' })
   async revisions(@Param('id', ParseUUIDPipe) id: string) {
     return this.skillsService.listRevisionsForTenant(id);
+  }
+
+  @Get(':id/revisions/diff')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '公司私有 Skill 版本差异对比' })
+  async revisionDiff(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() q: RevisionDiffQueryDto,
+  ) {
+    return this.skillsService.getRevisionDiff(id, q.fromRevisionId, q.toRevisionId);
   }
 
   @Post(':id/revisions/import-from-artifact')

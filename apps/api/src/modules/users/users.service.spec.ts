@@ -6,6 +6,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from './users.service.js';
+import { EmailVerificationService } from './services/email-verification.service.js';
 import { User } from './entities/user.entity.js';
 import { CacheService } from '../../common/cache/cache.service.js';
 import { SecurityService } from '../../common/security/security.service.js';
@@ -58,6 +59,12 @@ describe('UsersService', () => {
         {
           provide: TenantContextService,
           useValue: mockTenantContext,
+        },
+        {
+          provide: EmailVerificationService,
+          useValue: {
+            verifyRegistrationCode: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

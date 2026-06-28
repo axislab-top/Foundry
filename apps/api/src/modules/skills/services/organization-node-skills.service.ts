@@ -12,7 +12,11 @@ import { CompanyMembership } from '../../companies/entities/company-membership.e
 import { OrganizationNode } from '../../organization/entities/organization-node.entity.js';
 import { OrganizationNodeSkill } from '../../organization/entities/organization-node-skill.entity.js';
 import { BindOrganizationNodeSkillsDto } from '../dto/bind-organization-node-skills.dto.js';
-import { SkillsService } from './skills.service.js';
+import {
+  isSkillBindingGatePending,
+  SkillBindingValidatorService,
+  type SkillBindingWriteResult,
+} from './skill-binding-validator.service.js';
 
 interface Actor {
   id: string;
@@ -29,7 +33,7 @@ export class OrganizationNodeSkillsService {
     @InjectRepository(CompanyMembership)
     private readonly membershipsRepo: Repository<CompanyMembership>,
     private readonly tenantContext: TenantContextService,
-    private readonly skillsService: SkillsService,
+    private readonly skillBindingValidator: SkillBindingValidatorService,
   ) {}
 
   private getCompanyIdOrThrow(): string {
@@ -80,7 +84,7 @@ export class OrganizationNodeSkillsService {
     return rows.map((r) => r.skillId);
   }
 
-  async bindSkills(nodeId: string, dto: BindOrganizationNodeSkillsDto, actor: Actor): Promise<string[]> {
+  async bindSkills(nodeId: string, dto: BindOrganizationNodeSkillsDto, actor: Actor): Promise<SkillBindingWriteResult> {
     const companyId = this.getCompanyIdOrThrow();
     await this.assertCanManageStructure(companyId, actor);
     const node = await this.nodesRepo.findOne({ where: { id: nodeId, companyId } });
@@ -90,8 +94,30 @@ export class OrganizationNodeSkillsService {
         message: '组织节点不存在',
       });
     }
-    for (const skillId of dto.skillIds) {
-      await this.skillsService.assertSkillUsableByTenant(skillId, companyId);
+    await this.skillBindingValidator.validateSkillsAssignableToOrgNode(companyId, dto.skillIds, {
+      operatorId: actor.id,
+      source: 'organization.node.skills.bind',
+    });
+    const existingIds = new Set(await this.listSkillIdsForNode(nodeId, companyId));
+    const newlyAdded = dto.skillIds.filter((id) => !existingIds.has(id));
+    if (newlyAdded.length > 0) {
+      // P17：与 Agent 绑定、CEO 一键同步共用同一套高危档位闸门（非 P17.1 扩展项）。
+      const gate = await this.skillBindingValidator.evaluateHighRiskSkillBindingApprovalGate({
+        companyId,
+        skillIds: newlyAdded,
+        actorId: actor.id,
+        bindingSurface: 'org_node',
+        context: { organizationNodeId: nodeId },
+        source: 'organization.node.skills.bind',
+      });
+      if (isSkillBindingGatePending(gate)) {
+        return {
+          outcome: 'pending_approval',
+          approvalRequestId: gate.approvalRequestId,
+          pendingSkillIds: gate.pendingSkillIds,
+          message: gate.message,
+        };
+      }
     }
     for (const skillId of dto.skillIds) {
       const exists = await this.nodeSkillsRepo.findOne({
@@ -107,7 +133,9 @@ export class OrganizationNodeSkillsService {
         );
       }
     }
-    return this.listSkillIdsForNode(nodeId, companyId);
+    await this.skillBindingValidator.invalidateCompanyBoundSkillsCache(companyId);
+    const skillIds = await this.listSkillIdsForNode(nodeId, companyId);
+    return { outcome: 'bound', skillIds };
   }
 
   async unbindSkills(nodeId: string, dto: BindOrganizationNodeSkillsDto, actor: Actor): Promise<string[]> {
@@ -125,6 +153,7 @@ export class OrganizationNodeSkillsService {
       companyId,
       skillId: In(dto.skillIds),
     });
+    await this.skillBindingValidator.invalidateCompanyBoundSkillsCache(companyId);
     return this.listSkillIdsForNode(nodeId, companyId);
   }
 }

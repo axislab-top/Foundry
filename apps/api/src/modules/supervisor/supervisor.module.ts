@@ -18,6 +18,7 @@ import { SupervisorMetricsService } from './services/supervisor-metrics.service.
 import { SupervisorReportService } from './services/supervisor-report.service.js';
 import { SupervisorReviewService } from './services/supervisor-review.service.js';
 import { SupervisorTemporalBridgeService } from './services/supervisor-temporal-bridge.service.js';
+import { DefaultSupervisorService } from './services/default-supervisor.service.js';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { SupervisorTemporalBridgeService } from './services/supervisor-temporal-
     SupervisorMetricsService,
     SupervisorReportService,
     SupervisorLessonQueryService,
+    DefaultSupervisorService,
   ],
   exports: [
     SupervisorReviewService,
@@ -49,6 +51,7 @@ import { SupervisorTemporalBridgeService } from './services/supervisor-temporal-
     SupervisorMetricsService,
     SupervisorReportService,
     SupervisorLessonQueryService,
+    DefaultSupervisorService,
   ],
 })
 export class SupervisorModule {}

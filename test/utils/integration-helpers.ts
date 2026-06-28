@@ -11,10 +11,10 @@ import * as request from 'supertest';
  */
 export async function createIntegrationTestApp(
   module: TestingModule,
+  options?: { globalPrefix?: string },
 ): Promise<INestApplication> {
   const app = module.createNestApplication();
-  
-  // 应用全局管道
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -22,6 +22,10 @@ export async function createIntegrationTestApp(
       transform: true,
     }),
   );
+
+  if (options?.globalPrefix) {
+    app.setGlobalPrefix(options.globalPrefix);
+  }
 
   await app.init();
   return app;

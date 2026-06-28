@@ -24,6 +24,7 @@ import type {
   UserUpdatedEvent,
   UserDeletedEvent,
 } from '@contracts/events';
+import { EmailVerificationService } from './services/email-verification.service.js';
 
 /**
  * 用户服务
@@ -42,6 +43,7 @@ export class UsersService {
     private readonly securityService: SecurityService,
     private readonly messagingService: MessagingService,
     private readonly tenantContext: TenantContextService,
+    private readonly emailVerificationService: EmailVerificationService,
   ) {}
 
   /**
@@ -51,6 +53,7 @@ export class UsersService {
     // 检查邮箱是否已存在
     const existingByEmail = await this.userRepository.findOne({
       where: { email: createDto.email } as FindOptionsWhere<User>,
+      withDeleted: true,
     });
 
     if (existingByEmail) {
@@ -63,6 +66,7 @@ export class UsersService {
     // 检查用户名是否已存在
     const existingByUsername = await this.userRepository.findOne({
       where: { username: createDto.username } as FindOptionsWhere<User>,
+      withDeleted: true,
     });
 
     if (existingByUsername) {
@@ -83,12 +87,10 @@ export class UsersService {
       username: createDto.username,
       email: createDto.email,
       passwordHash,
-      roles: createDto.roles || [],
-      permissions: createDto.permissions || [],
       enabled: createDto.enabled ?? true,
     });
 
-    const saved = await this.userRepository.save(user);
+    const saved = await this.saveUserWithDuplicateGuard(user);
 
     // 清除相关缓存
     await this.clearListCache();
@@ -108,8 +110,8 @@ export class UsersService {
           userId: saved.id,
           username: saved.username,
           email: saved.email,
-          roles: saved.roles || [],
-          permissions: saved.permissions || [],
+          roles: [],
+          permissions: [],
           createdAt: saved.createdAt.toISOString(),
           companyId,
         },
@@ -140,9 +142,15 @@ export class UsersService {
    * 公开接口，用于用户自主注册
    */
   async register(registerDto: RegisterDto): Promise<User> {
+    await this.emailVerificationService.verifyRegistrationCode(
+      registerDto.email,
+      registerDto.verificationCode ?? '',
+    );
+
     // 检查邮箱是否已存在
     const existingByEmail = await this.userRepository.findOne({
       where: { email: registerDto.email } as FindOptionsWhere<User>,
+      withDeleted: true,
     });
 
     if (existingByEmail) {
@@ -155,6 +163,7 @@ export class UsersService {
     // 检查用户名是否已存在
     const existingByUsername = await this.userRepository.findOne({
       where: { username: registerDto.username } as FindOptionsWhere<User>,
+      withDeleted: true,
     });
 
     if (existingByUsername) {
@@ -170,17 +179,15 @@ export class UsersService {
       saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10', 10),
     });
 
-    // 创建用户实体，默认角色为普通用户
+    // 创建普通用户实体
     const user = this.userRepository.create({
       username: registerDto.username,
       email: registerDto.email,
       passwordHash,
-      roles: ['user'], // 新注册用户默认为普通用户角色
-      permissions: [], // 新注册用户无额外权限
       enabled: true, // 默认启用
     });
 
-    const saved = await this.userRepository.save(user);
+    const saved = await this.saveUserWithDuplicateGuard(user);
 
     // 清除相关缓存
     await this.clearListCache();
@@ -200,8 +207,8 @@ export class UsersService {
           userId: saved.id,
           username: saved.username,
           email: saved.email,
-          roles: saved.roles || [],
-          permissions: saved.permissions || [],
+          roles: [],
+          permissions: [],
           createdAt: saved.createdAt.toISOString(),
           companyId,
         },
@@ -237,7 +244,6 @@ export class UsersService {
       sortBy = 'createdAt',
       sortOrder = 'DESC',
       search,
-      role,
       enabled,
       deleted = 'false',
     } = queryDto;
@@ -281,10 +287,6 @@ export class UsersService {
       }
       // deleted === 'all' 时不添加条件，显示全部
 
-      if (role) {
-        queryBuilder.andWhere('user.roles @> :role', { role: JSON.stringify([role]) });
-      }
-
       if (enabled !== undefined) {
         queryBuilder.andWhere('user.enabled = :enabled', { enabled });
       }
@@ -311,45 +313,6 @@ export class UsersService {
     }
 
     // 简单查询（无搜索）
-    if (role) {
-      // 使用 JSONB 查询
-      const queryBuilder = this.userRepository.createQueryBuilder('user');
-      queryBuilder.where('user.roles @> :role', { role: JSON.stringify([role]) });
-      
-      // 根据 deleted 参数添加删除状态筛选
-      if (deleted === 'false') {
-        // 只显示未删除的
-        queryBuilder.andWhere('user.deletedAt IS NULL');
-      } else if (deleted === 'true') {
-        // 只显示已删除的
-        queryBuilder.andWhere('user.deletedAt IS NOT NULL');
-      }
-      // deleted === 'all' 时不添加条件，显示全部
-      
-      if (enabled !== undefined) {
-        queryBuilder.andWhere('user.enabled = :enabled', { enabled });
-      }
-
-      queryBuilder
-        .skip((page - 1) * pageSize)
-        .take(pageSize)
-        .orderBy(`user.${sortBy}`, sortOrder);
-
-      const [items, total] = await queryBuilder.getManyAndCount();
-
-      const result: IPaginatedResult<User> = {
-        items,
-        total,
-        page,
-        pageSize,
-        totalPages: Math.ceil(total / pageSize),
-      };
-
-      await this.cacheService.set(cacheKey, result, this.CACHE_TTL);
-
-      return result;
-    }
-
     // 执行查询
     // 如果 deleted 参数为 'true' 或 'all'，需要使用 QueryBuilder（因为 findAndCount 默认排除软删除）
     if (deleted === 'true' || deleted === 'all') {
@@ -458,19 +421,6 @@ export class UsersService {
     });
 
     return result;
-  }
-
-  /**
-   * 查找是否存在指定角色的用户（仅用于默认管理员等初始化逻辑）
-   */
-  async findFirstByRole(role: string): Promise<User | null> {
-    const user = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.deletedAt IS NULL')
-      .andWhere('user.roles @> :roles', { roles: JSON.stringify([role]) })
-      .getOne();
-
-    return user;
   }
 
   /**
@@ -610,16 +560,14 @@ export class UsersService {
       username: user.username,
       email: user.email,
       companyId,
-      roles: user.roles,
-      permissions: user.permissions,
     };
 
     this.logger.debug('UsersService.validateUserCredentials() - 准备返回用户信息', {
       email,
       userId: user.id,
       username: userInfo.username,
-      hasRoles: !!(userInfo.roles && userInfo.roles.length > 0),
-      hasPermissions: !!(userInfo.permissions && userInfo.permissions.length > 0),
+      hasRoles: false,
+      hasPermissions: false,
     });
 
     return userInfo;
@@ -633,7 +581,10 @@ export class UsersService {
 
     // 如果更新邮箱，检查是否与其他用户冲突
     if (updateDto.email && updateDto.email !== user.email) {
-      const existing = await this.findByEmail(updateDto.email);
+      const existing = await this.userRepository.findOne({
+        where: { email: updateDto.email } as FindOptionsWhere<User>,
+        withDeleted: true,
+      });
       if (existing && existing.id !== id) {
         throw new ConflictException({
           code: ErrorCode.RECORD_ALREADY_EXISTS,
@@ -644,7 +595,10 @@ export class UsersService {
 
     // 如果更新用户名，检查是否与其他用户冲突
     if (updateDto.username && updateDto.username !== user.username) {
-      const existing = await this.findByUsername(updateDto.username);
+      const existing = await this.userRepository.findOne({
+        where: { username: updateDto.username } as FindOptionsWhere<User>,
+        withDeleted: true,
+      });
       if (existing && existing.id !== id) {
         throw new ConflictException({
           code: ErrorCode.RECORD_ALREADY_EXISTS,
@@ -667,7 +621,7 @@ export class UsersService {
       }
     });
 
-    const updated = await this.userRepository.save(user);
+    const updated = await this.saveUserWithDuplicateGuard(user);
 
     // 清除相关缓存
     await this.clearCache(id);
@@ -690,8 +644,6 @@ export class UsersService {
           changes: {
             username: changes.username,
             email: changes.email,
-            roles: changes.roles,
-            permissions: changes.permissions,
             enabled: changes.enabled,
           },
           updatedAt: updated.updatedAt?.toISOString() || new Date().toISOString(),
@@ -783,6 +735,20 @@ export class UsersService {
   private getTenantCachePrefix(): string {
     const companyId = this.tenantContext.getCompanyId() || 'global';
     return `company:${companyId}:${this.CACHE_PREFIX}`;
+  }
+
+  private async saveUserWithDuplicateGuard(user: User): Promise<User> {
+    try {
+      return await this.userRepository.save(user);
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        throw new ConflictException({
+          code: ErrorCode.RECORD_ALREADY_EXISTS,
+          message: '邮箱或用户名已存在',
+        });
+      }
+      throw error;
+    }
   }
 }
 

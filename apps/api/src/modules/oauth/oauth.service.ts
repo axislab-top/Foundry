@@ -101,8 +101,6 @@ export class OAuthService {
         id: user.id,
         username: user.username,
         email: user.email,
-        roles: user.roles,
-        permissions: user.permissions,
       };
     }
 
@@ -132,8 +130,6 @@ export class OAuthService {
         username,
         email: findOrCreateDto.email || `${findOrCreateDto.provider}_${findOrCreateDto.providerUserId}@oauth.local`,
         passwordHash: '', // 第三方登录不需要密码
-        roles: ['user'],
-        permissions: [],
         enabled: true,
       });
 
@@ -159,8 +155,6 @@ export class OAuthService {
       id: user.id,
       username: user.username,
       email: user.email,
-      roles: user.roles,
-      permissions: user.permissions,
     };
   }
 

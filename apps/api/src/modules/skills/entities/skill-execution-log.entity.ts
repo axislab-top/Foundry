@@ -19,7 +19,7 @@ export class SkillExecutionLog {
   @Column({ name: 'skill_name', type: 'varchar', length: 255 })
   skillName: string;
 
-  @Column({ name: 'trace_id', type: 'varchar', length: 64, nullable: true })
+  @Column({ name: 'trace_id', type: 'varchar', length: 255, nullable: true })
   traceId: string | null;
 
   @Column({ name: 'args_summary', type: 'jsonb', nullable: true })

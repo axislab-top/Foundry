@@ -2,8 +2,10 @@ import {
   IsString,
   IsNotEmpty,
   IsEmail,
+  IsOptional,
   MinLength,
   MaxLength,
+  Matches,
 } from 'class-validator';
 
 /**
@@ -36,6 +38,12 @@ export class RegisterDto {
   @IsNotEmpty()
   @MinLength(6)
   password: string;
+
+  /** 邮箱验证码（6 位数字） */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6}$/, { message: '验证码须为 6 位数字' })
+  verificationCode?: string;
 }
 
 

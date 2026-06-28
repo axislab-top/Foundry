@@ -23,6 +23,7 @@ import { QueryNodeAgentsDto } from '../dto/query-node-agents.dto.js';
 import { QueryOrganizationAuditLogsDto } from '../dto/query-audit-logs.dto.js';
 import { BindOrganizationNodeSkillsDto } from '../../skills/dto/bind-organization-node-skills.dto.js';
 import { OrganizationNodeSkillsService } from '../../skills/services/organization-node-skills.service.js';
+import { SuggestDepartmentCapabilitiesDto } from '../dto/suggest-department-capabilities.dto.js';
 
 @ApiTags('organizations')
 @ApiBearerAuth('JWT-auth')
@@ -39,6 +40,14 @@ export class OrganizationController {
   @ApiQuery({ type: QueryOrganizationTreeDto, required: false })
   async getTree(@Query() query: QueryOrganizationTreeDto) {
     return this.organizationService.getTree(query);
+  }
+
+  @Post('departments/suggest-capabilities')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '根据部门名称与职能摘要草稿推荐 taskTypeTags' })
+  @ApiBody({ type: SuggestDepartmentCapabilitiesDto })
+  suggestDepartmentCapabilities(@Body() dto: SuggestDepartmentCapabilitiesDto) {
+    return this.organizationService.suggestDepartmentCapabilities(dto);
   }
 
   @Post('nodes')
@@ -116,11 +125,10 @@ export class OrganizationController {
     @Body() dto: BindOrganizationNodeSkillsDto,
     @CurrentUser() user: UserInfo,
   ) {
-    const skillIds = await this.organizationNodeSkillsService.bindSkills(id, dto, {
+    return this.organizationNodeSkillsService.bindSkills(id, dto, {
       id: user.id,
       roles: user.roles,
     });
-    return { skillIds };
   }
 
   @Post('nodes/:id/skills/unbind')

@@ -12,10 +12,11 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rimraf dist",
-    "migrate:generate": "tsx dist/cli.js migration:generate",
-    "migrate:run": "tsx dist/cli.js migration:run",
-    "migrate:revert": "tsx dist/cli.js migration:revert",
-    "migrate:show": "tsx dist/cli.js migration:show"
+    "migrate:generate": "tsx src/cli.ts migration:generate",
+    "migrate:run": "tsx src/cli.ts migration:run",
+    "migrate:revert": "tsx src/cli.ts migration:revert",
+    "migrate:show": "tsx src/cli.ts migration:show",
+    "baseline:generate": "node scripts/generate-baseline-from-db.mjs"
   },
   "keywords": [
     "database",

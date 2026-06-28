@@ -193,6 +193,7 @@ describe('OrganizationModule full acceptance flow', () => {
     const dataSource: any = {
       transaction: jest.fn(async (cb: any) =>
         cb({
+          query: jest.fn(async () => undefined),
           createQueryBuilder: (_entity: any, _alias: string) => ({
             setLock: () => ({
               where: (_sql: string, params: any) => ({
@@ -240,7 +241,6 @@ describe('OrganizationModule full acceptance flow', () => {
     const agentsBootstrap: any = {
       ensureDefaultAgentsForCompany: jest.fn(async () => undefined),
     };
-    const initializer = new OrganizationInitializerService(nodesRepo, agentsBootstrap);
     const service = new OrganizationService(
       dataSource,
       nodesRepo,
@@ -251,6 +251,7 @@ describe('OrganizationModule full acceptance flow', () => {
       messagingService,
       treeService,
     );
+    const initializer = new OrganizationInitializerService(dataSource, agentsBootstrap, service);
 
     return { service, initializer, messagingService };
   };

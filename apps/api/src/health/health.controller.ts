@@ -25,13 +25,16 @@ export class HealthController {
     const result = await this.healthService.checkHealth();
 
     return {
-      status: result.database.connected ? 'ok' : 'error',
+      status: result.database.connected && result.tenantMembership.healthy ? 'ok' : 'error',
       timestamp: result.timestamp,
       service: 'api-service',
       version: process.env.APP_VERSION || 'unknown',
       checks: {
         database: {
           status: result.database.connected ? 'ok' : 'error',
+        },
+        tenantMembership: {
+          status: result.tenantMembership.healthy ? 'ok' : 'error',
         },
       },
     };

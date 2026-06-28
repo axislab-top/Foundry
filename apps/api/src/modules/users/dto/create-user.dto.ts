@@ -1,13 +1,4 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsEmail,
-  IsOptional,
-  IsArray,
-  IsBoolean,
-  MinLength,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsEmail, IsOptional, IsBoolean, MinLength, MaxLength } from 'class-validator';
 
 /**
  * 创建用户DTO
@@ -38,22 +29,6 @@ export class CreateUserDto {
   @IsNotEmpty()
   @MinLength(6)
   password: string;
-
-  /**
-   * 角色列表
-   */
-  @IsArray()
-  @IsOptional()
-  @IsString({ each: true })
-  roles?: string[];
-
-  /**
-   * 权限列表
-   */
-  @IsArray()
-  @IsOptional()
-  @IsString({ each: true })
-  permissions?: string[];
 
   /**
    * 是否启用

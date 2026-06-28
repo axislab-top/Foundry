@@ -35,6 +35,18 @@ import { OrganizationTreeService } from './organization-tree.service.js';
 import { QueryOrganizationAuditLogsDto } from '../dto/query-audit-logs.dto.js';
 import { CompanyMembership } from '../../companies/entities/company-membership.entity.js';
 import { CollaborationRealtimePublisher } from '../../collaboration/services/collaboration-realtime-publisher.service.js';
+import { AddDepartmentFromPlatformDto } from '../dto/add-department-from-platform.dto.js';
+import { AgentsBootstrapService } from '../../agents/services/agents-bootstrap.service.js';
+import { SQL_SET_LOCAL_CURRENT_TENANT } from '@service/tenant';
+import { resolveDepartmentCapability } from '@foundry/contracts/types/department-assignment';
+import {
+  assertResponsibilitySummaryPresent,
+  buildDepartmentNodeCapabilityMetadata,
+  mergeDepartmentMetadataPatch,
+  suggestCapabilitiesFromText,
+  type PlatformCapabilitiesRow,
+} from '../utils/department-capabilities-metadata.util.js';
+import type { SuggestDepartmentCapabilitiesDto } from '../dto/suggest-department-capabilities.dto.js';
 
 interface Actor {
   id: string;
@@ -58,10 +70,165 @@ export class OrganizationService {
     private readonly cacheService: CacheService,
     private readonly messagingService: MessagingService,
     private readonly treeService: OrganizationTreeService,
+    private readonly agentsBootstrap: AgentsBootstrapService,
     @Optional()
     @Inject(forwardRef(() => CollaborationRealtimePublisher))
     private readonly collabRealtime?: CollaborationRealtimePublisher,
   ) {}
+
+  async addDepartmentFromPlatform(dto: AddDepartmentFromPlatformDto, actor?: Actor): Promise<OrganizationNode> {
+    const companyId = this.getCompanyIdOrThrow();
+    await this.assertCanManageStructure(companyId, actor);
+
+    const platformSlug = String(dto.platformDepartmentSlug || '').trim();
+    if (!platformSlug) {
+      throw new BadRequestException({
+        code: ErrorCode.BAD_REQUEST,
+        message: 'platformDepartmentSlug 不能为空',
+      });
+    }
+
+    const created = await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+
+      const rows = (await manager.query(
+        `
+          SELECT
+            d.slug,
+            d.display_name AS "displayName",
+            d.director_marketplace_agent_id AS "directorId",
+            ma.slug AS "directorSlug",
+            d.responsibility_summary AS "responsibilitySummary",
+            d.task_type_tags AS "taskTypeTags",
+            d.excludes_task_type_tags AS "excludesTaskTypeTags"
+          FROM platform_departments d
+          LEFT JOIN marketplace_agents ma ON ma.id = d.director_marketplace_agent_id
+          WHERE d.slug = $1
+          LIMIT 1
+        `,
+        [platformSlug],
+      )) as Array<{
+        slug: string;
+        displayName: string;
+        directorId: string | null;
+        directorSlug: string | null;
+        responsibilitySummary: string | null;
+        taskTypeTags: string[] | null;
+        excludesTaskTypeTags: string[] | null;
+      }>;
+      const pd = rows?.[0];
+      if (!pd?.slug) {
+        throw new NotFoundException({
+          code: ErrorCode.RECORD_NOT_FOUND,
+          message: `平台部门不存在: ${platformSlug}`,
+        });
+      }
+
+      // Prevent duplicate department by platformDepartmentSlug.
+      const dup = await manager.query(
+        `
+          SELECT 1
+          FROM organization_nodes
+          WHERE company_id = $1
+            AND type = 'department'
+            AND (metadata->>'platformDepartmentSlug') = $2
+          LIMIT 1
+        `,
+        [companyId, platformSlug],
+      );
+      if (Array.isArray(dup) && dup.length > 0) {
+        throw new ConflictException({
+          code: ErrorCode.RESOURCE_CONFLICT,
+          message: `该平台部门已存在于组织中: ${platformSlug}`,
+        });
+      }
+
+      let parentId = dto.parentId ?? null;
+      if (parentId) {
+        const parent = await manager.getRepository(OrganizationNode).findOne({ where: { id: parentId, companyId } as any });
+        if (!parent) {
+          throw new NotFoundException({ code: ErrorCode.RECORD_NOT_FOUND, message: '父节点不存在' });
+        }
+      } else {
+        const ceo = await manager
+          .getRepository(OrganizationNode)
+          .findOne({ where: { companyId, type: 'ceo' } as any, order: { order: 'ASC' } as any });
+        parentId = ceo?.id ?? null;
+      }
+
+      const maxOrderRows = await manager.query(
+        `
+          SELECT COALESCE(MAX(order_no), 0)::int AS max
+          FROM organization_nodes
+          WHERE company_id = $1 AND type = 'department'
+        `,
+        [companyId],
+      );
+      const nextOrder = Number(maxOrderRows?.[0]?.max ?? 0) + 1;
+
+      const headSlug = typeof pd.directorSlug === 'string' ? pd.directorSlug.trim() : '';
+      const deferDepartmentAgents = headSlug.length === 0;
+
+      const capabilityMeta = buildDepartmentNodeCapabilityMetadata({
+        input: {
+          responsibilitySummary: dto.description?.trim() || pd.responsibilitySummary,
+          description: dto.description?.trim() || pd.responsibilitySummary,
+        },
+        platformRow: pd as PlatformCapabilitiesRow,
+        capabilitiesSource: 'platform_template',
+        platformDepartmentSlug: platformSlug,
+      });
+      const node = manager.getRepository(OrganizationNode).create({
+        companyId,
+        parentId,
+        type: 'department',
+        name: String(pd.displayName || platformSlug).trim(),
+        description: String(capabilityMeta.responsibilitySummary ?? pd.responsibilitySummary ?? pd.displayName).trim(),
+        agentId: null,
+        order: nextOrder,
+        metadata: {
+          ...capabilityMeta,
+          ...(deferDepartmentAgents ? { deferDepartmentAgents: true } : {}),
+        },
+      });
+      const saved = await manager.getRepository(OrganizationNode).save(node);
+      return { saved, headSlug };
+    });
+
+    // Ensure head binding if available (idempotent bootstrap).
+    if (created.headSlug) {
+      const deptNodes = await this.dataSource.transaction(async (manager) => {
+        await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+        return await manager.getRepository(OrganizationNode).find({
+          where: { companyId, type: 'department' } as any,
+          order: { order: 'ASC' } as any,
+        });
+      });
+      const placements = deptNodes.map((n) => {
+        const slug =
+          typeof (n.metadata as any)?.platformDepartmentSlug === 'string'
+            ? String((n.metadata as any).platformDepartmentSlug)
+            : null;
+        // For the newly created department, use resolved director slug.
+        const headAgentSlug = n.id === created.saved.id ? created.headSlug : null;
+        const defer = Boolean((n.metadata as any)?.deferDepartmentAgents);
+        return {
+          name: n.name,
+          headAgentSlug: defer ? null : headAgentSlug,
+          memberAgentSlugs: [] as string[],
+          ...(slug ? { platformDepartmentSlug: slug } : {}),
+        };
+      });
+      await this.agentsBootstrap.ensureDefaultAgentsForCompany(companyId, placements as any);
+    }
+
+    await this.clearTreeCache(companyId);
+    const nodeForEvent =
+      (await this.nodesRepo.findOne({ where: { id: created.saved.id, companyId } })) ?? created.saved;
+    await this.recordAudit(companyId, nodeForEvent.id, 'create', null, nodeForEvent, actor?.id);
+    await this.publishNodeCreated(nodeForEvent);
+    return nodeForEvent;
+  }
 
   async findNodeByIdForTenant(nodeId: string): Promise<OrganizationNode> {
     const companyId = this.getCompanyIdOrThrow();
@@ -75,27 +242,384 @@ export class OrganizationService {
     const cached = await this.cacheService.get<OrganizationTreeNodeDto[]>(cacheKey);
     if (cached) return cached;
 
-    const qb = this.nodesRepo
-      .createQueryBuilder('node')
-      .where('node.company_id = :companyId', { companyId })
-      .orderBy('node.order_no', 'ASC');
-
-    if (query.search) {
-      qb.andWhere('node.name ILIKE :search', { search: `%${query.search}%` });
-    }
-    if (query.type) {
-      qb.andWhere('node.type = :type', { type: query.type });
-    }
-
-    const nodes = await qb.getMany();
+    const nodes = await this.loadOrganizationNodesForTenant(companyId, query);
     const tree = this.treeService.buildTree(nodes);
-    await this.cacheService.set(cacheKey, tree, this.CACHE_TTL);
+    // 禁止缓存空树：RLS/连接池未设租户时可能误读为空，会污染后续快照。
+    if (tree.length > 0) {
+      await this.cacheService.set(cacheKey, tree, this.CACHE_TTL);
+    }
     return tree;
+  }
+
+  /** 向导转正后立即失效，避免读到初始化前的空树缓存。 */
+  async invalidateTreeCache(companyId: string): Promise<void> {
+    await this.clearTreeCache(companyId);
+  }
+
+  private async loadOrganizationNodesForTenant(
+    companyId: string,
+    query: QueryOrganizationTreeDto,
+  ): Promise<OrganizationNode[]> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      const qb = manager
+        .getRepository(OrganizationNode)
+        .createQueryBuilder('node')
+        .where('node.company_id = :companyId', { companyId })
+        .orderBy('node.order_no', 'ASC');
+
+      if (query.search) {
+        qb.andWhere('node.name ILIKE :search', { search: `%${query.search}%` });
+      }
+      if (query.type) {
+        qb.andWhere('node.type = :type', { type: query.type });
+      }
+
+      return qb.getMany();
+    });
+  }
+
+  /**
+   * 2026 群聊 RoomContext：基于 chat_room + 完整组织树生成非空的部门/公司级路由切片（含 CEO/Board）。
+   * 组织树无任何可路由节点时抛错，禁止静默空快照。
+   */
+  async getRoomOrgSnapshot(roomId: string): Promise<{
+    roomId: string;
+    organizationNodeId: string | null;
+    departments: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      platformDepartmentSlug?: string | null;
+      responsibilitySummary?: string;
+      taskTypeTags?: string[];
+      excludesTaskTypeTags?: string[];
+      capabilitiesSource?: string;
+    }>;
+    treeVersion: number;
+    updatedAt: string;
+  }> {
+    const companyId = this.getCompanyIdOrThrow();
+    const rid = String(roomId ?? '').trim();
+    if (!rid) {
+      throw new BadRequestException({
+        code: ErrorCode.BAD_REQUEST,
+        message: 'roomId 不能为空',
+      });
+    }
+
+    const row = await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      const rows = (await manager.query(
+        `
+          SELECT id, organization_node_id AS "organizationNodeId", metadata, name
+          FROM chat_rooms
+          WHERE id = $1 AND company_id = $2
+          LIMIT 1
+        `,
+        [rid, companyId],
+      )) as Array<{
+        id: string;
+        organizationNodeId: string | null;
+        metadata: Record<string, unknown> | null;
+        name: string;
+      }>;
+      return rows?.[0] ?? null;
+    });
+
+    if (!row) {
+      throw new NotFoundException({
+        code: ErrorCode.RECORD_NOT_FOUND,
+        message: `聊天室不存在: ${rid}`,
+      });
+    }
+
+    const treeVersion = await this.getTreeCacheVersion(companyId);
+    const tree = await this.getTree({});
+    let departments = this.deduplicateOrgUnitSlugs(
+      this.flattenRoutableOrgUnits(tree, row.organizationNodeId),
+    );
+    const enrichedDepartments = await this.enrichOrgSnapshotDepartmentsWithCapabilities(departments);
+
+    if (!enrichedDepartments.length) {
+      throw new BadRequestException({
+        code: ErrorCode.BAD_REQUEST,
+        message: 'organization_org_snapshot_requires_structure',
+      });
+    }
+
+    return {
+      roomId: row.id,
+      organizationNodeId: row.organizationNodeId,
+      departments: enrichedDepartments,
+      treeVersion,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  private flattenRoutableOrgUnits(
+    roots: OrganizationTreeNodeDto[],
+    roomOrganizationNodeId: string | null,
+  ): Array<{
+    id: string;
+    name: string;
+    slug: string;
+    platformDepartmentSlug: string | null;
+    metadata: Record<string, unknown> | null;
+    description: string | null;
+  }> {
+    const byId = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        slug: string;
+        platformDepartmentSlug: string | null;
+        metadata: Record<string, unknown> | null;
+        description: string | null;
+      }
+    >();
+    const walk = (n: OrganizationTreeNodeDto) => {
+      if (n.type === 'department' || n.type === 'board' || n.type === 'ceo') {
+        const slug = this.orgUnitSlug(n);
+        if (slug) {
+          const meta =
+            n.metadata && typeof n.metadata === 'object' && !Array.isArray(n.metadata)
+              ? (n.metadata as Record<string, unknown>)
+              : null;
+          const platformDepartmentSlug =
+            meta && typeof meta.platformDepartmentSlug === 'string'
+              ? String(meta.platformDepartmentSlug).trim() || null
+              : null;
+          byId.set(n.id, {
+            id: n.id,
+            name: String(n.name ?? '').trim() || n.id,
+            slug,
+            platformDepartmentSlug,
+            metadata: meta,
+            description: n.description ?? null,
+          });
+        }
+      }
+      for (const c of n.children ?? []) walk(c);
+    };
+    for (const r of roots) walk(r);
+
+    let list = [...byId.values()];
+    const rid = String(roomOrganizationNodeId ?? '').trim();
+    if (rid && byId.has(rid)) {
+      const first = byId.get(rid)!;
+      list = [first, ...list.filter((x) => x.id !== rid)];
+    }
+    return list;
+  }
+
+  private async loadPlatformCapabilitiesBySlugs(
+    slugs: string[],
+  ): Promise<Map<string, PlatformCapabilitiesRow>> {
+    const unique = [...new Set(slugs.map((s) => String(s).trim()).filter(Boolean))];
+    if (!unique.length) return new Map();
+    const rows = (await this.dataSource.query(
+      `
+        SELECT
+          slug,
+          responsibility_summary AS "responsibilitySummary",
+          task_type_tags AS "taskTypeTags",
+          excludes_task_type_tags AS "excludesTaskTypeTags"
+        FROM platform_departments
+        WHERE slug = ANY($1::text[])
+      `,
+      [unique],
+    )) as PlatformCapabilitiesRow[];
+    return new Map(rows.map((r) => [r.slug, r]));
+  }
+
+  private async enrichOrgSnapshotDepartmentsWithCapabilities(
+    items: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      platformDepartmentSlug: string | null;
+      metadata: Record<string, unknown> | null;
+      description: string | null;
+    }>,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      slug: string;
+      platformDepartmentSlug?: string | null;
+      responsibilitySummary?: string;
+      taskTypeTags?: string[];
+      excludesTaskTypeTags?: string[];
+      capabilitiesSource?: string;
+    }>
+  > {
+    const lookupSlugs = items.flatMap((d) => {
+      const out: string[] = [];
+      if (d.platformDepartmentSlug) out.push(d.platformDepartmentSlug);
+      out.push(d.slug);
+      return out;
+    });
+    const platformBySlug = await this.loadPlatformCapabilitiesBySlugs(lookupSlugs);
+
+    return items.map((d) => {
+      const platformRow =
+        (d.platformDepartmentSlug ? platformBySlug.get(d.platformDepartmentSlug) : undefined) ??
+        platformBySlug.get(d.slug) ??
+        null;
+      const cap = resolveDepartmentCapability({
+        department: {
+          id: d.id,
+          name: d.name,
+          slug: d.slug,
+          platformDepartmentSlug: d.platformDepartmentSlug,
+          metadata: d.metadata,
+          description: d.description,
+        },
+        platformRow,
+      });
+      return {
+        id: d.id,
+        name: d.name,
+        slug: d.slug,
+        platformDepartmentSlug: cap.platformDepartmentSlug ?? d.platformDepartmentSlug,
+        ...(cap.responsibilitySummary ? { responsibilitySummary: cap.responsibilitySummary } : {}),
+        ...(cap.taskTypeTags.length ? { taskTypeTags: cap.taskTypeTags } : {}),
+        ...(cap.excludesTaskTypeTags?.length ? { excludesTaskTypeTags: cap.excludesTaskTypeTags } : {}),
+        ...(cap.capabilitiesSource ? { capabilitiesSource: cap.capabilitiesSource } : {}),
+      };
+    });
+  }
+
+  private deduplicateOrgUnitSlugs(
+    items: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      platformDepartmentSlug: string | null;
+      metadata: Record<string, unknown> | null;
+      description: string | null;
+    }>,
+  ): Array<{
+    id: string;
+    name: string;
+    slug: string;
+    platformDepartmentSlug: string | null;
+    metadata: Record<string, unknown> | null;
+    description: string | null;
+  }> {
+    const used = new Set<string>();
+    return items.map((item) => {
+      let s = item.slug;
+      let n = 0;
+      while (used.has(s)) {
+        n += 1;
+        s = `${item.slug}__${n}`;
+      }
+      used.add(s);
+      return { ...item, slug: s };
+    });
+  }
+
+  private orgUnitSlug(n: OrganizationTreeNodeDto): string {
+    const meta =
+      n.metadata && typeof n.metadata === 'object' && n.metadata !== null
+        ? (n.metadata as Record<string, unknown>)
+        : {};
+    const platformSlug =
+      typeof meta['platformDepartmentSlug'] === 'string' ? String(meta['platformDepartmentSlug']).trim() : '';
+    const deptSlug =
+      typeof meta['departmentSlug'] === 'string' ? String(meta['departmentSlug']).trim() : '';
+    let base = platformSlug || deptSlug || String(n.name ?? '').trim();
+    if (!base && n.type === 'ceo') base = 'ceo';
+    if (!base && n.type === 'board') base = 'board';
+    const slugified = this.slugifyOrgSegment(base);
+    if (!slugified) return '';
+    if (n.type === 'ceo') return `ceo-${slugified}`;
+    if (n.type === 'board') return `board-${slugified}`;
+    return slugified;
+  }
+
+  private slugifyOrgSegment(source: string): string {
+    return source
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_]+/g, '-')
+      .replace(/[^a-z0-9-\u4e00-\u9fff]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 64);
+  }
+
+  suggestDepartmentCapabilities(dto: SuggestDepartmentCapabilitiesDto): {
+    suggestedTaskTypeTags: string[];
+    suggestedResponsibilitySummary: string;
+  } {
+    const draft = String(dto.responsibilitySummary ?? dto.description ?? '').trim();
+    return suggestCapabilitiesFromText(dto.name, draft);
   }
 
   async createNode(dto: CreateOrganizationNodeDto, actor?: Actor): Promise<OrganizationNode> {
     const companyId = this.getCompanyIdOrThrow();
     await this.assertCanManageStructure(companyId, actor);
+
+    let mergedMetadata = dto.metadata ?? null;
+    let description = dto.description ?? null;
+
+    if (dto.type === 'department') {
+      const platformSlug =
+        typeof dto.metadata?.platformDepartmentSlug === 'string'
+          ? String(dto.metadata.platformDepartmentSlug).trim()
+          : '';
+      if (platformSlug) {
+        const rows = (await this.dataSource.query(
+          `
+            SELECT
+              slug,
+              responsibility_summary AS "responsibilitySummary",
+              task_type_tags AS "taskTypeTags",
+              excludes_task_type_tags AS "excludesTaskTypeTags"
+            FROM platform_departments
+            WHERE slug = $1
+            LIMIT 1
+          `,
+          [platformSlug],
+        )) as PlatformCapabilitiesRow[];
+        if (!rows?.[0]) {
+          throw new BadRequestException({
+            code: ErrorCode.BAD_REQUEST,
+            message: `无效的平台部门 slug: ${platformSlug}`,
+          });
+        }
+        const capabilityMeta = buildDepartmentNodeCapabilityMetadata({
+          input: {
+            responsibilitySummary: dto.responsibilitySummary ?? dto.description,
+            description: dto.description,
+            taskTypeTags: dto.taskTypeTags,
+            excludesTaskTypeTags: dto.excludesTaskTypeTags,
+          },
+          platformRow: rows[0],
+          capabilitiesSource: 'platform_template',
+          platformDepartmentSlug: platformSlug,
+        });
+        mergedMetadata = { ...(dto.metadata ?? {}), ...capabilityMeta };
+        description = String(capabilityMeta.responsibilitySummary ?? description ?? '').trim() || null;
+      } else {
+        const capabilityMeta = buildDepartmentNodeCapabilityMetadata({
+          input: {
+            responsibilitySummary: dto.responsibilitySummary ?? dto.description,
+            description: dto.description,
+            taskTypeTags: dto.taskTypeTags,
+            excludesTaskTypeTags: dto.excludesTaskTypeTags,
+          },
+          capabilitiesSource: 'user_defined',
+          platformDepartmentSlug: null,
+        });
+        mergedMetadata = { ...(dto.metadata ?? {}), ...capabilityMeta };
+        description = String(capabilityMeta.responsibilitySummary ?? '').trim() || null;
+      }
+    }
 
     if (dto.parentId) {
       await this.assertNodeExists(dto.parentId, companyId, '父节点不存在');
@@ -106,10 +630,10 @@ export class OrganizationService {
       parentId: dto.parentId ?? null,
       type: dto.type,
       name: dto.name,
-      description: dto.description ?? null,
+      description,
       agentId: dto.agentId ?? null,
       order: dto.order ?? 0,
-      metadata: dto.metadata ?? null,
+      metadata: mergedMetadata,
     });
     const saved = await this.nodesRepo.save(node);
     await this.clearTreeCache(companyId);
@@ -120,8 +644,79 @@ export class OrganizationService {
 
   async updateNode(id: string, dto: UpdateNodeDto, actor?: Actor): Promise<OrganizationNode> {
     const companyId = this.getCompanyIdOrThrow();
-    await this.assertCanManageStructure(companyId, actor);
     const node = await this.assertNodeExists(id, companyId, '节点不存在');
+
+    const actorId = actor?.id ? String(actor.id).trim() : '';
+    if (!actorId) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: '无权限执行此操作',
+      });
+    }
+    const isPrivileged =
+      actor?.roles?.includes('admin') ||
+      (await (async () => {
+        const membership = await this.membershipsRepo.findOne({
+          where: { companyId, userId: actorId, isActive: true },
+        });
+        return Boolean(membership && ['owner', 'admin'].includes(membership.role));
+      })());
+
+    // Department head can opt-in/out department-only sharing by toggling whitelisted metadata keys.
+    // This is intentionally *narrow*: department head cannot modify structure/name/agent binding/order/etc.
+    const allowDeptHeadToggleOnly =
+      node.type === 'department' &&
+      typeof node.agentId === 'string' &&
+      node.agentId.trim() &&
+      node.agentId.trim() === actorId;
+
+    if (!isPrivileged && !allowDeptHeadToggleOnly) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: '仅公司 Owner/Admin 或部门负责人可执行此操作',
+      });
+    }
+
+    if (!isPrivileged && allowDeptHeadToggleOnly) {
+      const structuralTouched =
+        dto.parentId !== undefined ||
+        dto.type !== undefined ||
+        dto.name !== undefined ||
+        dto.description !== undefined ||
+        dto.agentId !== undefined ||
+        dto.order !== undefined;
+      if (structuralTouched) {
+        throw new ForbiddenException({
+          code: ErrorCode.FORBIDDEN,
+          message: '部门负责人仅允许修改部门共享开关，不允许修改组织结构与部门属性',
+        });
+      }
+      const md = dto.metadata;
+      if (!md || typeof md !== 'object' || Array.isArray(md)) {
+        throw new BadRequestException({
+          code: ErrorCode.BAD_REQUEST,
+          message: 'metadata 必须为对象',
+        });
+      }
+      const allowKeys = new Set(['allowDeptSharedSkills', 'allowDeptSharedMemory']);
+      const keys = Object.keys(md);
+      const illegal = keys.filter((k) => !allowKeys.has(k));
+      if (illegal.length > 0) {
+        throw new ForbiddenException({
+          code: ErrorCode.FORBIDDEN,
+          message: `不允许修改 metadata 字段：${illegal.join(', ')}`,
+        });
+      }
+      const base = (node.metadata ?? {}) as Record<string, any>;
+      const next: Record<string, any> = { ...base };
+      if (keys.includes('allowDeptSharedSkills')) {
+        next.allowDeptSharedSkills = Boolean((md as any).allowDeptSharedSkills);
+      }
+      if (keys.includes('allowDeptSharedMemory')) {
+        next.allowDeptSharedMemory = Boolean((md as any).allowDeptSharedMemory);
+      }
+      dto = { ...dto, metadata: next };
+    }
 
     if (dto.parentId && dto.parentId !== node.parentId) {
       await this.assertNodeExists(dto.parentId, companyId, '父节点不存在');
@@ -129,14 +724,52 @@ export class OrganizationService {
     }
 
     const before = this.toSerializableNode(node);
+    let nextMetadata = dto.metadata ?? node.metadata;
+    let nextDescription = dto.description ?? node.description;
+
+    if (node.type === 'department' && isPrivileged) {
+      const capabilityTouched =
+        dto.responsibilitySummary !== undefined ||
+        dto.description !== undefined ||
+        dto.taskTypeTags !== undefined ||
+        dto.excludesTaskTypeTags !== undefined;
+      if (capabilityTouched) {
+        const mergedMeta = mergeDepartmentMetadataPatch(
+          (node.metadata ?? {}) as Record<string, unknown>,
+          {
+            responsibilitySummary: dto.responsibilitySummary ?? dto.description ?? node.description,
+            description: dto.description ?? node.description,
+            taskTypeTags: dto.taskTypeTags,
+            excludesTaskTypeTags: dto.excludesTaskTypeTags,
+          },
+        );
+        const summary = assertResponsibilitySummaryPresent({
+          responsibilitySummary: String(mergedMeta.responsibilitySummary ?? ''),
+          description: nextDescription ?? undefined,
+        });
+        mergedMeta.responsibilitySummary = summary;
+        nextMetadata = mergedMeta;
+        nextDescription = summary;
+      } else if (dto.description !== undefined) {
+        const summary = assertResponsibilitySummaryPresent({
+          responsibilitySummary: dto.description,
+          description: dto.description,
+        });
+        nextDescription = summary;
+        nextMetadata = mergeDepartmentMetadataPatch((node.metadata ?? {}) as Record<string, unknown>, {
+          responsibilitySummary: summary,
+        });
+      }
+    }
+
     Object.assign(node, {
       parentId: dto.parentId ?? node.parentId,
       type: dto.type ?? node.type,
       name: dto.name ?? node.name,
-      description: dto.description ?? node.description,
+      description: nextDescription,
       agentId: dto.agentId ?? node.agentId,
       order: dto.order ?? node.order,
-      metadata: dto.metadata ?? node.metadata,
+      metadata: nextMetadata,
     });
 
     const updated = await this.nodesRepo.save(node);
@@ -525,6 +1158,10 @@ export class OrganizationService {
         type: node.type,
         name: node.name,
         agentId: node.agentId || undefined,
+        platformDepartmentSlug:
+          typeof node.metadata?.platformDepartmentSlug === 'string'
+            ? node.metadata.platformDepartmentSlug
+            : undefined,
       },
     };
     await this.messagingService.publish(event, { routingKey: event.eventType, persistent: true });

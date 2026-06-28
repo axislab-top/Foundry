@@ -17,7 +17,7 @@ describe('Auth E2E', () => {
       imports: [AppModule],
     }).compile();
 
-    app = await createIntegrationTestApp(moduleFixture);
+    app = await createIntegrationTestApp(moduleFixture, { globalPrefix: 'api' });
     httpClient = createHttpClient(app);
   });
 
@@ -25,7 +25,7 @@ describe('Auth E2E', () => {
     await app.close();
   });
 
-  describe('POST /auth/login', () => {
+  describe('POST /api/auth/login', () => {
     it('should login with valid credentials', async () => {
       // 首先注册用户
       const registerDto = {
@@ -34,7 +34,7 @@ describe('Auth E2E', () => {
         password: 'password123',
       };
 
-      await httpClient.post('/auth/register').send(registerDto).expect(201);
+      await httpClient.post('/api/auth/register').send(registerDto).expect(201);
 
       // 然后登录
       const loginDto = {
@@ -43,7 +43,7 @@ describe('Auth E2E', () => {
       };
 
       const response = await httpClient
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send(loginDto)
         .expect(200);
 
@@ -58,11 +58,11 @@ describe('Auth E2E', () => {
         password: 'wrongpassword',
       };
 
-      await httpClient.post('/auth/login').send(loginDto).expect(401);
+      await httpClient.post('/api/auth/login').send(loginDto).expect(401);
     });
   });
 
-  describe('POST /auth/refresh', () => {
+  describe('POST /api/auth/refresh', () => {
     it('should refresh access token', async () => {
       // 先登录获取refresh token
       const registerDto = {
@@ -71,10 +71,10 @@ describe('Auth E2E', () => {
         password: 'password123',
       };
 
-      await httpClient.post('/auth/register').send(registerDto).expect(201);
+      await httpClient.post('/api/auth/register').send(registerDto).expect(201);
 
       const loginResponse = await httpClient
-        .post('/auth/login')
+        .post('/api/auth/login')
         .send({
           email: registerDto.email,
           password: registerDto.password,
@@ -85,7 +85,7 @@ describe('Auth E2E', () => {
 
       // 刷新token
       const response = await httpClient
-        .post('/auth/refresh')
+        .post('/api/auth/refresh')
         .send({ refreshToken })
         .expect(200);
 

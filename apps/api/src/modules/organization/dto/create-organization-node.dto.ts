@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 import type { OrganizationNodeType } from '../entities/organization-node.entity.js';
 
 export class CreateOrganizationNodeDto {
@@ -37,4 +37,22 @@ export class CreateOrganizationNodeDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: '部门职能摘要（type=department 时与 description 二选一，≥8 字）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  responsibilitySummary?: string;
+
+  @ApiPropertyOptional({ description: '部门可承接的任务类型标签（可选）' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  taskTypeTags?: string[];
+
+  @ApiPropertyOptional({ description: '部门明确排除的任务类型标签（可选）' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  excludesTaskTypeTags?: string[];
 }

@@ -9,8 +9,6 @@ export interface IUser {
   id: string;
   username: string;
   email: string;
-  roles: string[];
-  permissions: string[];
   enabled: boolean;
   lastLoginAt: Date | null;
   createdAt: Date;
@@ -26,8 +24,6 @@ export interface IUserInfo {
   username: string;
   email: string;
   companyId?: string;
-  roles: string[];
-  permissions: string[];
 }
 
 /**
@@ -50,7 +46,6 @@ export interface IQueryOptions {
   sortBy?: string;
   sortOrder?: 'ASC' | 'DESC';
   search?: string;
-  role?: string;
   enabled?: boolean;
 }
 

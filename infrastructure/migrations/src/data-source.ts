@@ -74,9 +74,38 @@ export async function createDataSourceOptions(): Promise<DataSourceOptions> {
   const dbConfig = await getDatabaseConfig();
   const projectRoot = getProjectRoot();
 
-  // 迁移文件路径 - 支持从环境变量或默认路径
-  const migrationsDir = process.env.MIGRATIONS_DIR || 
-    path.resolve(projectRoot, 'infrastructure/postgres/migrations');
+  // 迁移文件路径（支持多目录）：
+  // - MIGRATIONS_DIRS: 逗号分隔目录列表（最高优先级）
+  // - MIGRATIONS_DIR: 单目录（兼容旧配置）
+  // - 默认: infrastructure/postgres/migrations
+  const migrationsDirListRaw = String(process.env.MIGRATIONS_DIRS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const migrationsDirList = migrationsDirListRaw.map((p) => path.resolve(projectRoot, p));
+  const singleMigrationsDir = process.env.MIGRATIONS_DIR
+    ? path.resolve(projectRoot, process.env.MIGRATIONS_DIR)
+    : path.resolve(projectRoot, 'infrastructure/postgres/migrations-post-baseline');
+  const defaultMigrationDirs = [
+    // Baseline migrations (initial schema snapshots)
+    path.resolve(projectRoot, 'infrastructure/postgres/migrations-baseline'),
+    // Incremental migrations after baseline rollout (must NOT include historical migrations)
+    path.resolve(projectRoot, 'infrastructure/postgres/migrations-post-baseline'),
+  ];
+  // If MIGRATIONS_DIRS is set (often baseline-only), we still need to include
+  // post-baseline incremental migrations by default.
+  const postBaselineDir = path.resolve(projectRoot, 'infrastructure/postgres/migrations-post-baseline');
+  const resolvedMigrationDirs =
+    migrationsDirList.length > 0
+      ? (() => {
+          const set = new Set(migrationsDirList.map((p) => path.normalize(p)));
+          set.add(path.normalize(postBaselineDir));
+          return [...set];
+        })()
+      : process.env.MIGRATIONS_DIR
+        ? [singleMigrationsDir]
+        : defaultMigrationDirs;
+  const migrationPatterns = resolvedMigrationDirs.map((dir) => path.join(dir, '*.{ts,js}'));
 
   // 实体路径 - 从API服务加载实体（用于生成迁移）
   // 注意：生成迁移时需要加载实体，运行时不需要
@@ -96,9 +125,7 @@ export async function createDataSourceOptions(): Promise<DataSourceOptions> {
     // 注意：如果迁移文件是 .ts，需要使用 tsx 或 ts-node 来运行
     // 例如：tsx dist/cli.js migration:run
     // 或者先编译迁移文件为 .js
-    migrations: [
-      path.join(migrationsDir, '*.{ts,js}'),
-    ],
+    migrations: migrationPatterns,
     migrationsTableName: 'migrations',
     migrationsRun: false, // 不自动运行迁移
     

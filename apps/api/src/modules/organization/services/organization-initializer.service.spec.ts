@@ -1,4 +1,3 @@
-import { resolveDefaultDepartments } from '@contracts/types';
 import { OrganizationInitializerService } from './organization-initializer.service.js';
 
 describe('OrganizationInitializerService', () => {
@@ -7,6 +6,7 @@ describe('OrganizationInitializerService', () => {
     let idCounter = 0;
     const nodesRepo: any = {
       count: jest.fn(async () => 0),
+      find: jest.fn(async () => []),
       create: jest.fn((e: Record<string, unknown>) => ({ ...e })),
       save: jest.fn(async (e: unknown) => {
         if (Array.isArray(e)) {
@@ -28,8 +28,20 @@ describe('OrganizationInitializerService', () => {
     const agentsBootstrap: any = {
       ensureDefaultAgentsForCompany: jest.fn().mockResolvedValue(undefined),
     };
-    const svc = new OrganizationInitializerService(nodesRepo, agentsBootstrap);
-    return { svc, nodesRepo, agentsBootstrap, savedDepartmentNames };
+    const manager: any = {
+      query: jest.fn(async () => [{ ceo_bound_count: 1, active_agent_count: 1 }]),
+      getRepository: jest.fn(() => nodesRepo),
+    };
+    const dataSource: any = {
+      query: jest.fn(async () => []),
+      transaction: jest.fn(async (cb: any) => cb(manager)),
+    };
+
+    const organizationService: any = {
+      invalidateTreeCache: jest.fn().mockResolvedValue(undefined),
+    };
+    const svc = new OrganizationInitializerService(dataSource, agentsBootstrap, organizationService);
+    return { svc, nodesRepo, agentsBootstrap, savedDepartmentNames, dataSource, organizationService };
   }
 
   it('creates departments from wizard placements when provided', async () => {
@@ -46,27 +58,85 @@ describe('OrganizationInitializerService', () => {
     ]);
   });
 
-  it('uses resolveDefaultDepartments and passes undefined placements to bootstrap when omitted', async () => {
-    const { svc, agentsBootstrap, savedDepartmentNames } = buildService();
+  it('creates board and CEO only when no admin defaults and no wizard placements', async () => {
+    const { svc, agentsBootstrap, savedDepartmentNames, nodesRepo } = buildService();
     await svc.initializeForCompany('c-1', '科技', 'software');
-    const expected = resolveDefaultDepartments('software', '科技');
-    expect(savedDepartmentNames).toEqual(expected);
+    expect(savedDepartmentNames).toEqual([]);
+    expect(nodesRepo.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'board' }));
+    expect(nodesRepo.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'ceo' }));
     expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', undefined);
   });
 
-  it('treats empty placements array as default departments', async () => {
-    const { svc, agentsBootstrap } = buildService();
+  it('uses platform DB defaults when marked in platform_departments', async () => {
+    const { svc, agentsBootstrap, savedDepartmentNames, dataSource } = buildService();
+    dataSource.query.mockResolvedValueOnce([
+      {
+        platformDepartmentSlug: 'engineering',
+        name: '工程部',
+        headAgentSlug: '',
+      },
+    ]);
+    await svc.initializeForCompany('c-1', '科技', 'software');
+    expect(savedDepartmentNames).toEqual(['工程部']);
+    expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', [
+      expect.objectContaining({
+        name: '工程部',
+        platformDepartmentSlug: 'engineering',
+      }),
+    ]);
+  });
+
+  it('uses admin defaults when placements omitted and DB has default rows', async () => {
+    const { svc, agentsBootstrap, dataSource } = buildService();
+    dataSource.query.mockResolvedValueOnce([
+      {
+        platformDepartmentSlug: 'sales',
+        name: '销售部',
+        headAgentSlug: 'sales-head',
+      },
+    ]);
+    await svc.initializeForCompany('c-1', '科技', 'software');
+    expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', [
+      expect.objectContaining({
+        name: '销售部',
+        headAgentSlug: 'sales-head',
+        platformDepartmentSlug: 'sales',
+      }),
+    ]);
+  });
+
+  it('treats empty placements array as admin-configured defaults', async () => {
+    const { svc, agentsBootstrap, dataSource } = buildService();
+    dataSource.query.mockResolvedValueOnce([
+      {
+        platformDepartmentSlug: 'product',
+        name: '产品部',
+        headAgentSlug: '',
+      },
+    ]);
     await svc.initializeForCompany('c-1', '科技', 'software', []);
-    expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', undefined);
+    expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith(
+      'c-1',
+      expect.arrayContaining([
+        expect.objectContaining({ name: '产品部', platformDepartmentSlug: 'product' }),
+      ]),
+    );
   });
 
-  it('falls back to default departments when all placement names are blank after trim', async () => {
-    const { svc, agentsBootstrap, savedDepartmentNames } = buildService();
+  it('falls back to admin defaults when all placement names are blank after trim', async () => {
+    const { svc, agentsBootstrap, savedDepartmentNames, dataSource } = buildService();
+    dataSource.query.mockResolvedValueOnce([
+      {
+        platformDepartmentSlug: 'hr',
+        name: '人力资源部',
+        headAgentSlug: '',
+      },
+    ]);
     await svc.initializeForCompany('c-1', '科技', 'software', [
       { name: '   ', headAgentSlug: null, memberAgentSlugs: [] },
     ] as any);
-    expect(savedDepartmentNames).toEqual(resolveDefaultDepartments('software', '科技'));
-    expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', undefined);
+    expect(savedDepartmentNames).toEqual(['人力资源部']);
+    expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', expect.any(Array));
   });
 
   it('dedupes member slugs in placements passed to bootstrap', async () => {
@@ -77,20 +147,5 @@ describe('OrganizationInitializerService', () => {
     expect(agentsBootstrap.ensureDefaultAgentsForCompany).toHaveBeenCalledWith('c-1', [
       { name: '销售', headAgentSlug: null, memberAgentSlugs: ['a', 'b'] },
     ]);
-  });
-
-  it('skips init when company already has nodes', async () => {
-    const nodesRepo: any = {
-      count: jest.fn(async () => 3),
-      create: jest.fn(),
-      save: jest.fn(),
-    };
-    const agentsBootstrap: any = {
-      ensureDefaultAgentsForCompany: jest.fn(),
-    };
-    const svc = new OrganizationInitializerService(nodesRepo, agentsBootstrap);
-    await svc.initializeForCompany('c-1', '科技', 'software', [{ name: 'X', memberAgentSlugs: [] } as any]);
-    expect(nodesRepo.save).not.toHaveBeenCalled();
-    expect(agentsBootstrap.ensureDefaultAgentsForCompany).not.toHaveBeenCalled();
   });
 });

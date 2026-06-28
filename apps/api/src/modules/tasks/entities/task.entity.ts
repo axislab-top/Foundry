@@ -9,9 +9,11 @@ import {
 
 export type TaskStatus =
   | 'pending'
+  | 'queued'
   | 'in_progress'
   | 'review'
   | 'awaiting_approval'
+  | 'awaiting_supervision'
   | 'completed'
   | 'blocked'
   | 'cancelled'
@@ -25,6 +27,7 @@ export type TaskAssigneeType = 'unassigned' | 'agent' | 'organization_node';
 @Index(['companyId', 'parentId'])
 @Index(['companyId', 'status'])
 @Index(['companyId', 'assigneeType', 'assigneeId'])
+@Index(['companyId', 'projectId'])
 export class Task {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -34,6 +37,9 @@ export class Task {
 
   @Column({ name: 'parent_id', type: 'uuid', nullable: true })
   parentId: string | null;
+
+  @Column({ name: 'project_id', type: 'uuid', nullable: true })
+  projectId: string | null;
 
   @Column({ type: 'varchar', length: 512 })
   title: string;
@@ -73,6 +79,10 @@ export class Task {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
+
+  /** Advanced approval (Phase 5): multi-level flow id when task is blocked by an approval flow. */
+  @Column({ name: 'approval_flow_id', type: 'uuid', nullable: true })
+  approvalFlowId: string | null;
 
   @Column({ name: 'created_by_user_id', type: 'uuid', nullable: true })
   createdByUserId: string | null;

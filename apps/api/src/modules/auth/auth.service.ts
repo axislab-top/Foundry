@@ -8,6 +8,8 @@ import type {
   LoginSuccessEvent,
   LoginFailedEvent,
 } from '@contracts/events';
+import { AdminUsersService } from '../admin-users/admin-users.service.js';
+import { RegisterAdminDto } from '../admin-users/dto/register-admin.dto.js';
 
 /**
  * 认证服务
@@ -19,6 +21,7 @@ export class AuthService {
 
   constructor(
     private readonly usersService: UsersService,
+    private readonly adminUsersService: AdminUsersService,
     private readonly messagingService: MessagingService,
     private readonly tenantContext: TenantContextService,
   ) {}
@@ -109,6 +112,35 @@ export class AuthService {
       }
 
       throw error;
+    }
+  }
+
+  async validateAdminCredentials(email: string, password: string) {
+    return this.adminUsersService.validateCredentials(email, password);
+  }
+
+  async registerAdmin(registerDto: RegisterAdminDto) {
+    return this.adminUsersService.register(registerDto);
+  }
+
+  async findAdminById(id: string) {
+    return this.adminUsersService.findById(id);
+  }
+
+  /** 供 Gateway refresh / JWT 校验回源（内网调用，与 admin/users/:id 同级） */
+  async findUserByIdForGateway(id: string): Promise<IUserInfo | null> {
+    try {
+      const user = await this.usersService.findOne(id);
+      if (!user?.enabled) {
+        return null;
+      }
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+      };
+    } catch {
+      return null;
     }
   }
 

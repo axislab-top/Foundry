@@ -30,6 +30,10 @@ export class CreateTaskDto {
   parentId?: string;
 
   @IsOptional()
+  @IsUUID()
+  projectId?: string;
+
+  @IsOptional()
   @IsEnum(priorities)
   priority?: TaskPriority;
 

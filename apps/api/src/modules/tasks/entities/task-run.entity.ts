@@ -10,7 +10,9 @@ export type TaskRunTriggerSource =
   | 'temporal'
   | 'schedule'
   | 'manual'
-  | 'nest_timer';
+  | 'nest_timer'
+  | 'task_completed'
+  | 'budget_warning';
 
 export type TaskRunStatus = 'running' | 'succeeded' | 'failed';
 

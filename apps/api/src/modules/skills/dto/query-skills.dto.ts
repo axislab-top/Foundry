@@ -8,11 +8,6 @@ export class QuerySkillsDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ description: '按 category 精确匹配' })
-  @IsOptional()
-  @IsString()
-  category?: string;
-
   @ApiPropertyOptional({ description: '仅列出当前租户私有 Skill' })
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')

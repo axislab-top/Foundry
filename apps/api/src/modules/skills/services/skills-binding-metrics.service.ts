@@ -1,22 +1,36 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import type { Counter } from '@service/monitoring';
+import { MonitoringService } from '../../../common/monitoring/monitoring.service.js';
 
-/**
- * Tracks skill-binding miss metrics (counter).
- * Optional dependency — when absent the caller simply skips recording.
- */
 @Injectable()
-export class SkillsBindingMetricsService {
-  private bindMissingCount = 0;
+export class SkillsBindingMetricsService implements OnModuleInit {
+  private readonly logger = new Logger(SkillsBindingMetricsService.name);
+  private bindMissingCounter: Counter | null = null;
 
-  /** Increment the "bind-missing" counter for the given source. */
-  incBindMissing(source: string, count = 1): void {
-    this.bindMissingCount += count;
-    // TODO: export to Prometheus / OpenTelemetry when monitoring is wired up
-    void source; // suppress unused-param lint
+  constructor(private readonly monitoring: MonitoringService) {}
+
+  onModuleInit(): void {
+    const mm = this.monitoring.getMetricsManager();
+    if (!mm) return;
+    try {
+      this.bindMissingCounter =
+        mm.getCounter('skills_bind_missing_total') ??
+        mm.registerCounter({
+          name: 'skills_bind_missing_total',
+          help: 'Missing global skills during bind/validation flows',
+          labelNames: ['source'],
+        });
+    } catch (e) {
+      this.logger.warn(`skills metrics init skipped: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
-  /** Snapshot for diagnostics / health endpoint. */
-  getSnapshot() {
-    return { bindMissingCount: this.bindMissingCount };
+  incBindMissing(source: string, count = 1): void {
+    if (!this.bindMissingCounter) return;
+    try {
+      this.bindMissingCounter.inc({ source }, Math.max(1, count));
+    } catch {
+      // noop
+    }
   }
 }

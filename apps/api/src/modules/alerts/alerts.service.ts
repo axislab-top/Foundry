@@ -17,6 +17,7 @@ import { CompanyMembership } from '../companies/entities/company-membership.enti
 import { ErrorCode } from '../../common/exceptions/error-codes.js';
 import type { AlertsActorDto } from './dto/resolve-alert.dto.js';
 import { CollaborationRealtimePublisher } from '../collaboration/services/collaboration-realtime-publisher.service.js';
+import { ConfigService } from '../../common/config/config.service.js';
 
 const BILLING_WARNING_DEDUP_TTL_SEC = 3600; // 1h
 const BILLING_EXCEEDED_DEDUP_TTL_SEC = 7 * 24 * 3600; // 7d
@@ -41,6 +42,7 @@ export class AlertsService {
     private readonly tenantRls: TenantRlsService,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly realtime: CollaborationRealtimePublisher,
+    private readonly config: ConfigService,
   ) {}
 
   private actorIsAdmin(actor: { roles?: string[] }): boolean {
@@ -51,12 +53,41 @@ export class AlertsService {
     return Boolean(actor?.roles?.includes('superadmin'));
   }
 
-  async listAlerts(params: any): Promise<{ items: AdminAlert[]; total: number; page: number; pageSize: number; totalPages: number }> {
-    const { actor, page = 1, pageSize = 20, severity, status, type, companyId, agentId, search } = params;
-    if (!actor || !this.actorIsAdmin(actor)) {
+  private async assertCanAccessCompanyAlerts(
+    actor: { id: string; roles?: string[] },
+    companyId?: string,
+  ): Promise<void> {
+    if (this.actorIsAdmin(actor)) return;
+    if (!companyId) {
       throw new ForbiddenException({
         code: ErrorCode.FORBIDDEN,
         message: 'Insufficient permissions',
+      });
+    }
+    const membership = await this.membershipsRepo.findOne({
+      where: { companyId, userId: actor.id, isActive: true } as any,
+    });
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'Insufficient permissions',
+      });
+    }
+  }
+
+  async listAlerts(params: any): Promise<{ items: AdminAlert[]; total: number; page: number; pageSize: number; totalPages: number }> {
+    const { actor, page = 1, pageSize = 20, severity, status, type, companyId, agentId, search } = params;
+    if (!actor?.id) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'Insufficient permissions',
+      });
+    }
+    await this.assertCanAccessCompanyAlerts(actor, companyId);
+    if (!this.actorIsAdmin(actor) && !companyId) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'companyId is required',
       });
     }
 
@@ -109,7 +140,7 @@ export class AlertsService {
 
   async resolveAlert(params: { actor: AlertsActorDto; id: string; remark?: string }): Promise<{ id: string }> {
     const { actor, id, remark } = params;
-    if (!actor || !this.actorIsAdmin(actor)) {
+    if (!actor?.id) {
       throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'Insufficient permissions' });
     }
 
@@ -118,25 +149,16 @@ export class AlertsService {
       throw new NotFoundException({ code: ErrorCode.RECORD_NOT_FOUND, message: 'Alert not found' });
     }
 
-    // Access check: superadmin can resolve all; otherwise actor must be member of alert.companyId.
+    const companyId = alert.companyId;
+    if (!companyId) {
+      throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'No company scope for this alert' });
+    }
+
     if (!this.actorIsSuperAdmin(actor)) {
-      const companyId = alert.companyId;
-      if (!companyId) {
-        throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'No company scope for this alert' });
-      }
-      const membership = await this.membershipsRepo.findOne({
-        where: { companyId, userId: actor.id, isActive: true } as any,
-      });
-      if (!membership) {
-        throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'No permission to resolve this alert' });
-      }
+      await this.assertCanAccessCompanyAlerts(actor, companyId);
     }
 
     // For RLS: set current tenant to alert.companyId before update.
-    const companyId = alert.companyId;
-    if (!companyId) {
-      throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'Global alerts cannot be resolved (MVP)' });
-    }
     await this.tenantRls.withTenantTransaction(this.dataSource as any, companyId, async (manager) => {
       alert.status = 'resolved';
       alert.handledAt = new Date();
@@ -192,6 +214,10 @@ export class AlertsService {
     const warningThreshold = (event as any).data?.warningThreshold as number | undefined;
     const criticalThreshold = (event as any).data?.criticalThreshold as number | undefined;
 
+    if (type === 'budget.critical_low') {
+      await this.maybePhase3BudgetCriticalWithAutonomousAlert(companyId, utilization);
+    }
+
     const dedupKey = `alerts:budget:${companyId}:${type}`;
     const dedupTtl =
       type === 'budget.exceeded'
@@ -225,6 +251,59 @@ export class AlertsService {
     });
 
     await this.cache.set(dedupKey, '1', dedupTtl);
+  }
+
+  /**
+   * W16：预算临界且 Phase3 总闸 + Director 自主同时开启时落库（去重），提示「高自主 + 低预算」组合风险。
+   */
+  private async maybePhase3BudgetCriticalWithAutonomousAlert(
+    companyId: string,
+    utilization: number | undefined,
+  ): Promise<void> {
+    if (!this.config.isPhase3RolloutEnabled()) return;
+    if (!this.config.isDirectorAutonomousEnabled()) return;
+    const dedupKey = `alerts:phase3:budget_autonomous:${companyId}`;
+    if (await this.cache.exists(dedupKey)) return;
+    await this.createAlert({
+      companyId,
+      severity: 'high',
+      type: 'phase3.budget_critical.autonomous_active',
+      message: `Phase3：预算临界且 Director 自主已开启（utilization=${utilization?.toFixed?.(4) ?? utilization}）；请复核自动委派与模型成本。`,
+      metadata: { utilization, source: 'budget.critical_low' },
+    });
+    await this.cache.set(dedupKey, '1', 6 * 3600);
+  }
+
+  /** W16：延迟 P95 超阈（由观测流水线 / Alertmanager Webhook 调用）。 */
+  async createPhase3LatencySloAlert(companyId: string, p95Seconds: number): Promise<void> {
+    if (p95Seconds < 3) return;
+    const dedupKey = `alerts:phase3:latency:${companyId}:${Math.floor(Date.now() / 3_600_000)}`;
+    if (await this.cache.exists(dedupKey)) return;
+    await this.createAlert({
+      companyId,
+      severity: 'high',
+      type: 'phase3.slo.latency_p95',
+      message: `Phase3 SLO：P95 延迟 ${p95Seconds.toFixed(2)}s 超过 3s 目标`,
+      metadata: { p95Seconds, targetSeconds: 3 },
+    });
+    await this.cache.set(dedupKey, '1', 3600);
+  }
+
+  /** W16：Memory Graph 退化（命中率 / hybrid 信号异常；由观测或 Memory 服务调用）。 */
+  async createPhase3MemoryGraphDegradationAlert(
+    companyId: string,
+    payload: { hitRate?: number; reason?: string },
+  ): Promise<void> {
+    const dedupKey = `alerts:phase3:memory_graph:${companyId}:${Math.floor(Date.now() / 3_600_000)}`;
+    if (await this.cache.exists(dedupKey)) return;
+    await this.createAlert({
+      companyId,
+      severity: 'medium',
+      type: 'phase3.slo.memory_graph_degraded',
+      message: `Phase3 SLO：Memory Graph 信号异常（hitRate=${payload.hitRate ?? 'n/a'}；${payload.reason ?? 'no detail'}）`,
+      metadata: payload,
+    });
+    await this.cache.set(dedupKey, '1', 3600);
   }
 
   async createFromSkillEvent(event: SkillExecutedEvent): Promise<void> {

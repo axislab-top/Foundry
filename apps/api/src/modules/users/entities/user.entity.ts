@@ -40,26 +40,6 @@ export class User {
   passwordHash: string;
 
   /**
-   * 角色列表（JSON数组）
-   */
-  @Column({
-    type: 'jsonb',
-    default: [],
-    comment: '角色列表',
-  })
-  roles: string[];
-
-  /**
-   * 权限列表（JSON数组）
-   */
-  @Column({
-    type: 'jsonb',
-    default: [],
-    comment: '权限列表',
-  })
-  permissions: string[];
-
-  /**
    * 是否启用
    */
   @Column({ type: 'boolean', default: true, comment: '是否启用' })

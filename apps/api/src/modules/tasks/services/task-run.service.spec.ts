@@ -7,6 +7,8 @@ import { MessagingService } from '@service/messaging';
 import { CompanyMembership } from '../../companies/entities/company-membership.entity.js';
 import { TaskRun } from '../entities/task-run.entity.js';
 import { TaskExecutionLog } from '../entities/task-execution-log.entity.js';
+import { CollaborationRealtimePublisher } from '../../collaboration/services/collaboration-realtime-publisher.service.js';
+import { Task } from '../entities/task.entity.js';
 import { TaskRunService } from './task-run.service.js';
 
 describe('TaskRunService', () => {
@@ -41,7 +43,9 @@ describe('TaskRunService', () => {
 
     const execLogsRepo = {
       findOne: jest.fn().mockResolvedValue(null),
+      manager: { query: jest.fn().mockResolvedValue([]) },
     };
+    const tasksRepo = { findOne: jest.fn(), createQueryBuilder: jest.fn() };
 
     const tenantContext = {
       getCompanyId: jest.fn(() => companyId),
@@ -49,15 +53,21 @@ describe('TaskRunService', () => {
     };
 
     const messaging = { publish: jest.fn().mockResolvedValue(true) };
+    const collabRealtime = {
+      publishRunStatusChanged: jest.fn().mockResolvedValue(undefined),
+      publishEnvelope: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskRunService,
         { provide: getRepositoryToken(TaskRun), useValue: runsRepo },
         { provide: getRepositoryToken(TaskExecutionLog), useValue: execLogsRepo },
+        { provide: getRepositoryToken(Task), useValue: tasksRepo },
         { provide: getRepositoryToken(CompanyMembership), useValue: membershipsRepo },
         { provide: TenantContextService, useValue: tenantContext },
         { provide: MessagingService, useValue: messaging },
+        { provide: CollaborationRealtimePublisher, useValue: collabRealtime },
       ],
     }).compile();
 

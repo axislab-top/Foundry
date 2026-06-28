@@ -7,6 +7,7 @@ const statuses = [
   'in_progress',
   'review',
   'awaiting_approval',
+  'awaiting_supervision',
   'completed',
   'blocked',
   'cancelled',

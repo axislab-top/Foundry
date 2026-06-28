@@ -1,5 +1,5 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 @Injectable()
@@ -7,7 +7,16 @@ export class TenantService {
   private readonly logger = new Logger(TenantService.name);
 
   constructor(
-    @Optional() @InjectDataSource() private readonly dataSource?: DataSource,
+    /**
+     * Inject TypeORM DataSource from the host app.
+     *
+     * NOTE: We intentionally inject by `DataSource` token instead of `@nestjs/typeorm` helpers,
+     * to avoid token mismatches in monorepo/workspace scenarios where multiple copies of
+     * `@nestjs/typeorm` may be present (which would make `@InjectDataSource()` resolve undefined).
+     */
+    @Optional()
+    @Inject(getDataSourceToken())
+    private readonly dataSource?: DataSource,
   ) {}
 
   async userBelongsToCompany(
@@ -21,45 +30,56 @@ export class TenantService {
     const enforced = process.env.TENANT_MEMBERSHIP_ENFORCED !== 'false';
     if (!enforced) return true;
 
-    if (!this.dataSource) {
-      this.logger.warn(
-        'TENANT_MEMBERSHIP_ENFORCED=true but datasource is unavailable (compat-allow)',
+    if (!this.dataSource?.isInitialized) {
+      const nodeEnv = String(process.env.NODE_ENV ?? 'development').toLowerCase();
+      const allowInDev = nodeEnv !== 'production';
+      this.logger.error(
+        'Tenant membership validation backend unavailable; ' +
+          (allowInDev ? 'allowing access in non-production (fail-open)' : 'rejecting access (fail-closed)'),
       );
-      // 如果 datasource 注入失败/不可用，membership 查询无法进行。
-      // 为保证开发/向导流程不被错误阻断，这里先采取兼容策略放行，
-      // 同时保留告警日志以便尽快修复 DI/数据库注入问题。
-      return true;
+      return allowInDev;
     }
 
-    const rows = await this.dataSource.query(
-      `
-        SELECT 1
-        FROM company_memberships cm
-        WHERE cm.user_id = $1
-          AND cm.company_id = $2
-          AND cm.is_active = true
-        LIMIT 1
-      `,
-      [userId, companyId],
-    );
+    try {
+      const rows = await this.dataSource.query(
+        `
+          SELECT 1
+          FROM company_memberships cm
+          WHERE cm.user_id = $1
+            AND cm.company_id = $2
+            AND cm.is_active = true
+          LIMIT 1
+        `,
+        [userId, companyId],
+      );
 
-    if (rows.length > 0) {
-      return true;
+      if (rows.length > 0) {
+        return true;
+      }
+
+      // Company creator should also have tenant access.
+      const ownerRows = await this.dataSource.query(
+        `
+          SELECT 1
+          FROM companies c
+          WHERE c.id = $1
+            AND c.created_by = $2
+          LIMIT 1
+        `,
+        [companyId, userId],
+      );
+
+      return ownerRows.length > 0;
+    } catch (error: unknown) {
+      this.logger.error(
+        'Tenant membership validation query failed; rejecting access (fail-closed)',
+        error instanceof Error ? error.stack : undefined,
+      );
+      return false;
     }
+  }
 
-    // Company creator should also have tenant access.
-    const ownerRows = await this.dataSource.query(
-      `
-        SELECT 1
-        FROM companies c
-        WHERE c.id = $1
-          AND c.created_by = $2
-          AND c.is_active = true
-        LIMIT 1
-      `,
-      [companyId, userId],
-    );
-
-    return ownerRows.length > 0;
+  isMembershipBackendHealthy(): boolean {
+    return Boolean(this.dataSource?.isInitialized);
   }
 }
