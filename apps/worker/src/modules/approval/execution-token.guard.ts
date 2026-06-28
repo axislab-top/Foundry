@@ -33,23 +33,25 @@ export class ExecutionTokenGuard implements CanActivate {
     const headerTok = req.headers['x-execution-token'];
     const tokenFromHeader = typeof headerTok === 'string' ? headerTok.trim() : '';
     const tokenFromBody =
-      typeof body.executionToken === 'string'
-        ? body.executionToken.trim()
-        : typeof body.tokenId === 'string'
-          ? body.tokenId.trim()
-          : '';
-    const tokenId = tokenFromHeader || tokenFromBody;
+      typeof body.executionTokenId === 'string'
+        ? body.executionTokenId.trim()
+        : typeof body.executionToken === 'string'
+          ? body.executionToken.trim()
+          : typeof body.tokenId === 'string'
+            ? body.tokenId.trim()
+            : '';
+    const executionTokenId = tokenFromHeader || tokenFromBody;
 
     const actionOverride =
       typeof body.action === 'string' && body.action.trim() ? body.action.trim() : opts.action;
 
-    if (!companyId || !tokenId) {
-      throw new ForbiddenException('companyId and execution token (body or X-Execution-Token) required');
+    if (!companyId || !executionTokenId) {
+      throw new ForbiddenException('companyId and executionTokenId (body or X-Execution-Token) required');
     }
 
     await this.executionGuard.validateAndConsumeToken({
       companyId,
-      tokenId,
+      executionTokenId,
       action: actionOverride,
     });
     return true;

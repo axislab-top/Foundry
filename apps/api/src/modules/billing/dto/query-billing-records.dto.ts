@@ -1,12 +1,14 @@
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import {
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  IsBoolean,
   Max,
   MaxLength,
   Min,
+  Matches,
 } from 'class-validator';
 
 export class QueryBillingRecordsDto {
@@ -43,6 +45,22 @@ export class QueryBillingRecordsDto {
   @IsString()
   @MaxLength(32)
   recordType?: string;
+
+  /** UTC 日历日 YYYY-MM-DD，精确匹配 usage_date */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'usageDate must be YYYY-MM-DD (UTC)' })
+  usageDate?: string;
+
+  /** 默认 true：排除 is_nominal 占位记录 */
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === true || value === 'true' || value === '1') return true;
+    if (value === false || value === 'false' || value === '0') return false;
+    return value;
+  })
+  @IsBoolean()
+  excludeNominal?: boolean;
 
   @IsOptional()
   @IsInt()

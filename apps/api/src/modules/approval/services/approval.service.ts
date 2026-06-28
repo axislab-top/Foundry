@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { MessagingService } from '@service/messaging';
 import type { ApprovalDomainStatus, ApprovalStatusChangedEvent } from '@contracts/events';
@@ -12,12 +12,53 @@ import { ApprovalRequest } from '../entities/approval-request.entity.js';
 import { ApprovalRedisMirrorService } from './approval-redis-mirror.service.js';
 import { ApprovalTemporalBridgeService } from './approval-temporal-bridge.service.js';
 import { ApprovalMetricsService } from './approval-metrics.service.js';
+import { CompanyRuntimePreferenceService } from '../../companies/services/company-runtime-preference.service.js';
 
 export interface CreateApprovalInput {
   actionType: string;
   riskLevel?: string;
   context?: Record<string, unknown> | null;
   createdBy?: string | null;
+}
+
+export type ApprovalListScope = 'pending' | 'resolved_mine' | 'company_all';
+
+export interface ApprovalListParams {
+  companyId: string;
+  actorId: string;
+  scope: ApprovalListScope;
+  limit?: number;
+  cursor?: string | null;
+  /** 逗号分隔：pending,approved,rejected,expired,cancelled */
+  statusCsv?: string | null;
+  riskLevel?: string | null;
+  /** 高风险=L3，中风险=L2（与前端筛选对齐） */
+  riskBand?: 'all' | 'high' | 'medium' | null;
+  actionTypePrefix?: string | null;
+  /** 逗号分隔前缀；支持特殊值 __other__ 表示“非内置类型” */
+  actionTypeCsv?: string | null;
+  q?: string | null;
+  createdAfter?: string | null;
+  createdBefore?: string | null;
+  resolvedAfter?: string | null;
+  resolvedBefore?: string | null;
+}
+
+export interface ApprovalListResult {
+  items: ApprovalRequest[];
+  nextCursor: string | null;
+}
+
+export interface ApprovalWeeklyStats {
+  pendingCount: number;
+  /** 本周（UTC 周一 00:00 起）已决件数 */
+  resolvedThisWeekCount: number;
+  approvedThisWeekCount: number;
+  rejectedThisWeekCount: number;
+  /** 通过 / (通过+拒绝)，不含过期 */
+  approvalRateThisWeek: number | null;
+  /** 毫秒，仅统计有 resolved_at 的本周项 */
+  avgResolutionMsThisWeek: number | null;
 }
 
 @Injectable()
@@ -34,7 +75,91 @@ export class ApprovalService {
     private readonly messaging: MessagingService,
     private readonly collaborationNotifier: CollaborationApprovalNotifier,
     private readonly metrics: ApprovalMetricsService,
+    private readonly companyRuntimePreference: CompanyRuntimePreferenceService,
   ) {}
+
+  /**
+   * P12：在 **已人工批准** 且 `actionType === runner.exec` 的 `ApprovalRequest` 背书下，
+   * 签发 **5 分钟**有效、绑定 `skillSlug` 的一次性执行令牌（`used=false`，消费后 PG+Redis 标记已用）。
+   */
+  async createExecutionToken(params: {
+    companyId: string;
+    actorId: string;
+    approvalRequestId: string;
+    skillSlug: string;
+    context?: Record<string, unknown> | null;
+  }): Promise<{ executionTokenId: string; expiresAt: Date; approvalRequestId: string }> {
+    const RUNNER_EXEC = 'runner.exec';
+    const slug = params.skillSlug.trim();
+    if (!slug) {
+      throw Object.assign(new Error('skillSlug required'), { status: 400 });
+    }
+
+    const tenantRow = await this.companyRepo.findOne({
+      where: { id: params.companyId },
+      select: ['id', 'executionPaused'],
+    });
+    if (tenantRow?.executionPaused) {
+      throw Object.assign(new Error('company execution is paused'), { status: 423 });
+    }
+
+    const req = await this.reqRepo.findOne({
+      where: { id: params.approvalRequestId, companyId: params.companyId },
+    });
+    if (!req) {
+      throw Object.assign(new Error('approval request not found'), { status: 404 });
+    }
+    if (req.status !== 'approved') {
+      throw Object.assign(new Error(`approval not approved: ${req.status}`), { status: 403 });
+    }
+    if (req.actionType !== RUNNER_EXEC) {
+      throw Object.assign(
+        new Error(`approval actionType must be ${RUNNER_EXEC}, got ${req.actionType}`),
+        { status: 403 },
+      );
+    }
+
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const tokenRow = this.tokenRepo.create({
+      companyId: params.companyId,
+      approvalRequestId: req.id,
+      action: RUNNER_EXEC,
+      skillSlug: slug,
+      expiresAt,
+      consumedAt: null,
+    });
+    const savedToken = await this.tokenRepo.save(tokenRow);
+
+    await this.appendAudit(
+      req.id,
+      params.companyId,
+      'execution_token_minted',
+      {
+        executionTokenId: savedToken.id,
+        skillSlug: slug,
+        expiresAt: expiresAt.toISOString(),
+        ...(params.context ?? {}),
+      },
+      params.actorId,
+    );
+
+    const ttlSec = Math.ceil((expiresAt.getTime() - Date.now()) / 1000);
+    await this.redisMirror.setMirror(savedToken.id, {
+      executionTokenId: savedToken.id,
+      companyId: params.companyId,
+      approvalRequestId: req.id,
+      action: RUNNER_EXEC,
+      skillSlug: slug,
+      used: false,
+      expiresAtIso: expiresAt.toISOString(),
+    }, ttlSec);
+
+    return {
+      executionTokenId: savedToken.id,
+      expiresAt,
+      approvalRequestId: req.id,
+    };
+  }
 
   async create(companyId: string, input: CreateApprovalInput): Promise<ApprovalRequest> {
     const row = this.reqRepo.create({
@@ -75,6 +200,223 @@ export class ApprovalService {
     });
   }
 
+  /**
+   * 分页列表：scope=pending | resolved_mine | company_all；cursor 为 opaque（createdAt+id）。
+   */
+  async listFiltered(params: ApprovalListParams): Promise<ApprovalListResult> {
+    const limit = Math.min(Math.max(params.limit ?? 30, 1), 100);
+    const qb = this.reqRepo
+      .createQueryBuilder('req')
+      .where('req.companyId = :companyId', { companyId: params.companyId });
+
+    if (params.scope === 'pending') {
+      qb.andWhere('req.status = :st', { st: 'pending' });
+    } else if (params.scope === 'resolved_mine') {
+      qb.andWhere('req.resolvedBy = :rb', { rb: params.actorId }).andWhere('req.status IN (:...term)', {
+        term: ['approved', 'rejected', 'expired'],
+      });
+    } else {
+      // company_all
+      const statuses = this.parseStatusCsv(params.statusCsv);
+      if (statuses?.length) {
+        qb.andWhere('req.status IN (:...sts)', { sts: statuses });
+      }
+    }
+
+    if (params.riskBand === 'high') {
+      qb.andWhere('req.riskLevel = :rl', { rl: 'L3' });
+    } else if (params.riskBand === 'medium') {
+      qb.andWhere('req.riskLevel = :rl2', { rl2: 'L2' });
+    } else if (params.riskLevel?.trim()) {
+      qb.andWhere('req.riskLevel = :rl3', { rl3: params.riskLevel.trim() });
+    }
+
+    const prefix = params.actionTypePrefix?.trim();
+    if (prefix) {
+      qb.andWhere('req.actionType LIKE :pfx', { pfx: `${prefix}%` });
+    }
+    const actionTypeRoots = this.parseActionTypeCsv(params.actionTypeCsv);
+    if (actionTypeRoots?.length) {
+      const wantsOther = actionTypeRoots.includes('__other__');
+      const roots = actionTypeRoots.filter((x) => x !== '__other__');
+      if (roots.length) {
+        qb.andWhere(
+          new Brackets((w) => {
+            roots.forEach((r, idx) => {
+              const k = `at${idx}`;
+              if (idx === 0) w.where(`req.actionType ILIKE :${k}`, { [k]: `${r}%` });
+              else w.orWhere(`req.actionType ILIKE :${k}`, { [k]: `${r}%` });
+            });
+          }),
+        );
+      }
+      if (wantsOther) {
+        const builtins = [
+          'billing',
+          'budget',
+          'org',
+          'organization',
+          'department',
+          'agent',
+          'supervisor',
+          'skill',
+          'tool',
+          'webhook',
+          'integration',
+          'external',
+          'company',
+        ];
+        builtins.forEach((r, idx) => {
+          qb.andWhere(`req.actionType NOT ILIKE :notAt${idx}`, { [`notAt${idx}`]: `${r}%` });
+        });
+      }
+    }
+
+    const q = params.q?.trim();
+    if (q) {
+      const safe = q.replace(/[%_\\]/g, '');
+      if (safe.length) {
+        const like = `%${safe}%`;
+        qb.andWhere(
+          new Brackets((w) => {
+            w.where("COALESCE(req.context->>'title', '') ILIKE :like", { like })
+              .orWhere("COALESCE(req.context->>'summary', '') ILIKE :like", { like })
+              .orWhere('req.actionType ILIKE :like', { like });
+          }),
+        );
+      }
+    }
+
+    const ca = params.createdAfter ? new Date(params.createdAfter) : null;
+    const cb = params.createdBefore ? new Date(params.createdBefore) : null;
+    if (ca && !Number.isNaN(ca.getTime())) {
+      qb.andWhere('req.createdAt >= :ca', { ca });
+    }
+    if (cb && !Number.isNaN(cb.getTime())) {
+      qb.andWhere('req.createdAt <= :cb', { cb });
+    }
+    const ra = params.resolvedAfter ? new Date(params.resolvedAfter) : null;
+    const rb = params.resolvedBefore ? new Date(params.resolvedBefore) : null;
+    if (ra && !Number.isNaN(ra.getTime())) {
+      qb.andWhere('req.resolvedAt >= :ra', { ra });
+    }
+    if (rb && !Number.isNaN(rb.getTime())) {
+      qb.andWhere('req.resolvedAt <= :rb2', { rb2: rb });
+    }
+
+    const cur = this.decodeListCursor(params.cursor);
+    if (cur) {
+      qb.andWhere(
+        '(req.createdAt < :cAt OR (req.createdAt = :cAtEq AND req.id < :cId))',
+        { cAt: cur.createdAt, cAtEq: cur.createdAt, cId: cur.id },
+      );
+    }
+
+    qb.orderBy('req.createdAt', 'DESC').addOrderBy('req.id', 'DESC').take(limit + 1);
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    let nextCursor: string | null = null;
+    if (hasMore && items.length > 0) {
+      const last = items[items.length - 1]!;
+      nextCursor = this.encodeListCursor(last.createdAt, last.id);
+    }
+
+    return { items, nextCursor };
+  }
+
+  async weeklyStats(companyId: string): Promise<ApprovalWeeklyStats> {
+    const pendingCount = await this.reqRepo.count({ where: { companyId, status: 'pending' } });
+
+    const weekStart = this.startOfWeekUtc(new Date());
+    const qb = this.reqRepo
+      .createQueryBuilder('req')
+      .where('req.companyId = :companyId', { companyId })
+      .andWhere('req.resolvedAt IS NOT NULL')
+      .andWhere('req.resolvedAt >= :ws', { ws: weekStart })
+      .andWhere('req.status IN (:...st)', { st: ['approved', 'rejected', 'expired'] });
+
+    const rows = await qb.getMany();
+    const resolvedThisWeekCount = rows.length;
+    const approvedThisWeekCount = rows.filter((r) => r.status === 'approved').length;
+    const rejectedThisWeekCount = rows.filter((r) => r.status === 'rejected').length;
+    const terminal = approvedThisWeekCount + rejectedThisWeekCount;
+    const approvalRateThisWeek =
+      terminal > 0 ? approvedThisWeekCount / terminal : null;
+
+    let avgResolutionMsThisWeek: number | null = null;
+    const deltas: number[] = [];
+    for (const r of rows) {
+      if (r.resolvedAt && r.createdAt) {
+        deltas.push(r.resolvedAt.getTime() - r.createdAt.getTime());
+      }
+    }
+    if (deltas.length) {
+      avgResolutionMsThisWeek = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+    }
+
+    return {
+      pendingCount,
+      resolvedThisWeekCount,
+      approvedThisWeekCount,
+      rejectedThisWeekCount,
+      approvalRateThisWeek,
+      avgResolutionMsThisWeek,
+    };
+  }
+
+  private startOfWeekUtc(d: Date): Date {
+    const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const day = x.getUTCDay();
+    const diff = (day + 6) % 7; // Monday = 0
+    x.setUTCDate(x.getUTCDate() - diff);
+    x.setUTCHours(0, 0, 0, 0);
+    return x;
+  }
+
+  private parseStatusCsv(csv: string | null | undefined): ApprovalRequest['status'][] | undefined {
+    if (!csv?.trim()) return undefined;
+    const allowed = new Set(['pending', 'approved', 'rejected', 'expired', 'cancelled']);
+    const parts = csv
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const out = parts.filter((p) => allowed.has(p)) as ApprovalRequest['status'][];
+    return out.length ? out : undefined;
+  }
+
+  private parseActionTypeCsv(csv: string | null | undefined): string[] | undefined {
+    if (!csv?.trim()) return undefined;
+    const out = csv
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .filter((s) => /^[a-z0-9_.:-]+$/.test(s) || s === '__other__');
+    return out.length ? Array.from(new Set(out)) : undefined;
+  }
+
+  private decodeListCursor(
+    raw: string | null | undefined,
+  ): { createdAt: Date; id: string } | null {
+    if (!raw?.trim()) return null;
+    try {
+      const json = Buffer.from(raw.trim(), 'base64url').toString('utf8');
+      const o = JSON.parse(json) as { ca?: string; id?: string };
+      if (typeof o.ca !== 'string' || typeof o.id !== 'string') return null;
+      const createdAt = new Date(o.ca);
+      if (Number.isNaN(createdAt.getTime())) return null;
+      return { createdAt, id: o.id };
+    } catch {
+      return null;
+    }
+  }
+
+  private encodeListCursor(createdAt: Date, id: string): string {
+    const json = JSON.stringify({ ca: createdAt.toISOString(), id });
+    return Buffer.from(json, 'utf8').toString('base64url');
+  }
+
   async findOne(companyId: string, id: string): Promise<ApprovalRequest | null> {
     return this.reqRepo.findOne({ where: { companyId, id } });
   }
@@ -85,7 +427,7 @@ export class ApprovalService {
     actorId: string;
     action: string;
     ttlMinutes?: number;
-  }): Promise<{ approval: ApprovalRequest; executionToken: string; expiresAt: Date }> {
+  }): Promise<{ approval: ApprovalRequest; executionTokenId: string; expiresAt: Date }> {
     const ttl = Math.min(Math.max(params.ttlMinutes ?? 15, 5), 120);
     const req = await this.reqRepo.findOne({
       where: { id: params.approvalId, companyId: params.companyId },
@@ -110,25 +452,47 @@ export class ApprovalService {
     req.resolvedAt = new Date();
     await this.reqRepo.save(req);
 
+    try {
+      await this.companyRuntimePreference.applyFromApprovedRequest(req);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.error({
+        msg: 'company_runtime_preference_apply_failed_reverting_approval',
+        approvalId: req.id,
+        companyId: params.companyId,
+        error: msg,
+      });
+      req.status = 'pending';
+      req.resolvedBy = null;
+      req.resolvedAt = null;
+      await this.reqRepo.save(req);
+      throw Object.assign(new Error(`runtime_preference_apply_failed: ${msg}`), { status: 500 });
+    }
+
     const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
     const tokenRow = this.tokenRepo.create({
       companyId: params.companyId,
       approvalRequestId: req.id,
       action: params.action,
+      skillSlug: null,
       expiresAt,
       consumedAt: null,
     });
     const savedToken = await this.tokenRepo.save(tokenRow);
 
-    await this.appendAudit(req.id, params.companyId, 'approved', { tokenId: savedToken.id }, params.actorId);
+    await this.appendAudit(req.id, params.companyId, 'approved', { executionTokenId: savedToken.id }, params.actorId);
 
     await this.temporalBridge.signalDecision(req.temporalWorkflowId, 'approved');
 
     const ttlSec = Math.ceil((expiresAt.getTime() - Date.now()) / 1000);
     await this.redisMirror.setMirror(savedToken.id, {
+      executionTokenId: savedToken.id,
       companyId: params.companyId,
       approvalRequestId: req.id,
       action: params.action,
+      skillSlug: null,
+      used: false,
+      expiresAtIso: expiresAt.toISOString(),
     }, ttlSec);
 
     await this.broadcastApprovalDigest({
@@ -142,7 +506,7 @@ export class ApprovalService {
     });
     this.metrics.incDecision('approved');
 
-    return { approval: req, executionToken: savedToken.id, expiresAt };
+    return { approval: req, executionTokenId: savedToken.id, expiresAt };
   }
 
   async reject(params: {
@@ -186,8 +550,9 @@ export class ApprovalService {
    */
   async consumeExecutionToken(params: {
     companyId: string;
-    tokenId: string;
+    executionTokenId: string;
     action: string;
+    skillSlug?: string | null;
   }): Promise<{ ok: true; approvalRequestId: string }> {
     const t0 = Date.now();
     const finish = (outcome: 'ok' | 'deny'): void => {
@@ -202,25 +567,38 @@ export class ApprovalService {
         throw Object.assign(new Error('company execution is paused'), { status: 423 });
       }
 
-      await this.redisMirror.assertMirrorMatchesOrAbsent(params.tokenId, params.companyId, params.action);
+      await this.redisMirror.assertMirrorMatchesOrAbsent(
+        params.executionTokenId,
+        params.companyId,
+        params.action,
+        params.skillSlug ?? undefined,
+      );
 
-      const res = await this.tokenRepo
+      const qb = this.tokenRepo
         .createQueryBuilder()
         .update(ApprovalExecutionToken)
         .set({ consumedAt: () => 'CURRENT_TIMESTAMP' })
-        .where('id = :id', { id: params.tokenId })
+        .where('id = :id', { id: params.executionTokenId })
         .andWhere('company_id = :companyId', { companyId: params.companyId })
         .andWhere('action = :action', { action: params.action })
         .andWhere('consumed_at IS NULL')
-        .andWhere('expires_at > NOW()')
-        .execute();
+        .andWhere('expires_at > NOW()');
+
+      const sk = params.skillSlug?.trim();
+      if (sk) {
+        qb.andWhere('skill_slug = :skillSlug', { skillSlug: sk });
+      } else {
+        qb.andWhere('skill_slug IS NULL');
+      }
+
+      const res = await qb.execute();
 
       if (!res.affected || res.affected < 1) {
         throw Object.assign(new Error('invalid or expired execution token'), { status: 403 });
       }
 
       const row = await this.tokenRepo.findOne({
-        where: { id: params.tokenId, companyId: params.companyId },
+        where: { id: params.executionTokenId, companyId: params.companyId },
       });
       if (!row) {
         throw Object.assign(new Error('token row missing after consume'), { status: 500 });
@@ -230,11 +608,11 @@ export class ApprovalService {
         row.approvalRequestId,
         params.companyId,
         'token_consumed',
-        { tokenId: params.tokenId, action: params.action },
+        { executionTokenId: params.executionTokenId, action: params.action, skillSlug: sk ?? null },
         null,
       );
 
-      await this.redisMirror.onConsumed(params.tokenId);
+      await this.redisMirror.onConsumed(params.executionTokenId);
 
       finish('ok');
       return { ok: true, approvalRequestId: row.approvalRequestId };
@@ -250,12 +628,12 @@ export class ApprovalService {
    */
   async applyGatedConfigPatch(params: {
     companyId: string;
-    tokenId: string;
+    executionTokenId: string;
     patch: Record<string, unknown>;
   }): Promise<{ ok: true; appliedKeys: string[] }> {
     await this.consumeExecutionToken({
       companyId: params.companyId,
-      tokenId: params.tokenId,
+      executionTokenId: params.executionTokenId,
       action: 'config.apply',
     });
     return { ok: true, appliedKeys: Object.keys(params.patch ?? {}) };

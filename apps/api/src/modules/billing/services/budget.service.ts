@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { CacheService } from '../../../common/cache/cache.service.js';
-import { Budget } from '../entities/budget.entity.js';
+import { Budget, type BudgetScope } from '../entities/budget.entity.js';
 import { UpsertBudgetDto } from '../dto/upsert-budget.dto.js';
-import { BudgetExhaustedError } from '../errors/budget-exhausted.error.js';
 import { Company } from '../../companies/entities/company.entity.js';
+import { UserCreditService } from './user-credit.service.js';
 
 @Injectable()
 export class BudgetService {
@@ -16,6 +16,7 @@ export class BudgetService {
     @InjectRepository(Budget) private readonly budgetRepo: Repository<Budget>,
     @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
     private readonly cache: CacheService,
+    private readonly userCreditService: UserCreditService,
   ) {}
 
   async getCompanyBudget(companyId: string): Promise<Budget | null> {
@@ -32,6 +33,11 @@ export class BudgetService {
   }
 
   async upsertBudget(companyId: string, dto: UpsertBudgetDto): Promise<Budget> {
+    if (dto.scope === 'company') {
+      throw new BadRequestException(
+        'Company budget is managed automatically via account credit pool; manual company budget upsert is disabled',
+      );
+    }
     if (dto.scope === 'department' && !dto.departmentId) {
       throw new NotFoundException('departmentId required for department scope');
     }
@@ -144,8 +150,8 @@ export class BudgetService {
   }
 
   /**
-   * 在同一 DB 事务内按维度原子递增已用预算；任一存在且额度不足则抛 BudgetExhaustedError。
-   * 无对应 budgets 行则跳过该维度（视为未设上限）。
+   * 在同一 DB 事务内按维度递增已用预算（软计量：不因超出 total 中断事务，供仪表盘与告警使用）。
+   * 无对应 budgets 行则跳过该维度。
    */
   async applyBillingConsumptionInTransaction(
     manager: EntityManager,
@@ -164,20 +170,16 @@ export class BudgetService {
       [cid],
     );
     if (hasCompany.length > 0) {
-      const updated = await manager.query<Array<{ id: string }>>(
+      await manager.query(
         `
         UPDATE budgets
         SET used_amount = used_amount + $1::numeric,
             updated_at = CURRENT_TIMESTAMP
         WHERE company_id = $2 AND scope = 'company'
-          AND used_amount + $1::numeric <= total_amount
-        RETURNING id
         `,
         [cost, cid],
       );
-      if (updated.length === 0) {
-        throw new BudgetExhaustedError('company_budget_exhausted');
-      }
+      await this.userCreditService.applyConsumptionInTransaction(manager, companyId, cost);
     }
 
     if (agentId) {
@@ -190,20 +192,15 @@ export class BudgetService {
         [cid, agentId],
       );
       if (hasAgent.length > 0) {
-        const updated = await manager.query<Array<{ id: string }>>(
+        await manager.query(
           `
           UPDATE budgets
           SET used_amount = used_amount + $1::numeric,
               updated_at = CURRENT_TIMESTAMP
           WHERE company_id = $2 AND scope = 'agent' AND agent_id = $3
-            AND used_amount + $1::numeric <= total_amount
-          RETURNING id
           `,
           [cost, cid, agentId],
         );
-        if (updated.length === 0) {
-          throw new BudgetExhaustedError('agent_budget_exhausted');
-        }
       }
     }
 
@@ -217,22 +214,133 @@ export class BudgetService {
         [cid, departmentId],
       );
       if (hasDept.length > 0) {
-        const updated = await manager.query<Array<{ id: string }>>(
+        await manager.query(
           `
           UPDATE budgets
           SET used_amount = used_amount + $1::numeric,
               updated_at = CURRENT_TIMESTAMP
           WHERE company_id = $2 AND scope = 'department' AND department_id = $3
-            AND used_amount + $1::numeric <= total_amount
-          RETURNING id
           `,
           [cost, cid, departmentId],
         );
-        if (updated.length === 0) {
-          throw new BudgetExhaustedError('department_budget_exhausted');
-        }
       }
     }
+  }
+
+  async accrueBillingConsumptionInTransaction(
+    manager: EntityManager,
+    companyId: string,
+    cost: number,
+    agentId?: string | null,
+    departmentId?: string | null,
+  ): Promise<void> {
+    if (!Number.isFinite(cost) || cost <= 0) {
+      return;
+    }
+    await manager.query(
+      `
+      INSERT INTO billing_budget_accruals (
+        company_id, scope, department_id, agent_id, accrued_amount, created_at, updated_at
+      )
+      VALUES ($1, 'company', NULL, NULL, $2::numeric, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (company_id, scope, department_id, agent_id)
+      DO UPDATE SET
+        accrued_amount = billing_budget_accruals.accrued_amount + EXCLUDED.accrued_amount,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [companyId, cost],
+    );
+
+    if (agentId) {
+      await manager.query(
+        `
+        INSERT INTO billing_budget_accruals (
+          company_id, scope, department_id, agent_id, accrued_amount, created_at, updated_at
+        )
+        VALUES ($1, 'agent', NULL, $2, $3::numeric, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (company_id, scope, department_id, agent_id)
+        DO UPDATE SET
+          accrued_amount = billing_budget_accruals.accrued_amount + EXCLUDED.accrued_amount,
+          updated_at = CURRENT_TIMESTAMP
+        `,
+        [companyId, agentId, cost],
+      );
+    }
+
+    if (departmentId) {
+      await manager.query(
+        `
+        INSERT INTO billing_budget_accruals (
+          company_id, scope, department_id, agent_id, accrued_amount, created_at, updated_at
+        )
+        VALUES ($1, 'department', $2, NULL, $3::numeric, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (company_id, scope, department_id, agent_id)
+        DO UPDATE SET
+          accrued_amount = billing_budget_accruals.accrued_amount + EXCLUDED.accrued_amount,
+          updated_at = CURRENT_TIMESTAMP
+        `,
+        [companyId, departmentId, cost],
+      );
+    }
+  }
+
+  async settleAccruedConsumption(companyId: string): Promise<{ settledAmount: number }> {
+    let settledAmount = 0;
+    await this.budgetRepo.manager.transaction(async (manager) => {
+      const companyRows = await manager.query<Array<{ accrued_amount: string }>>(
+        `
+        SELECT accrued_amount::text AS accrued_amount
+        FROM billing_budget_accruals
+        WHERE company_id = $1 AND scope = 'company'
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [companyId],
+      );
+      const amount = parseFloat(companyRows[0]?.accrued_amount ?? '0');
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return;
+      }
+
+      const scopeRows = await manager.query<
+        Array<{ scope: BudgetScope; agent_id: string | null; department_id: string | null; accrued_amount: string }>
+      >(
+        `
+        SELECT scope, agent_id, department_id, accrued_amount::text AS accrued_amount
+        FROM billing_budget_accruals
+        WHERE company_id = $1 AND accrued_amount > 0
+        FOR UPDATE
+        `,
+        [companyId],
+      );
+      for (const row of scopeRows) {
+        const delta = parseFloat(row.accrued_amount);
+        if (!Number.isFinite(delta) || delta <= 0) continue;
+        if (row.scope === 'company') {
+          await this.applyBillingConsumptionInTransaction(manager, companyId, delta, null, null);
+        } else if (row.scope === 'agent') {
+          await this.applyBillingConsumptionInTransaction(manager, companyId, delta, row.agent_id, null);
+        } else if (row.scope === 'department') {
+          await this.applyBillingConsumptionInTransaction(manager, companyId, delta, null, row.department_id);
+        }
+      }
+
+      await manager.query(
+        `
+        UPDATE billing_budget_accruals
+        SET accrued_amount = 0,
+            last_settled_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE company_id = $1 AND accrued_amount > 0
+        `,
+        [companyId],
+      );
+      settledAmount = amount;
+    });
+    if (settledAmount > 0) {
+      await this.invalidateUtilCache(companyId);
+    }
+    return { settledAmount };
   }
 
   async invalidateUtilizationCache(companyId: string): Promise<void> {
@@ -250,8 +358,13 @@ export class BudgetService {
     allowed: boolean;
     utilization: number;
     reason?: string;
+    /** 预算软预警（不阻断；仅 execution_paused 会 allowed=false） */
+    warning?: string;
+    warnings?: string[];
     /** 所评估维度中的最小剩余额度（与 total 同单位） */
     remainingMin?: number;
+    /** 公司级预算剩余比例 0–100（无公司预算或未配置总额度时不返回） */
+    remainingBudgetPercent?: number;
   }> {
     if (!Number.isFinite(estimatedCost) || estimatedCost < 0) {
       return { allowed: true, utilization: 0 };
@@ -266,39 +379,44 @@ export class BudgetService {
     }
 
     const company = await this.getCompanyBudget(companyId);
+    const accountCredit = await this.userCreditService.getAccountCreditViewForCompany(companyId);
     let utilization = 0;
     let remainingMin = Number.POSITIVE_INFINITY;
+    const warnings: string[] = [];
+    let remainingBudgetPercent: number | undefined;
 
-    const consider = (b: Budget | null | undefined): boolean => {
-      if (!b) return true;
+    const noteIfWouldExceed = (b: Budget | null | undefined, code: string): void => {
+      if (!b) return;
       const total = parseFloat(b.totalAmount);
       const used = parseFloat(b.usedAmount);
-      if (total <= 0) {
-        return true;
-      }
+      if (total <= 0) return;
       const rem = total - used;
       remainingMin = Math.min(remainingMin, rem);
-      if (used + estimatedCost > total) {
-        return false;
-      }
-      return true;
+      if (used + estimatedCost > total) warnings.push(code);
     };
 
-    if (company) {
+    if (accountCredit) {
+      const total = parseFloat(accountCredit.totalAmount);
+      const used = parseFloat(accountCredit.usedAmount);
+      if (total > 0) {
+        utilization = Math.min(1, used / total);
+        remainingMin = Math.min(remainingMin, total - used);
+        const remRatio = Math.max(0, (total - used) / total);
+        remainingBudgetPercent = Math.round(remRatio * 10000) / 100;
+        if (used + estimatedCost > total) {
+          warnings.push('budget_exhausted_account_soft');
+        }
+      }
+    } else if (company) {
       const total = parseFloat(company.totalAmount);
       const used = parseFloat(company.usedAmount);
       if (total > 0) {
         utilization = Math.min(1, used / total);
         remainingMin = Math.min(remainingMin, total - used);
+        const remRatio = Math.max(0, (total - used) / total);
+        remainingBudgetPercent = Math.round(remRatio * 10000) / 100;
       }
-      if (!consider(company)) {
-        return {
-          allowed: false,
-          utilization,
-          reason: 'budget_exhausted',
-          remainingMin: Number.isFinite(remainingMin) ? Math.max(0, remainingMin) : undefined,
-        };
-      }
+      noteIfWouldExceed(company, 'budget_exhausted_company_soft');
     }
 
     if (opts?.agentId) {
@@ -311,14 +429,7 @@ export class BudgetService {
         if (total > 0) {
           remainingMin = Math.min(remainingMin, total - used);
         }
-        if (!consider(agentB)) {
-          return {
-            allowed: false,
-            utilization,
-            reason: 'agent_budget_exhausted',
-            remainingMin: Number.isFinite(remainingMin) ? Math.max(0, remainingMin) : undefined,
-          };
-        }
+        noteIfWouldExceed(agentB, 'budget_exhausted_agent_soft');
       }
     }
 
@@ -332,28 +443,24 @@ export class BudgetService {
         if (total > 0) {
           remainingMin = Math.min(remainingMin, total - used);
         }
-        if (!consider(deptB)) {
-          return {
-            allowed: false,
-            utilization,
-            reason: 'department_budget_exhausted',
-            remainingMin: Number.isFinite(remainingMin) ? Math.max(0, remainingMin) : undefined,
-          };
-        }
+        noteIfWouldExceed(deptB, 'budget_exhausted_department_soft');
       }
     }
 
-    if (!company && !(opts?.agentId) && !(opts?.departmentId)) {
+    if (!company && !accountCredit && !(opts?.agentId) && !(opts?.departmentId)) {
       return { allowed: true, utilization: 0 };
     }
 
     return {
       allowed: true,
       utilization,
+      warnings: warnings.length ? warnings : undefined,
+      warning: warnings[0],
       remainingMin:
         Number.isFinite(remainingMin) && remainingMin !== Number.POSITIVE_INFINITY
           ? Math.max(0, remainingMin)
           : undefined,
+      remainingBudgetPercent,
     };
   }
 
@@ -362,6 +469,15 @@ export class BudgetService {
     if (cached !== null && cached !== undefined) {
       const n = parseFloat(cached);
       if (!Number.isNaN(n)) return n;
+    }
+
+    const accountCredit = await this.userCreditService.getAccountCreditViewForCompany(companyId);
+    if (accountCredit) {
+      const total = parseFloat(accountCredit.totalAmount);
+      const used = parseFloat(accountCredit.usedAmount);
+      const ratio = total <= 0 ? (used > 0 ? 1 : 0) : Math.min(1, used / total);
+      await this.cache.set(this.cacheKey(companyId), String(ratio), this.CACHE_TTL_SEC);
+      return ratio;
     }
 
     const b = await this.getCompanyBudget(companyId);

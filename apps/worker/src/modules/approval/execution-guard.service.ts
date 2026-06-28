@@ -19,7 +19,7 @@ export class ExecutionGuardService {
    */
   async validateAndConsumeToken(params: {
     companyId: string;
-    tokenId: string;
+    executionTokenId: string;
     action: string;
   }): Promise<void> {
     const res = await firstValueFrom(
@@ -27,7 +27,7 @@ export class ExecutionGuardService {
         .send<{ ok: boolean }>('approval.consumeExecutionToken', {
           companyId: params.companyId,
           actor: this.workerActor(),
-          tokenId: params.tokenId,
+          executionTokenId: params.executionTokenId,
           action: params.action,
         })
         .pipe(timeout(this.config.getApiRpcTimeoutMs())),

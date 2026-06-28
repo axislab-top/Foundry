@@ -5,6 +5,7 @@ export type BillingConsumptionRecordType =
   | 'skill'
   | 'embedding'
   | 'summary'
+  | 'agent_day'
   | 'other';
 
 /** Worker / 网关异步上报消耗，由 API 入账 */
@@ -20,12 +21,19 @@ export interface BillingConsumptionRequestedEvent extends BaseEvent {
     taskId?: string;
     skillId?: string;
     modelName?: string;
+    /** 与 `llm_models.id` 对齐时优先匹配 `model_pricing.llm_model_id` */
+    llmModelId?: string;
     inputTokens?: number;
     outputTokens?: number;
     skillCallUnits?: number;
     idempotencyKey?: string;
     metadata?: Record<string, unknown>;
     occurredAt?: string;
+    /** 冻结定价快照（与 AppendBillingRecordDto 对齐） */
+    pricingSnapshotJson?: Record<string, unknown>;
+    pricingSource?: string;
+    /** 名义占位（task.completed 等），API 侧 cost=0 且不占密钥日用量 */
+    isNominal?: boolean;
   };
 }
 
@@ -91,13 +99,41 @@ export interface ModelRoutedEvent extends BaseEvent {
   };
 }
 
+/** 人工/PSP 充值审批通过，已增加公司级 budgets.total_amount */
+export interface BillingRechargeCompletedEvent extends BaseEvent {
+  eventType: 'billing.recharge.completed';
+  aggregateType: 'billing_recharge_order';
+  data: {
+    companyId: string;
+    orderId: string;
+    amount: string;
+    currency: string;
+    budgetId: string;
+    budgetTotalAfter: string;
+    occurredAt: string;
+  };
+}
+
+export interface BillingRechargeRejectedEvent extends BaseEvent {
+  eventType: 'billing.recharge.rejected';
+  aggregateType: 'billing_recharge_order';
+  data: {
+    companyId: string;
+    orderId: string;
+    rejectReason?: string;
+    occurredAt: string;
+  };
+}
+
 export type BillingEvent =
   | BillingConsumptionRequestedEvent
   | BudgetWarningEvent
   | BudgetCriticalLowEvent
   | BudgetExceededEvent
   | BillingRecordedEvent
-  | ModelRoutedEvent;
+  | ModelRoutedEvent
+  | BillingRechargeCompletedEvent
+  | BillingRechargeRejectedEvent;
 
 export interface BillingEventTopics {
   'billing.consumption.requested': BillingConsumptionRequestedEvent;
@@ -106,4 +142,6 @@ export interface BillingEventTopics {
   'budget.exceeded': BudgetExceededEvent;
   'billing.recorded': BillingRecordedEvent;
   'model.routed': ModelRoutedEvent;
+  'billing.recharge.completed': BillingRechargeCompletedEvent;
+  'billing.recharge.rejected': BillingRechargeRejectedEvent;
 }
