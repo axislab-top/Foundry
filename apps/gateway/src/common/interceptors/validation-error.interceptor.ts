@@ -1,7 +1,7 @@
 /**
- * @deprecated 此拦截器已废弃
+ * 此拦截器已废弃
  * 验证错误现在由异常过滤器统一处理（HttpExceptionFilter 和 AllExceptionsFilter）
- * 
+ *
  * 这个文件保留仅用于参考，不应再使用。
  * 请从拦截器模块和 main.ts 中移除对 ValidationErrorInterceptor 的引用。
  */
@@ -22,8 +22,8 @@ import { ErrorCode } from '../exceptions/error-codes.js';
 /**
  * 验证错误拦截器
  * 格式化验证错误，然后让异常过滤器统一处理
- * 
- * @deprecated 此拦截器已废弃，验证错误现在由异常过滤器直接处理
+ *
+ * 此拦截器已废弃，验证错误现在由异常过滤器直接处理
  */
 @Injectable()
 export class ValidationErrorInterceptor implements NestInterceptor {
@@ -37,8 +37,8 @@ export class ValidationErrorInterceptor implements NestInterceptor {
   /**
    * 格式化验证错误信息
    * 将字符串数组转换为按字段分组的对象
-   * 
-   * @deprecated 此方法已移动到 BaseExceptionFilter
+   *
+   * 此方法已移动到 BaseExceptionFilter
    */
   private formatValidationErrors(messages: string[]): Record<string, string[]> {
     const errors: Record<string, string[]> = {};

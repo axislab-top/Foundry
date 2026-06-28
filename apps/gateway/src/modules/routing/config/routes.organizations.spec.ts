@@ -8,6 +8,7 @@ describe('routes.config organizations', () => {
       expect.arrayContaining([
         'organization.tree',
         'organization.node.create',
+        'organization.department.addFromPlatform',
         'organization.node.update',
         'organization.node.move',
         'organization.node.remove',

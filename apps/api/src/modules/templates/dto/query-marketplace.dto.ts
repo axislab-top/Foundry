@@ -12,7 +12,7 @@ export class QueryMarketplaceDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(200)
   pageSize?: number = 20;
 
   @IsOptional()

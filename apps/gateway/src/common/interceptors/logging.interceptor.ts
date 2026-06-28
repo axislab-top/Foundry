@@ -7,13 +7,13 @@ import {
 } from '@nestjs/common';
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
-import { createLogger, LogLevel } from '@service/logging';
+import { createLogger, LogLevel, resolveLogLevelFromEnv } from '@service/logging';
 import { DataMaskingService } from '../security/services/data-masking.service.js';
 
 const logger = createLogger({
   service: 'gateway-service',
   environment: process.env.NODE_ENV || 'development',
-  level: LogLevel.INFO,
+  level: resolveLogLevelFromEnv(),
 });
 
 /**
@@ -92,12 +92,16 @@ export class LoggingInterceptor implements NestInterceptor {
         // 检查响应状态
         const response = context.switchToHttp().getResponse();
         
-        // 错误响应也需要脱敏
+        // 仅脱敏下游响应体；Axios 的 error.response 含 request/response 循环引用，整对象递归会栈溢出
+        const downstreamBody =
+          error.response && typeof error.response === 'object'
+            ? (error.response as { data?: unknown }).data
+            : undefined;
         const errorResponse = {
           message: error.message,
           statusCode,
-          ...(error.response && typeof error.response === 'object'
-            ? this.dataMaskingService.maskObject(error.response)
+          ...(downstreamBody !== undefined
+            ? { data: this.dataMaskingService.maskObject(downstreamBody) }
             : {}),
         };
         const errorMessage =

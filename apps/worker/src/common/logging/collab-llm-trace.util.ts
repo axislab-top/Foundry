@@ -1,6 +1,8 @@
 /**
  * 协作 / CEO LLM 全链路排障：日志里搜 `collab-llm-trace` 即可串起来。
  * 禁止记录完整 API Key。
+ *
+ * 每次经 Bridge 的模型请求/响应可另见 `FOUNDRY_LOG_COLLAB_LLM_IO`（文档：`docs/collaboration-llm-io-e2e-capture.md`）。
  */
 export const COLLAB_LLM_TRACE = 'collab-llm-trace';
 

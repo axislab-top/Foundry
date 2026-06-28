@@ -10,6 +10,7 @@ describe('routes.config skills & org node skills', () => {
         'skills.create',
         'skills.update',
         'skills.remove',
+        'skills.validateCompanyBindings',
         'agents.bindSkills',
         'agents.unbindSkills',
         'agents.effectiveSkills',

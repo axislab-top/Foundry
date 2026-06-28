@@ -6,6 +6,8 @@ describe('routes.config agents & skills', () => {
     expect(patterns).toEqual(
       expect.arrayContaining([
         'agents.findAll',
+        'agents.uiConfig',
+        'agents.systemApproval',
         'agents.auditLogs',
         'agents.batchRecruit',
         'agents.effectiveSkills',
@@ -18,6 +20,7 @@ describe('routes.config agents & skills', () => {
         'agents.assignToNode',
         'agents.bindSkills',
         'agents.unbindSkills',
+        'agents.refreshMarketplaceLlmSnapshot',
         'skills.findAll',
         'skills.findOne',
         'skills.create',
@@ -42,9 +45,51 @@ describe('routes.config agents & skills', () => {
     expect(matched?.route.rpcPattern).toBe('agents.auditLogs');
   });
 
+  it('should match ui-config before generic :id', () => {
+    const uiIndex = ROUTES.findIndex(
+      (r) => r.path === '/v1/agents/ui-config' && r.rpcPattern === 'agents.uiConfig',
+    );
+    const idIndex = ROUTES.findIndex(
+      (r) => r.path === '/v1/agents/:id' && r.rpcPattern === 'agents.findOne',
+    );
+    expect(uiIndex).toBeGreaterThanOrEqual(0);
+    expect(idIndex).toBeGreaterThanOrEqual(0);
+    expect(uiIndex).toBeLessThan(idIndex);
+  });
+
+  it('should match system-approval before generic :id', () => {
+    const fixedIndex = ROUTES.findIndex(
+      (r) =>
+        r.path === '/v1/agents/system-approval' && r.rpcPattern === 'agents.systemApproval',
+    );
+    const idIndex = ROUTES.findIndex(
+      (r) => r.path === '/v1/agents/:id' && r.rpcPattern === 'agents.findOne',
+    );
+    expect(fixedIndex).toBeGreaterThanOrEqual(0);
+    expect(idIndex).toBeGreaterThanOrEqual(0);
+    expect(fixedIndex).toBeLessThan(idIndex);
+
+    const matched = findRoute('/v1/agents/system-approval');
+    expect(matched?.route.rpcPattern).toBe('agents.systemApproval');
+  });
+
   it('should match batch-recruit before generic :id', () => {
     const matched = findRoute('/v1/agents/batch-recruit');
     expect(matched?.route.rpcPattern).toBe('agents.batchRecruit');
+  });
+
+  it('should match marketplace-llm-sync before generic :id', () => {
+    const syncIndex = ROUTES.findIndex(
+      (r) =>
+        r.path === '/v1/agents/:id/marketplace-llm-sync' &&
+        r.rpcPattern === 'agents.refreshMarketplaceLlmSnapshot',
+    );
+    const idIndex = ROUTES.findIndex(
+      (r) => r.path === '/v1/agents/:id' && r.rpcPattern === 'agents.findOne',
+    );
+    expect(syncIndex).toBeGreaterThanOrEqual(0);
+    expect(idIndex).toBeGreaterThanOrEqual(0);
+    expect(syncIndex).toBeLessThan(idIndex);
   });
 
   it('should match effective-skills before generic :id', () => {

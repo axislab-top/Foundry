@@ -27,7 +27,7 @@ export class WorkerApiRpcWarmupService implements OnModuleInit {
     }
 
     const queue = this.config.getApiRpcQueue();
-    const interactiveQueue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
+    const interactiveQueue = this.config.getInteractiveApiRpcQueue();
 
     try {
       await this.client.connect();

@@ -11,16 +11,32 @@ describe('TenantService', () => {
     await expect(service.userBelongsToCompany('u-1', 'c-1')).resolves.toBe(true);
   });
 
-  it('should compat-allow in strict mode when datasource is missing (logged warning)', async () => {
+  it('should fail-close in strict mode when datasource is missing', async () => {
     process.env.TENANT_MEMBERSHIP_ENFORCED = 'true';
     const service = new TenantService(undefined as any);
-    // TenantService 在 strict 下若 DataSource 未注入，为避免阻断向导/本地开发，暂时放行并打 WARN。
-    await expect(service.userBelongsToCompany('u-1', 'c-1')).resolves.toBe(true);
+    await expect(service.userBelongsToCompany('u-1', 'c-1')).resolves.toBe(false);
+  });
+
+  it('should fail-close in strict mode when datasource is uninitialized', async () => {
+    process.env.TENANT_MEMBERSHIP_ENFORCED = 'true';
+    const service = new TenantService({ isInitialized: false } as any);
+    await expect(service.userBelongsToCompany('u-1', 'c-1')).resolves.toBe(false);
+  });
+
+  it('should fail-close when strict mode query throws', async () => {
+    process.env.TENANT_MEMBERSHIP_ENFORCED = 'true';
+    const dataSource = {
+      isInitialized: true,
+      query: jest.fn().mockRejectedValue(new Error('db down')),
+    };
+    const service = new TenantService(dataSource as any);
+    await expect(service.userBelongsToCompany('u-1', 'c-1')).resolves.toBe(false);
   });
 
   it('should validate membership in strict mode', async () => {
     process.env.TENANT_MEMBERSHIP_ENFORCED = 'true';
     const dataSource = {
+      isInitialized: true,
       query: jest
         .fn()
         .mockResolvedValueOnce([{ ok: 1 }]) // membership query
@@ -35,6 +51,7 @@ describe('TenantService', () => {
   it('should fallback to owner relation in strict mode', async () => {
     process.env.TENANT_MEMBERSHIP_ENFORCED = 'true';
     const dataSource = {
+      isInitialized: true,
       query: jest
         .fn()
         .mockResolvedValueOnce([]) // membership query
@@ -43,5 +60,15 @@ describe('TenantService', () => {
     const service = new TenantService(dataSource as any);
 
     await expect(service.userBelongsToCompany('u-1', 'c-1')).resolves.toBe(true);
+  });
+
+  it('reports membership backend health from datasource state', () => {
+    expect(new TenantService(undefined as any).isMembershipBackendHealthy()).toBe(false);
+    expect(new TenantService({ isInitialized: false } as any).isMembershipBackendHealthy()).toBe(
+      false,
+    );
+    expect(new TenantService({ isInitialized: true } as any).isMembershipBackendHealthy()).toBe(
+      true,
+    );
   });
 });

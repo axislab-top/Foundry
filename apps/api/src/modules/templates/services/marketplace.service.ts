@@ -4,6 +4,10 @@ import { Repository } from 'typeorm';
 import { ErrorCode } from '../../../common/exceptions/error-codes.js';
 import { QueryMarketplaceDto } from '../dto/query-marketplace.dto.js';
 import { MarketplaceAgent } from '../entities/marketplace-agent.entity.js';
+import {
+  MarketplaceCatalogPricingService,
+  type MarketplaceCatalogPricingView,
+} from './marketplace-catalog-pricing.service.js';
 
 export interface PaginatedResult<T> {
   items: T[];
@@ -13,14 +17,19 @@ export interface PaginatedResult<T> {
   totalPages: number;
 }
 
+export type MarketplaceAgentPublic = MarketplaceAgent & {
+  catalogPricing: MarketplaceCatalogPricingView | null;
+};
+
 @Injectable()
 export class MarketplaceService {
   constructor(
     @InjectRepository(MarketplaceAgent)
     private readonly agentsRepo: Repository<MarketplaceAgent>,
+    private readonly catalogPricing: MarketplaceCatalogPricingService,
   ) {}
 
-  async findAll(query: QueryMarketplaceDto): Promise<PaginatedResult<MarketplaceAgent>> {
+  async findAll(query: QueryMarketplaceDto): Promise<PaginatedResult<MarketplaceAgentPublic>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const qb = this.agentsRepo.createQueryBuilder('a').where('a.is_published = :pub', { pub: true });
@@ -42,8 +51,9 @@ export class MarketplaceService {
       .take(pageSize);
 
     const [items, total] = await qb.getManyAndCount();
+    const enriched = await this.catalogPricing.attachToAgents(items);
     return {
-      items,
+      items: enriched,
       total,
       page,
       pageSize,
@@ -51,7 +61,7 @@ export class MarketplaceService {
     };
   }
 
-  async findOne(id: string): Promise<MarketplaceAgent> {
+  async findOne(id: string): Promise<MarketplaceAgentPublic> {
     const a = await this.agentsRepo.findOne({ where: { id, isPublished: true } });
     if (!a) {
       throw new NotFoundException({
@@ -59,7 +69,8 @@ export class MarketplaceService {
         message: '商品不存在或未上架',
       });
     }
-    return a;
+    const [enriched] = await this.catalogPricing.attachToAgents([a]);
+    return enriched;
   }
 
   async incrementUsage(agentId: string): Promise<void> {

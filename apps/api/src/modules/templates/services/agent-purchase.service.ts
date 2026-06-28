@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   ServiceUnavailableException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -26,6 +25,10 @@ export interface MarketplacePurchaseOptions {
   skipDirectPurchaseCheck?: boolean;
   /** 为 true 时：MQ 发布失败则抛错（招聘审批等强一致场景），且不增加 usage_count */
   requireEventPublished?: boolean;
+  /** Hiring path discriminator (permanent vs project-scoped temporary). */
+  employmentType?: 'permanent' | 'temporary';
+  /** Project binding for temporary hires (currently aligned to tasks.id). */
+  projectId?: string;
 }
 
 function isPlatformAdmin(actor: Actor): boolean {
@@ -55,11 +58,20 @@ export class AgentPurchaseService {
     marketplaceAgentId: string,
     companyId: string,
     actor: Actor,
-    organizationNodeId?: string,
+    organizationNodeId: string,
     options?: MarketplacePurchaseOptions,
   ): Promise<{ ok: boolean; marketplaceAgentId: string; eventId?: string }> {
     if (!companyId) {
       throw new BadRequestException({ message: '缺少公司上下文，无法安装 Agent' });
+    }
+
+    const installOrganizationNodeId =
+      typeof organizationNodeId === 'string' ? organizationNodeId.trim() : '';
+    if (!installOrganizationNodeId) {
+      throw new BadRequestException({
+        message:
+          '安装商城 Agent 必须指定组织节点 organizationNodeId（通常为 type=agent 且未绑定 agentId 的槽位）',
+      });
     }
 
     if (!options?.skipDirectPurchaseCheck && !isPlatformAdmin(actor)) {
@@ -70,16 +82,7 @@ export class AgentPurchaseService {
 
     const agent = await this.marketplaceService.findOne(marketplaceAgentId);
 
-    if (agent.pricingModel !== 'free' || agent.priceCents > 0) {
-      throw new UnprocessableEntityException({
-        message: '付费 Agent 需先完成支付与计费集成',
-      });
-    }
-
-    const { assignedLlmKeyId, assignedModelName } = await this.allocateFixedKeyForCompany(
-      marketplaceAgentId,
-      companyId,
-    );
+    const keyAlloc = await this.ensureMarketplaceAssignment(marketplaceAgentId, companyId);
 
     const eventId = randomUUID();
     try {
@@ -94,11 +97,16 @@ export class AgentPurchaseService {
         data: {
           marketplaceAgentId,
           companyId,
-          organizationNodeId,
-          assignedLlmKeyId,
-          assignedModelName,
+          organizationNodeId: installOrganizationNodeId,
+          employmentType: options?.employmentType,
+          projectId: options?.projectId,
+          ...(keyAlloc.assignedLlmKeyId && keyAlloc.assignedModelName
+            ? {
+                assignedLlmKeyId: keyAlloc.assignedLlmKeyId,
+                assignedModelName: keyAlloc.assignedModelName,
+              }
+            : {}),
           purchasedBy: actor.id,
-          pricingModel: agent.pricingModel,
           purchasedAt: new Date().toISOString(),
         },
       };
@@ -123,10 +131,14 @@ export class AgentPurchaseService {
     return { ok: true, marketplaceAgentId };
   }
 
-  private async allocateFixedKeyForCompany(
+  /**
+   * 确保存在公司级商城安装行：记录 subscription/embedding 元数据，不再独占写入 assigned_llm_key_id。
+   * 运行时由 agents.llmKeyPoolCandidates + Worker acquire 按最新 bindings 解析。
+   */
+  private async ensureMarketplaceAssignment(
     marketplaceAgentId: string,
     companyId: string,
-  ): Promise<{ assignedLlmKeyId: string; assignedModelName: string }> {
+  ): Promise<{ assignedLlmKeyId?: string; assignedModelName?: string }> {
     return await this.dataSource.transaction(async (manager) => {
       const assignments = manager.getRepository(CompanyMarketplaceAgentKeyAssignment);
       const bindings = manager.getRepository(MarketplaceAgentKeyBinding);
@@ -136,14 +148,22 @@ export class AgentPurchaseService {
         where: { companyId, marketplaceAgentId },
       });
       if (existing) {
-        const key = await llmKeys.findOne({ where: { id: existing.assignedLlmKeyId } });
-        if (!key) {
-          throw new BadRequestException('已分配的 LLM Key 不存在，请联系管理员处理');
+        if (existing.preferredLlmKeyId) {
+          const pk = await llmKeys.findOne({ where: { id: existing.preferredLlmKeyId } });
+          if (pk?.isActive) {
+            return { assignedLlmKeyId: pk.id, assignedModelName: pk.modelName };
+          }
         }
-        return { assignedLlmKeyId: existing.assignedLlmKeyId, assignedModelName: key.modelName };
+        if (existing.assignedLlmKeyId) {
+          const key = await llmKeys.findOne({ where: { id: existing.assignedLlmKeyId } });
+          if (!key) {
+            throw new BadRequestException('已分配的 LLM Key 不存在，请联系管理员处理');
+          }
+          return { assignedLlmKeyId: existing.assignedLlmKeyId, assignedModelName: key.modelName };
+        }
+        return {};
       }
 
-      // 读商品绑定的 key 优先级列表（跨商品 key 不可复用由 uq_llm_key_id 保证）
       const rows = await bindings.find({
         where: { marketplaceAgentId },
         order: { sortOrder: 'ASC' },
@@ -152,7 +172,8 @@ export class AgentPurchaseService {
         throw new BadRequestException('该 Agent 商品未绑定任何可用 Key');
       }
 
-      // 获取候选 key 元信息，用于校验 modelName 且过滤 inactive
+      const assignedEmbeddingModelId = rows.map((r) => r.embeddingModelId).find((x) => !!x) ?? null;
+
       const candidateIds = rows.map((r) => r.llmKeyId);
       const keys = candidateIds.length ? await llmKeys.find({ where: { id: In(candidateIds) } as any }) : [];
       const keyMap = new Map(keys.map((k) => [k.id, k] as const));
@@ -166,7 +187,6 @@ export class AgentPurchaseService {
         throw new BadRequestException('该 Agent 商品绑定的 Key 均不可用（inactive 或不存在）');
       }
 
-      // 若商品绑定了模型，则强制 key.modelName 必须匹配
       const agent = await this.marketplaceService.findOne(marketplaceAgentId);
       const boundModelName = agent.boundModelName?.trim() || null;
 
@@ -178,28 +198,26 @@ export class AgentPurchaseService {
         throw new BadRequestException('该 Agent 商品绑定的 Key 与指定模型不匹配或均不可用');
       }
 
-      // 并发安全：尝试按优先级插入分配记录；若 assigned_llm_key_id 唯一冲突则试下一个
-      for (const k of modelCandidates) {
-        try {
-          const saved = await assignments.save(
-            assignments.create({
-              companyId,
-              marketplaceAgentId,
-              assignedLlmKeyId: k.id,
-            }),
-          );
-          return { assignedLlmKeyId: saved.assignedLlmKeyId, assignedModelName: k.modelName };
-        } catch (e: any) {
-          const code = String(e?.code ?? '');
-          if (code === '23505') {
-            // unique violation：该 key 已被其他公司占用，继续尝试下一把
-            continue;
-          }
-          throw e;
-        }
+      await assignments
+        .createQueryBuilder()
+        .insert()
+        .into(CompanyMarketplaceAgentKeyAssignment)
+        .values({
+          companyId,
+          marketplaceAgentId,
+          assignedLlmKeyId: null,
+          preferredLlmKeyId: null,
+          assignedEmbeddingModelId,
+        })
+        .orIgnore()
+        .execute();
+
+      const row = await assignments.findOne({ where: { companyId, marketplaceAgentId } });
+      if (!row) {
+        throw new BadRequestException('无法写入商城安装记录，请重试');
       }
 
-      throw new BadRequestException('该 Agent 商品已无可分配的 Key（可能已全部被占用）');
+      return {};
     });
   }
 }

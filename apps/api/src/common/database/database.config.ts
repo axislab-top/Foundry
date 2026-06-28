@@ -27,9 +27,9 @@ export function createDatabaseConfig(
   // 构建连接池配置
   const poolConfig = {
     max: dbConfig.maxConnections ?? 20,
-    min: dbConfig.minConnections ?? 2,
+    min: dbConfig.minConnections ?? 5,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: dbConfig.connectionTimeout ?? 10000,
+    connectionTimeoutMillis: dbConfig.connectionTimeout ?? 2000,
   };
 
   return {

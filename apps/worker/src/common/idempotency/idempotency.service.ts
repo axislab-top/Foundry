@@ -5,6 +5,13 @@ export class IdempotencyService {
   private readonly seen = new Map<string, number>(); // key -> expireAtMs
 
   /**
+   * 处理成功后标记；失败时释放以便 MQ 重试。
+   */
+  release(key: string): void {
+    this.seen.delete(key);
+  }
+
+  /**
    * 标记 key；如果此前已存在且未过期，则返回 false（重复）
    */
   markIfNew(key: string, ttlMs: number): boolean {

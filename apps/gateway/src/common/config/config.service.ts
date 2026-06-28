@@ -67,10 +67,10 @@ export class ConfigService {
       logging: this.configManager.get<boolean>('DB_LOGGING', false),
       ssl: this.configManager.get<boolean>('DB_SSL', false),
       sslRejectUnauthorized: this.configManager.get<boolean>('DB_SSL_REJECT_UNAUTHORIZED', true),
-      connectionTimeout: this.configManager.get<number>('DB_CONNECTION_TIMEOUT', 10000),
+      connectionTimeout: this.configManager.get<number>('DB_CONNECTION_TIMEOUT', 2000),
       queryTimeout: this.configManager.get<number>('DB_QUERY_TIMEOUT', 30000),
       maxConnections: this.configManager.get<number>('DB_MAX_CONNECTIONS', 20),
-      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 2),
+      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 5),
       transactionIsolation: this.configManager.get<'READ UNCOMMITTED' | 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE'>(
         'DB_TRANSACTION_ISOLATION',
         'READ COMMITTED',
@@ -114,6 +114,16 @@ export class ConfigService {
     return this.configManager.get<boolean>('COLLAB_REDIS_NOTIFY', true);
   }
 
+  /** 渐进启用 ACP 协议路径（默认关闭，保持旧链路稳定）。 */
+  isAcpProtocolEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ACP_PROTOCOL', false);
+  }
+
+  /** Phase 5: advanced multi-level approvals (default off). */
+  isAdvancedApprovalEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ADVANCED_APPROVAL', false);
+  }
+
   /**
    * 是否启用 Socket.IO Redis Adapter（多实例横向扩展时建议 true）。
    * SOCKET_IO_REDIS_ADAPTER: true | false | auto — auto 表示启用，连接失败时由 main 决定是否回退。
@@ -125,16 +135,6 @@ export class ConfigService {
     if (raw === 'true' || raw === '1' || raw === 'on') return 'on';
     if (raw === 'false' || raw === '0' || raw === 'off') return 'off';
     return 'auto';
-  }
-
-  /** 渐进启用 ACP 协议路径（默认关闭，保持旧链路稳定）。 */
-  isAcpProtocolEnabled(): boolean {
-    return this.configManager.get<boolean>('ENABLE_ACP_PROTOCOL', false);
-  }
-
-  /** Phase 5: advanced multi-level approvals (default off). */
-  isAdvancedApprovalEnabled(): boolean {
-    return this.configManager.get<boolean>('ENABLE_ADVANCED_APPROVAL', false);
   }
 
   /**
@@ -202,6 +202,21 @@ export class ConfigService {
     const nodeEnv = this.configManager.get<string>('NODE_ENV', 'development');
     // 开发环境默认给 20s：足够覆盖正常抖动，同时避免前端卡住 120s 才失败。
     return nodeEnv === 'production' ? 0 : 20_000;
+  }
+
+  /**
+   * Gateway 入口 HTTP 请求在 TimeoutInterceptor 中的上限，须 ≥ 任意 RPC 路由的 rpcTimeoutMs
+   *（例如 memory.document.ingest 为 120s），否则下游 RPC 未结束就会被入口 408。
+   * api-rpc-queue 积压时，协作等读路径也可能排队接近该上限。
+   */
+  getGatewayInboundTimeoutCapMs(): number {
+    const explicit = this.configManager.get<number | undefined>(
+      'GATEWAY_INBOUND_TIMEOUT_CAP_MS',
+    );
+    if (typeof explicit === 'number' && !Number.isNaN(explicit) && explicit >= 0) {
+      return explicit;
+    }
+    return 120_000;
   }
 
   /**

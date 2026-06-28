@@ -61,43 +61,49 @@ export class CircuitBreakerInterceptor implements NestInterceptor {
     }
 
     // 执行请求
+    // 注意：tap/catchError 回调不能是 async，否则 RxJS 会把 Promise 当作成功值发出，异常无法到达异常过滤器
     return next.handle().pipe(
-      tap(async () => {
-        // 成功：记录成功
-        await this.circuitBreakerService.recordSuccess(serviceName).catch(() => {
-          // 忽略错误
-        });
-        this.monitoringService.recordCircuitBreakerSuccess(serviceName);
-        
-        // 更新状态（可能在recordSuccess后状态改变）
-        const updatedStats = await this.circuitBreakerService.getStats(serviceName);
-        this.monitoringService.updateCircuitBreakerState(serviceName, updatedStats.state);
+      tap(() => {
+        void this.recordCircuitBreakerSuccess(serviceName);
       }),
-      catchError(async (error) => {
-        // 检查错误是否应该被统计（使用错误过滤器）
-        const config = this.configService?.getCircuitBreakerConfig();
-        const shouldRecordFailure =
-          !config?.errorFilter || config.errorFilter(error);
-
-        if (shouldRecordFailure) {
-          // 失败：记录失败
-          await this.circuitBreakerService.recordFailure(serviceName).catch(() => {
-            // 忽略错误
-          });
-          this.monitoringService.recordCircuitBreakerFailure(serviceName);
-        }
-
-        // 检查是否因为失败导致断路器打开
-        const updatedStats = await this.circuitBreakerService.getStats(serviceName);
-        if (updatedStats.state === 'open' && stats.state !== 'open') {
-          // 状态从非打开变为打开，记录打开事件
-          this.monitoringService.recordCircuitBreakerOpen(serviceName);
-        }
-        this.monitoringService.updateCircuitBreakerState(serviceName, updatedStats.state);
-
+      catchError((error) => {
+        void this.recordCircuitBreakerFailure(serviceName, stats, error);
         return throwError(() => error);
       }),
     );
+  }
+
+  private async recordCircuitBreakerSuccess(serviceName: string): Promise<void> {
+    await this.circuitBreakerService.recordSuccess(serviceName).catch(() => {
+      // 忽略错误
+    });
+    this.monitoringService.recordCircuitBreakerSuccess(serviceName);
+
+    const updatedStats = await this.circuitBreakerService.getStats(serviceName);
+    this.monitoringService.updateCircuitBreakerState(serviceName, updatedStats.state);
+  }
+
+  private async recordCircuitBreakerFailure(
+    serviceName: string,
+    stats: { state: string },
+    error: unknown,
+  ): Promise<void> {
+    const config = this.configService?.getCircuitBreakerConfig();
+    const shouldRecordFailure =
+      !config?.errorFilter || config.errorFilter(error);
+
+    if (shouldRecordFailure) {
+      await this.circuitBreakerService.recordFailure(serviceName).catch(() => {
+        // 忽略错误
+      });
+      this.monitoringService.recordCircuitBreakerFailure(serviceName);
+    }
+
+    const updatedStats = await this.circuitBreakerService.getStats(serviceName);
+    if (updatedStats.state === 'open' && stats.state !== 'open') {
+      this.monitoringService.recordCircuitBreakerOpen(serviceName);
+    }
+    this.monitoringService.updateCircuitBreakerState(serviceName, updatedStats.state);
   }
 
   /**

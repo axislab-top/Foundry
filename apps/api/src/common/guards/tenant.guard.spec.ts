@@ -110,9 +110,44 @@ describe('TenantGuard', () => {
     expect(req.companyId).toBe('c-1');
   });
 
-  it('should skip non-http contexts', async () => {
+  it('should reject rpc request when companyId is missing', async () => {
     const context = createMockExecutionContext({
       getType: () => 'rpc',
+      switchToRpc: () => ({ getData: () => ({ actor: { id: 'u-1' } }) }),
+    });
+    await expect(guard.canActivate(context as any)).rejects.toThrow(BadRequestException);
+  });
+
+  it('should reject rpc request when actor id is missing', async () => {
+    const context = createMockExecutionContext({
+      getType: () => 'rpc',
+      switchToRpc: () => ({ getData: () => ({ companyId: 'c-1' }) }),
+    });
+    await expect(guard.canActivate(context as any)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('should reject rpc request when membership check fails', async () => {
+    tenantService.userBelongsToCompany.mockResolvedValue(false);
+    const context = createMockExecutionContext({
+      getType: () => 'rpc',
+      switchToRpc: () => ({ getData: () => ({ actor: { id: 'u-1' }, companyId: 'c-1' }) }),
+    });
+    await expect(guard.canActivate(context as any)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('should allow rpc request and set cls companyId when membership passes', async () => {
+    tenantService.userBelongsToCompany.mockResolvedValue(true);
+    const context = createMockExecutionContext({
+      getType: () => 'rpc',
+      switchToRpc: () => ({ getData: () => ({ actor: { id: 'u-1' }, companyId: 'c-1' }) }),
+    });
+    await expect(guard.canActivate(context as any)).resolves.toBe(true);
+    expect(clsService.set).toHaveBeenCalledWith('tenant.companyId', 'c-1');
+  });
+
+  it('should still skip unsupported non-http/non-rpc contexts', async () => {
+    const context = createMockExecutionContext({
+      getType: () => 'ws',
     });
     await expect(guard.canActivate(context as any)).resolves.toBe(true);
   });

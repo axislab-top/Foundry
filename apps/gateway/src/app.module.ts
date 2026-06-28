@@ -20,12 +20,18 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { RoutingModule } from './modules/routing/routing.module.js';
 import { ApiKeyModule } from './modules/api-key/api-key.module.js';
 import { LlmKeysModule } from './modules/llm-keys/llm-keys.module.js';
+import { EmbeddingModelsModule } from './modules/embedding-models/embedding-models.module.js';
 import { LlmProvidersModule } from './modules/llm-providers/llm-providers.module.js';
+import { LlmModelsModule } from './modules/llm-models/llm-models.module.js';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
 import { SkillsModule } from './modules/skills/skills.module.js';
+import { ToolsModule } from './modules/tools/tools.module.js';
+import { McpToolsModule } from './modules/mcp-tools/mcp-tools.module.js';
 import { AlertsModule } from './modules/alerts/alerts.module.js';
 import { AdminNotifyModule } from './modules/admin-notify/admin-notify.module.js';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module.js';
+import { CompanySpaceModule } from './modules/company-space/company-space.module.js';
+import { PlatformOpsModule } from './modules/platform-ops/platform-ops.module.js';
 import { IpFilterModule } from './modules/ip-filter/ip-filter.module.js';
 import { RateLimitingModule } from './modules/rate-limiting/rate-limiting.module.js';
 import { CircuitBreakerModule } from './modules/circuit-breaker/circuit-breaker.module.js';
@@ -35,6 +41,7 @@ import { CsrfProtectionMiddleware } from './common/security/middleware/csrf.midd
 import { IpFilterMiddleware } from './modules/ip-filter/middleware/ip-filter.middleware.js';
 import { RpcModule } from './common/rpc/rpc.module.js';
 import { CollaborationWsModule } from './modules/collaboration/collaboration-ws.module.js';
+import { TenantModule } from '@service/tenant';
 
 /**
  * 应用根模块
@@ -70,14 +77,19 @@ import { CollaborationWsModule } from './modules/collaboration/collaboration-ws.
     AuthModule,
     // RPC Clients（给关键链路的 ClientProxy）
     RpcModule,
+    TenantModule,
     // 路由模块（核心功能）
     RoutingModule,
     // API密钥模块
     ApiKeyModule,
     LlmKeysModule,
+    EmbeddingModelsModule,
     LlmProvidersModule,
+    LlmModelsModule,
     MarketplaceModule,
     SkillsModule,
+    ToolsModule,
+    McpToolsModule,
     AlertsModule,
     // IP过滤模块
     IpFilterModule,
@@ -89,6 +101,8 @@ import { CollaborationWsModule } from './modules/collaboration/collaboration-ws.
     CollaborationWsModule,
     AdminNotifyModule,
     AdminDashboardModule,
+    CompanySpaceModule,
+    PlatformOpsModule,
   ],
 })
 export class AppModule implements NestModule {

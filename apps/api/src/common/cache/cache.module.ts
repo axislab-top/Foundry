@@ -1,6 +1,7 @@
 import { Module, Global } from '@nestjs/common';
 import { ConfigModule } from '../config/config.module.js';
 import { CacheService } from './cache.service.js';
+import { CollabRedisCacheService } from './collab-redis-cache.service.js';
 
 /**
  * 缓存模块
@@ -9,8 +10,8 @@ import { CacheService } from './cache.service.js';
 @Global()
 @Module({
   imports: [ConfigModule],
-  providers: [CacheService],
-  exports: [CacheService],
+  providers: [CacheService, CollabRedisCacheService],
+  exports: [CacheService, CollabRedisCacheService],
 })
 export class CacheModule {}
 

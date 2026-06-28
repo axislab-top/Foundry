@@ -1,0 +1,21 @@
+/** 与 API `CollaborationMainChainPlatformSettings` 对齐（平台设置 → Worker 运行时覆盖） */
+export type CollaborationMainChainSettingsSnapshot = {
+  COLLAB_CEO_DISPATCH_PLAN_V2_ENABLED: boolean;
+  COLLAB_DISPATCH_CONFIRM_MODE: 'auto' | 'confirm';
+  MAIN_ROOM_DISTRIBUTION_COMPLETION_SUMMARY_ENABLED: boolean;
+  DIRECTOR_AUTONOMOUS_ENABLED: boolean;
+  EMPLOYEE_AUTONOMOUS_ENABLED: boolean;
+  MULTI_AGENT_GRAPH_V2_ENABLED: boolean;
+  COLLAB_SUPERVISION_INPUT_MODE: 'dept_reports' | 'inline_skill';
+  COLLAB_L2_AUTO_COMPLETE_REQUIRE_DELIVERABLE: boolean;
+  COLLAB_L2_REQUIRE_ALL_DELEGATIONS: boolean;
+  COLLAB_DEPT_CHAT_CONVERSATIONAL_MODE: boolean;
+  COLLAB_DEPT_TASK_STAGE_CHAT_ENABLED: boolean;
+  COLLAB_DEPT_SKILL_TOOL_CALL_CHAT_ENABLED: boolean;
+  COLLAB_DEPT_SUPERVISION_REPORT_IN_ROOM_ENABLED: boolean;
+  COLLAB_DEPT_DISPATCH_SYSTEM_CARD_ENABLED: boolean;
+  COLLAB_DEPT_EMPLOYEE_COLLAB_ACK_CHAT_ENABLED: boolean;
+  MAIN_ROOM_DISPATCH_RESPECT_DEPENDENCIES: boolean;
+};
+
+export type CollaborationMainChainSettingKey = keyof CollaborationMainChainSettingsSnapshot;

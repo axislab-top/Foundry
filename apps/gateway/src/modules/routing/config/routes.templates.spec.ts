@@ -46,6 +46,25 @@ describe('routes.config templates & marketplace', () => {
     expect(matched?.params.id).toBe(uuid);
   });
 
+  it('matches /v1/collaboration/rooms/department-by-slug before /v1/collaboration/rooms/:roomId', () => {
+    const slugIndex = ROUTES.findIndex(
+      (r) =>
+        r.path === '/v1/collaboration/rooms/department-by-slug' &&
+        r.rpcPattern === 'collaboration.rooms.findDepartmentBySlug',
+    );
+    const roomIdIndex = ROUTES.findIndex(
+      (r) =>
+        r.path === '/v1/collaboration/rooms/:roomId' &&
+        r.rpcPattern === 'collaboration.rooms.findOne',
+    );
+    expect(slugIndex).toBeGreaterThanOrEqual(0);
+    expect(roomIdIndex).toBeGreaterThanOrEqual(0);
+    expect(slugIndex).toBeLessThan(roomIdIndex);
+
+    const matched = findRoute('/v1/collaboration/rooms/department-by-slug');
+    expect(matched?.route.rpcPattern).toBe('collaboration.rooms.findDepartmentBySlug');
+  });
+
   it('matches marketplace purchase before generic agent id', () => {
     const purchaseIndex = ROUTES.findIndex(
       (r) =>
@@ -63,5 +82,12 @@ describe('routes.config templates & marketplace', () => {
     const uuid = '550e8400-e29b-41d4-a716-446655440000';
     const purchase = findRoute(`/v1/marketplace/agents/${uuid}/purchase`);
     expect(purchase?.route.rpcPattern).toBe('marketplace.agents.purchase');
+  });
+
+  it('matches collaboration orchestration-runs subpath', () => {
+    const roomId = '550e8400-e29b-41d4-a716-446655440099';
+    const matched = findRoute(`/v1/collaboration/rooms/${roomId}/orchestration-runs`, 'GET');
+    expect(matched?.route.rpcPattern).toBe('collaboration.orchestrationRuns.listByRoom');
+    expect(matched?.params.roomId).toBe(roomId);
   });
 });

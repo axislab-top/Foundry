@@ -83,7 +83,7 @@ function connectFailureHint(reason: unknown): string {
     return '\nHint: hostname in RMQ_URL could not be resolved — check spelling / Docker network / VPN.';
   }
   if (text.includes('access_refused') || text.includes('403')) {
-    return '\nHint: RabbitMQ refused login (user, password, or vhost). Check your RMQ_URL environment variable.';
+    return '\nHint: RabbitMQ refused login (user, password, or vhost). This repo uses admin:admin123 in .env.shared/docker-compose; ensure the gateway process has matching RMQ_URL.';
   }
   return '';
 }
@@ -152,7 +152,7 @@ export class RpcConnectionService implements OnModuleInit, OnModuleDestroy {
     }
 
     const rmqUrl =
-      process.env.RMQ_URL || 'amqp://guest:guest@localhost:5672';
+      process.env.RMQ_URL || 'amqp://admin:admin123@localhost:5672';
     const apiQueue = process.env.API_RMQ_RPC_QUEUE || 'api-rpc-queue';
 
     try {

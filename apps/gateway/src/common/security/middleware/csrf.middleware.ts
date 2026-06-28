@@ -15,7 +15,7 @@ export class CsrfProtectionMiddleware implements NestMiddleware {
     this.middleware = csrfMiddleware({
       // 默认关闭，显式开启才启用，避免影响纯 API/JWT 调用
       enabled: process.env.CSRF_ENABLED === 'true',
-      secret: process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-only-csrf-secret-change-me',
+      secret: process.env.CSRF_SECRET || process.env.JWT_SECRET || 'csrf-secret',
       cookieName: '_csrf',
       headerName: 'x-csrf-token',
     });
@@ -48,8 +48,14 @@ export class CsrfProtectionMiddleware implements NestMiddleware {
       '/auth/admin/login',
       '/api/auth/register',
       '/auth/register',
+      '/api/auth/register/send-verification-code',
+      '/auth/register/send-verification-code',
       '/api/auth/refresh',
       '/auth/refresh',
+      '/api/auth/forgot-password',
+      '/auth/forgot-password',
+      '/api/auth/reset-password',
+      '/auth/reset-password',
       '/api/auth/wechat/authorize',
       '/auth/wechat/authorize',
       '/api/auth/wechat/callback',

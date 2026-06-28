@@ -192,20 +192,26 @@ export class DataMaskingService {
   }
 
   /**
-   * 脱敏对象（递归处理）
+   * 脱敏对象（递归处理，跳过循环引用以避免栈溢出）
    */
-  maskObject(obj: any): any {
+  maskObject(obj: any, visited?: WeakSet<object>): any {
     if (obj === null || obj === undefined) {
       return obj;
     }
 
     // 数组处理
     if (Array.isArray(obj)) {
-      return obj.map((item) => this.maskObject(item));
+      return obj.map((item) => this.maskObject(item, visited));
     }
 
     // 对象处理
     if (typeof obj === 'object') {
+      const seen = visited ?? new WeakSet<object>();
+      if (seen.has(obj)) {
+        return '[Circular]';
+      }
+      seen.add(obj);
+
       const masked: any = {};
       for (const [key, value] of Object.entries(obj)) {
         // 查找匹配的脱敏规则
@@ -214,7 +220,7 @@ export class DataMaskingService {
           masked[key] = this.maskValue(value, rule);
         } else if (typeof value === 'object') {
           // 递归处理嵌套对象
-          masked[key] = this.maskObject(value);
+          masked[key] = this.maskObject(value, seen);
         } else {
           masked[key] = value;
         }

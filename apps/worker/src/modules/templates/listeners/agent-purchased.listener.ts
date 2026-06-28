@@ -54,7 +54,8 @@ export class AgentPurchasedListener implements OnModuleInit {
   }
 
   private async process(event: AgentPurchasedEvent): Promise<void> {
-    const ok = this.idempotency.markIfNew(`agent.purchased:${event.eventId}`, 24 * 60 * 60_000);
+    const idempotencyKey = `agent.purchased:${event.eventId}`;
+    const ok = this.idempotency.markIfNew(idempotencyKey, 24 * 60 * 60_000);
     if (!ok) {
       this.logger.warn('Duplicate agent.purchased skipped', { eventId: event.eventId });
       return;
@@ -67,7 +68,12 @@ export class AgentPurchasedListener implements OnModuleInit {
       organizationNodeId: event.data.organizationNodeId,
     });
 
-    await this.materialization.materializeFromAgentPurchased(event);
+    try {
+      await this.materialization.materializeFromAgentPurchased(event);
+    } catch (err) {
+      this.idempotency.release(idempotencyKey);
+      throw err;
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
 
 export class CreateMarketplaceHireRequestDto {
   @IsUUID()
@@ -6,6 +6,15 @@ export class CreateMarketplaceHireRequestDto {
 
   @IsUUID()
   organizationNodeId: string;
+
+  @IsOptional()
+  @IsIn(['permanent', 'temporary'])
+  employmentType?: 'permanent' | 'temporary';
+
+  /** 临时雇佣绑定项目（当前对齐 tasks.id） */
+  @ValidateIf((o) => o.employmentType === 'temporary')
+  @IsUUID()
+  projectId?: string;
 
   @IsOptional()
   @IsString()

@@ -1,4 +1,5 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { MailModule } from './common/mail/mail.module.js';
 import { ConfigModule } from './common/config/config.module.js';
 import { CacheModule } from './common/cache/cache.module.js';
 import { DatabaseModule } from './common/database/database.module.js';
@@ -15,17 +16,30 @@ import { CompaniesModule } from './modules/companies/companies.module.js';
 import { OrganizationModule } from './modules/organization/organization.module.js';
 import { AgentsModule } from './modules/agents/agents.module.js';
 import { SkillsModule } from './modules/skills/skills.module.js';
+import { ToolsModule } from './modules/tools/tools.module.js';
+import { McpToolsModule } from './modules/mcp-tools/mcp-tools.module.js';
 import { CollaborationModule } from './modules/collaboration/collaboration.module.js';
 import { MemoryModule } from './modules/memory/memory.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
+import { ProjectsModule } from './modules/projects/projects.module.js';
+import { FileAssetsModule } from './modules/file-assets/file-assets.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
 import { TemplatesModule } from './modules/templates/templates.module.js';
 import { LlmKeysModule } from './modules/llm-keys/llm-keys.module.js';
+import { EmbeddingModelsModule } from './modules/embedding-models/embedding-models.module.js';
 import { LlmProvidersModule } from './modules/llm-providers/llm-providers.module.js';
+import { LlmModelsModule } from './modules/llm-models/llm-models.module.js';
 import { AlertsModule } from './modules/alerts/alerts.module.js';
 import { AdminDashboardModule } from './modules/admin-dashboard/admin-dashboard.module.js';
+import { CompanySpaceModule } from './modules/company-space/company-space.module.js';
+import { PlatformOpsModule } from './modules/platform-ops/platform-ops.module.js';
 import { ApprovalModule } from './modules/approval/approval.module.js';
 import { SupervisorModule } from './modules/supervisor/supervisor.module.js';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module.js';
+import { AdminUsersModule } from './modules/admin-users/admin-users.module.js';
+import { FactsModule } from './modules/facts/facts.module.js';
+import { DailyBriefModule } from './modules/daily-brief/daily-brief.module.js';
+import { ScheduledPlaybooksModule } from './modules/scheduled-playbooks/scheduled-playbooks.module.js';
 import { MessagingModule } from '@service/messaging';
 import { TenantModule } from '@service/tenant';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
@@ -33,6 +47,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 import { UserContextMiddleware } from './common/middleware/user-context.middleware.js';
 import { TestUserMiddleware } from './common/middleware/test-user.middleware.js';
 import { DefaultAdminInitializerService } from './common/utils/default-admin.initializer.service.js';
+import { RpcModule } from './common/rpc/rpc.module.js';
 
 /**
  * 应用根模块
@@ -40,6 +55,7 @@ import { DefaultAdminInitializerService } from './common/utils/default-admin.ini
 @Module({
   imports: [
     ConfigModule,
+    MailModule,
     CacheModule,
     DatabaseModule,
     MonitoringModule,
@@ -49,26 +65,40 @@ import { DefaultAdminInitializerService } from './common/utils/default-admin.ini
     HealthModule,
     // 消息队列模块（全局注册）
     MessagingModule.forRoot(),
+    RpcModule,
     TenantModule,
     UsersModule,
     AuthModule,
     OAuthModule,
     FilesModule,
     CompaniesModule,
+    ToolsModule,
+    McpToolsModule,
     SkillsModule,
     AgentsModule,
     OrganizationModule,
     CollaborationModule,
     MemoryModule,
+    FactsModule,
     TasksModule,
+    ProjectsModule,
+    FileAssetsModule,
     BillingModule,
     TemplatesModule,
     LlmKeysModule,
+    EmbeddingModelsModule,
     LlmProvidersModule,
+    LlmModelsModule,
     AlertsModule,
     AdminDashboardModule,
+    CompanySpaceModule,
+    PlatformOpsModule,
+    PlatformSettingsModule,
+    AdminUsersModule,
     ApprovalModule,
     SupervisorModule,
+    DailyBriefModule,
+    ScheduledPlaybooksModule,
   ],
   controllers: [],
   providers: [DefaultAdminInitializerService],

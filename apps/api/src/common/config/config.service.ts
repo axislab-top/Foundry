@@ -31,6 +31,10 @@ export class ConfigService {
     this.configManager = configManager;
   }
 
+  get<T = string>(key: string, defaultValue?: T): T {
+    return this.configManager.get<T>(key, defaultValue as T);
+  }
+
   /**
    * 获取应用配置
    */
@@ -55,10 +59,10 @@ export class ConfigService {
       logging: this.configManager.get<boolean>('DB_LOGGING', false),
       ssl: this.configManager.get<boolean>('DB_SSL', false),
       sslRejectUnauthorized: this.configManager.get<boolean>('DB_SSL_REJECT_UNAUTHORIZED', true),
-      connectionTimeout: this.configManager.get<number>('DB_CONNECTION_TIMEOUT', 10000),
+      connectionTimeout: this.configManager.get<number>('DB_CONNECTION_TIMEOUT', 2000),
       queryTimeout: this.configManager.get<number>('DB_QUERY_TIMEOUT', 30000),
       maxConnections: this.configManager.get<number>('DB_MAX_CONNECTIONS', 20),
-      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 2),
+      minConnections: this.configManager.get<number>('DB_MIN_CONNECTIONS', 5),
       transactionIsolation: this.configManager.get<'READ UNCOMMITTED' | 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE'>(
         'DB_TRANSACTION_ISOLATION',
         'READ COMMITTED',
@@ -77,6 +81,19 @@ export class ConfigService {
       db: this.configManager.get<number>('REDIS_DB', 0),
       url: this.configManager.get<string>('REDIS_URL'),
     };
+  }
+
+  getRedisUrl(): string | undefined {
+    const direct = this.configManager.get<string>('REDIS_URL', '');
+    if (direct?.trim()) return direct.trim();
+    const { host, port, password, db } = this.getRedisConfig();
+    if (!host?.trim()) return undefined;
+    const auth = password?.trim() ? `:${encodeURIComponent(password.trim())}@` : '';
+    return `redis://${auth}${host.trim()}:${port ?? 6379}/${db ?? 0}`;
+  }
+
+  getRedisKeyPrefix(): string {
+    return (this.configManager.get<string>('REDIS_KEY_PREFIX', '') || '').trim();
   }
 
   /**
@@ -98,6 +115,71 @@ export class ConfigService {
     return this.configManager.get<boolean>('COLLAB_REDIS_NOTIFY', true);
   }
 
+  /** Phase 2：主群 Replay 决策由 Worker 事件 SSOT 驱动。 */
+  isCollabMainRoomReplaySsotPhase2Enabled(): boolean {
+    return this.configManager.get<boolean>('COLLAB_MAIN_ROOM_REPLAY_SSOT_PHASE2', true);
+  }
+
+  /** UUID thread 读 Redis 会话时不回退 main（E2E / 生产建议开启）。 */
+  isCollabStrictThreadIsolationEnabled(): boolean {
+    return this.configManager.get<boolean>('COLLAB_STRICT_THREAD_ISOLATION', true);
+  }
+
+  isCollabDeptChatConversationalMode(): boolean {
+    return this.configManager.get<boolean>('COLLAB_DEPT_CHAT_CONVERSATIONAL_MODE', true);
+  }
+
+  isCollabDeptTaskStageChatEnabled(): boolean {
+    const raw = this.configManager.get<boolean | undefined>('COLLAB_DEPT_TASK_STAGE_CHAT_ENABLED', undefined);
+    if (raw !== undefined) return raw;
+    if (this.isCollabDeptChatConversationalMode()) return false;
+    return true;
+  }
+
+  isCollabDeptDispatchSystemCardEnabled(): boolean {
+    const raw = this.configManager.get<boolean | undefined>('COLLAB_DEPT_DISPATCH_SYSTEM_CARD_ENABLED', undefined);
+    if (raw !== undefined) return raw;
+    if (this.isCollabDeptChatConversationalMode()) return false;
+    return true;
+  }
+
+  /**
+   * 商城绑定变更事件：单次通知的最大公司数（防超大 MQ payload）。
+   * 环境变量：MARKETPLACE_BINDING_NOTIFY_MAX_COMPANIES（默认 500，范围 1–50000）
+   */
+  getMarketplaceBindingNotifyMaxCompanies(): number {
+    const raw = this.configManager.get<number | string | undefined>(
+      'MARKETPLACE_BINDING_NOTIFY_MAX_COMPANIES',
+    );
+    const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : raw;
+    if (typeof n !== 'number' || Number.isNaN(n)) return 500;
+    return Math.min(50_000, Math.max(1, Math.floor(n)));
+  }
+
+  /**
+   * 单用户可创建（含草稿）的公司数量上限。
+   * 环境变量：MAX_OWNED_COMPANIES_PER_USER（默认 3，范围 1–100）
+   */
+  getMaxOwnedCompaniesPerUser(): number {
+    const raw = this.configManager.get<number | string | undefined>('MAX_OWNED_COMPANIES_PER_USER');
+    const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : raw;
+    if (typeof n !== 'number' || Number.isNaN(n)) return 3;
+    return Math.min(100, Math.max(1, Math.floor(n)));
+  }
+
+  /**
+   * 员工端「商城配置」橙色预警：距上次同步超过该小时数即视为滞后。
+   * 环境变量：AGENT_MARKETPLACE_CONFIG_STALE_HOURS（默认 72，范围 1–8760）
+   */
+  getAgentMarketplaceConfigStaleHours(): number {
+    const raw = this.configManager.get<number | string | undefined>(
+      'AGENT_MARKETPLACE_CONFIG_STALE_HOURS',
+    );
+    const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : raw;
+    if (typeof n !== 'number' || Number.isNaN(n)) return 72;
+    return Math.min(8760, Math.max(1, Math.floor(n)));
+  }
+
   /**
    * 获取监控配置
    */
@@ -116,6 +198,14 @@ export class ConfigService {
         ),
       },
     };
+  }
+
+  getPrometheusBaseUrl(): string {
+    return this.configManager.get<string>('PROMETHEUS_BASE_URL', 'http://localhost:9090');
+  }
+
+  getPrometheusQueryTimeoutMs(): number {
+    return this.configManager.get<number>('PROMETHEUS_QUERY_TIMEOUT_MS', 5000);
   }
 
   /**
@@ -142,6 +232,10 @@ export class ConfigService {
    * Memory / RAG 嵌入配置
    */
   getMemoryConfig(): MemoryConfig {
+    const projectionEnabled = this.configManager.get<boolean>('EMBEDDING_PROJECTION_ENABLED', false);
+    const modelOutDim = this.configManager.get<number>('EMBEDDING_MODEL_DIM', 2048);
+    const targetDim = this.configManager.get<number>('EMBEDDING_TARGET_DIM', 1536);
+    const memoryEmbeddingDim = this.configManager.get<number>('MEMORY_EMBEDDING_DIMENSIONS', 2048);
     return {
       openaiApiKey: this.configManager.get<string>('OPENAI_API_KEY'),
       openaiBaseUrl: this.configManager.get<string>(
@@ -150,15 +244,19 @@ export class ConfigService {
       ),
       embeddingModel: this.configManager.get<string>(
         'MEMORY_EMBEDDING_MODEL',
-        'text-embedding-3-small',
+        'text-embedding-3-large',
       ),
-      embeddingDimensions: this.configManager.get<number>(
-        'MEMORY_EMBEDDING_DIMENSIONS',
-        1536,
-      ),
+      embeddingProjectionEnabled: projectionEnabled,
+      embeddingModelOutputDim: modelOutDim,
+      embeddingTargetDim: targetDim,
+      embeddingDimensions: projectionEnabled ? targetDim : memoryEmbeddingDim,
       ragQueryTimeoutMs: this.configManager.get<number>(
         'MEMORY_RAG_QUERY_TIMEOUT_MS',
         280,
+      ),
+      embeddingFetchTimeoutMs: this.configManager.get<number>(
+        'EMBEDDING_FETCH_TIMEOUT_MS',
+        15000,
       ),
       hybridVectorWeight: this.configManager.get<number>(
         'MEMORY_HYBRID_VECTOR_WEIGHT',
@@ -169,14 +267,15 @@ export class ConfigService {
         true,
       ),
       ragMinScore: this.configManager.get<number>('MEMORY_RAG_MIN_SCORE', 0),
-      embeddingDailyCap: this.configManager.get<number>(
-        'MEMORY_EMBEDDING_DAILY_CAP',
-        0,
-      ),
       summaryDailyCap: this.configManager.get<number>(
         'MEMORY_SUMMARY_DAILY_CAP',
         0,
       ),
+      elasticEnabled: this.configManager.get<boolean>('MEMORY_ELASTIC_ENABLED', false),
+      elasticUrl: this.configManager.get<string>('MEMORY_ELASTIC_URL', '').trim() || undefined,
+      elasticApiKey: this.configManager.get<string>('MEMORY_ELASTIC_API_KEY', '').trim() || undefined,
+      elasticIndexPrefix: this.configManager.get<string>('MEMORY_ELASTIC_INDEX_PREFIX', 'memory').trim() || 'memory',
+      elasticTimeoutMs: this.configManager.get<number>('MEMORY_ELASTIC_TIMEOUT_MS', 600),
     };
   }
 
@@ -188,8 +287,64 @@ export class ConfigService {
     return this.configManager.get<boolean>('ENABLE_MEMORY_CONSOLIDATION', false);
   }
 
+  isApprovalGateEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_APPROVAL_GATE', false);
+  }
+
+  /** Phase 5: advanced multi-level approvals (default off). */
+  isAdvancedApprovalEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ADVANCED_APPROVAL', false);
+  }
+
+  isAdvancedCompanyCreationWizardEnabled(): boolean {
+    return this.configManager.get<boolean>('ENABLE_ADVANCED_COMPANY_CREATION_WIZARD', true);
+  }
+
   getMemoryConsolidationWindowMessages(): number {
     return this.configManager.get<number>('MEMORY_CONSOLIDATION_WINDOW_MESSAGES', 50);
+  }
+
+  /** Phase 3 W13：Memory Graph V2 进程级总开关 */
+  isMemoryGraphV2Enabled(): boolean {
+    return this.configManager.get<boolean>('MEMORY_GRAPH_V2_ENABLED', false);
+  }
+
+  /**
+   * Phase3：CEO 编排以 Memory Graph 为 cortex 主源；`facts.query` 中 company_people/org_structure
+   * 在门控开启时仅允许内部模式：`memory_cortex_sync`、`main_room_replay_prefetch`。
+   */
+  isFactsAsFallbackOnlyEnabled(): boolean {
+    return this.configManager.get<boolean>('FACTS_AS_FALLBACK_ONLY', true);
+  }
+
+  getMemoryGraphV2RolloutPercent(): number {
+    const n = this.configManager.get<number>('MEMORY_GRAPH_V2_ROLLOUT_PERCENT', 100);
+    return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(100, Math.floor(n))) : 100;
+  }
+
+  getMemoryGraphV2RolloutWhitelistCompanyIds(): string[] {
+    const raw = this.configManager.get<string>('MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS', '') ?? '';
+    return raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  /** 嵌入池主线路 unhealthy 时尝试的备用 embedding 模型 ID（未配置则仅依赖池内顺序与缓存恢复）。 */
+  getMemoryEmbeddingPoolFallbackModelId(): string | undefined {
+    const v = String(this.configManager.get<string>('MEMORY_EMBEDDING_POOL_FALLBACK_MODEL_ID', '') ?? '').trim();
+    return v || undefined;
+  }
+
+  /** W14：成本感知 / 仪表盘扩展（默认关闭） */
+  isCostAwareRoutingEnabled(): boolean {
+    return this.configManager.get<boolean>('COST_AWARE_ROUTING_ENABLED', false);
+  }
+
+  getCostAwareBudgetThreshold(): number {
+    const n = this.configManager.get<number>('COST_AWARE_BUDGET_THRESHOLD', 0.82);
+    if (typeof n !== 'number' || !Number.isFinite(n)) return 0.82;
+    return Math.min(1, Math.max(0, n));
   }
 
   /**
@@ -207,7 +362,7 @@ export class ConfigService {
         ),
         baseUrl: this.configManager.get<string>(
           'STORAGE_LOCAL_BASE_URL',
-          '/api/files',
+          '/api/v1/files',
         ),
       },
       minio: {
@@ -302,6 +457,70 @@ export class ConfigService {
     this.cachedDeptZhMap = {};
     this.cachedDeptZhMapLoadedAt = now;
     return this.cachedDeptZhMap;
+  }
+
+  getPhase1RolloutPercent(): number {
+    const n = this.configManager.get<number>('PHASE1_ROLLOUT_PERCENT', 10);
+    return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(100, Math.floor(n))) : 10;
+  }
+
+  getPhase1RolloutWhitelistCompanyIds(): string[] {
+    const raw = this.configManager.get<string>('PHASE1_ROLLOUT_WHITELIST_COMPANY_IDS', '') ?? '';
+    return raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  /** W12：与 Worker 对齐 — API 发布协作入站事件时用 */
+  isAutonomousEventBusV2Enabled(): boolean {
+    return this.configManager.get<boolean>('AUTONOMOUS_EVENT_BUS_V2_ENABLED', false);
+  }
+
+  isMultiAgentGraphV2Enabled(): boolean {
+    return this.configManager.get<boolean>('MULTI_AGENT_GRAPH_V2_ENABLED', false);
+  }
+
+  isDirectorAutonomousEnabled(): boolean {
+    return this.configManager.get<boolean>('DIRECTOR_AUTONOMOUS_ENABLED', false);
+  }
+
+  isEmployeeAutonomousEnabled(): boolean {
+    return this.configManager.get<boolean>('EMPLOYEE_AUTONOMOUS_ENABLED', false);
+  }
+
+  isCrossDepartmentCoordinationEnabled(): boolean {
+    return this.configManager.get<boolean>('CROSS_DEPARTMENT_COORDINATION_ENABLED', false);
+  }
+
+  getPhase2RolloutPercent(): number {
+    const n = this.configManager.get<number>('PHASE2_ROLLOUT_PERCENT', 0);
+    return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(100, Math.floor(n))) : 0;
+  }
+
+  getPhase2RolloutWhitelistCompanyIds(): string[] {
+    const raw = this.configManager.get<string>('PHASE2_ROLLOUT_WHITELIST_COMPANY_IDS', '') ?? '';
+    return raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  isPhase3RolloutEnabled(): boolean {
+    return this.configManager.get<boolean>('PHASE3_ROLLOUT_ENABLED', false);
+  }
+
+  getPhase3RolloutPercent(): number {
+    const n = this.configManager.get<number>('PHASE3_ROLLOUT_PERCENT', 0);
+    return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(100, Math.floor(n))) : 0;
+  }
+
+  getPhase3RolloutWhitelistCompanyIds(): string[] {
+    const raw = this.configManager.get<string>('PHASE3_ROLLOUT_WHITELIST_COMPANY_IDS', '') ?? '';
+    return raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 }
 

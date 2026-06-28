@@ -14,6 +14,9 @@ describe('routes.config billing', () => {
         'billing.settings.update',
         'billing.modelRouter.resolve',
         'billing.checkAllowance',
+        'billing.agentUsage.listCompanyDaily',
+        'billing.agentUsage.listRange',
+        'billing.costTrend.get',
       ]),
     );
   });

@@ -59,6 +59,30 @@ export class AllExceptionsFilter
           name: exception.name,
         };
       }
+    } else if (exception && typeof exception === 'object') {
+      const obj = exception as {
+        status?: number;
+        statusCode?: number;
+        message?: string | string[];
+        response?: { status?: number; statusCode?: number; message?: string | string[]; details?: unknown };
+        details?: unknown;
+      };
+      const resolvedStatus = Number(
+        obj.status ?? obj.statusCode ?? obj.response?.status ?? obj.response?.statusCode,
+      );
+      if (Number.isFinite(resolvedStatus) && resolvedStatus >= 400 && resolvedStatus <= 599) {
+        status = resolvedStatus;
+      }
+
+      const rawMessage = obj.response?.message ?? obj.message;
+      if (Array.isArray(rawMessage)) {
+        message = rawMessage.map((m) => String(m)).join('; ');
+      } else if (typeof rawMessage === 'string' && rawMessage.trim()) {
+        message = rawMessage;
+      }
+
+      details = obj.response?.details ?? obj.details;
+      code = this.getErrorCode(status, obj);
     }
 
     // 记录日志（使用 error 级别，因为这是未处理的异常）

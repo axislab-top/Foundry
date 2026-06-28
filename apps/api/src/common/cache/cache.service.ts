@@ -1,11 +1,23 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
   CacheManager,
   CacheAdapterType,
   CacheAdapter,
 } from '@service/cache';
+import { createClient } from 'redis';
 import { ConfigService } from '../config/config.service.js';
+import { serializeUnknownErrorForLog } from '../logging/serialize-unknown-error.js';
 import { ICacheService } from './interfaces/cache.interface.js';
+
+function redactRedisUrlForLog(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.password) u.password = '***';
+    return u.toString();
+  } catch {
+    return url.replace(/:\/\/([^:/?#]+):([^@]+)@/, '://$1:***@');
+  }
+}
 
 /**
  * 缓存服务
@@ -13,8 +25,12 @@ import { ICacheService } from './interfaces/cache.interface.js';
  */
 @Injectable()
 export class CacheService implements ICacheService, OnModuleInit, OnModuleDestroy {
-  private cacheManager: CacheManager;
-  private adapter: CacheAdapter;
+  private readonly logger = new Logger(CacheService.name);
+  // Ensure adapter is always available synchronously.
+  // Some startup paths (e.g. early RPC handling or other providers' onModuleInit)
+  // can call into CacheService before this provider's async onModuleInit finishes.
+  private cacheManager: CacheManager = CacheManager.getInstance();
+  private adapter: CacheAdapter = this.cacheManager.getAdapter();
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -47,21 +63,77 @@ export class CacheService implements ICacheService, OnModuleInit, OnModuleDestro
         },
       });
     } else {
-      // auto: 先创建内存缓存作为后备
-      defaultAdapter = CacheAdapterType.MEMORY;
-      adapters.push({
-        adapter: CacheAdapterType.MEMORY,
-        options: {},
-      });
+      // auto: 已配置 Redis 时优先 Redis（与 env.shared.example 说明一致）
+      const redisUrl = redisConfig.url?.trim();
+      const hasRedis = Boolean(redisUrl) || Boolean(redisConfig.host?.trim());
+      if (hasRedis) {
+        defaultAdapter = CacheAdapterType.REDIS;
+        adapters.push({
+          adapter: CacheAdapterType.REDIS,
+          options: {
+            host: redisConfig.host,
+            port: redisConfig.port,
+            password: redisConfig.password,
+            db: redisConfig.db,
+            url: redisConfig.url,
+          },
+        });
+      } else {
+        defaultAdapter = CacheAdapterType.MEMORY;
+        adapters.push({
+          adapter: CacheAdapterType.MEMORY,
+          options: {},
+        });
+      }
     }
 
-    // 创建缓存管理器
+    // 创建缓存管理器（可能覆盖构造期的默认 memory adapter）
     CacheManager.reset(); // 重置单例，确保使用新配置
     this.cacheManager = CacheManager.create({
       defaultAdapter,
       adapters,
     });
     this.adapter = this.cacheManager.getAdapter();
+    await this.probeRedisTcpAndLog(redisConfig, defaultAdapter);
+  }
+
+  /** 启动时打 REDIS_* 快照并做一次独立 TCP 探测（与 @service/cache 适配器解耦）。 */
+  private async probeRedisTcpAndLog(
+    redisConfig: { host: string; port: number; password?: string; db: number; url?: string },
+    defaultAdapter: CacheAdapterType,
+  ): Promise<void> {
+    const url = redisConfig.url?.trim();
+    this.logger.log('api.redis.env_snapshot', {
+      service: 'api',
+      CACHE_ADAPTER_TYPE: process.env.CACHE_ADAPTER_TYPE || 'auto',
+      defaultAdapter: String(defaultAdapter),
+      REDIS_URL_configured: Boolean(url),
+      REDIS_HOST: redisConfig.host,
+      REDIS_PORT: redisConfig.port,
+      REDIS_DB: redisConfig.db,
+      PASSWORD_set: Boolean(redisConfig.password),
+      redactedUrl: url ? redactRedisUrlForLog(url) : null,
+    });
+    let probeUrl = url;
+    if (!probeUrl) {
+      const auth = redisConfig.password
+        ? `:${encodeURIComponent(redisConfig.password)}@`
+        : '';
+      probeUrl = `redis://${auth}${redisConfig.host}:${redisConfig.port}/${redisConfig.db}`;
+    }
+    const redactedTarget = url ? redactRedisUrlForLog(url) : `${redisConfig.host}:${redisConfig.port}/db${redisConfig.db}`;
+    try {
+      const c = createClient({ url: probeUrl });
+      await c.connect();
+      const pong = await c.ping();
+      await c.quit().catch(() => undefined);
+      this.logger.log('api.redis.tcp_probe_ok', { redactedTarget, ping: pong });
+    } catch (e: unknown) {
+      this.logger.warn('api.redis.tcp_probe_failed', {
+        redactedTarget,
+        fullError: serializeUnknownErrorForLog(e),
+      });
+    }
   }
 
   async onModuleDestroy() {

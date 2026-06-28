@@ -13,6 +13,7 @@ import { BillingWorkerModule } from './modules/billing/billing-worker.module.js'
 import { TemplatesWorkerModule } from './modules/templates/templates-worker.module.js';
 import { MonitoringModule } from './common/monitoring/monitoring.module.js';
 import { ConfigModule } from './common/config/config.module.js';
+import { CollaborationMainChainSettingsModule } from './common/config/collaboration-main-chain-settings.module.js';
 import { IdempotencyModule } from './common/idempotency/idempotency.module.js';
 import { TenantModule } from '@service/tenant';
 import { WorkerApiRpcModule } from './common/rpc/worker-api-rpc.module.js';
@@ -20,12 +21,17 @@ import { WorkerRunnerRpcModule } from './common/rpc/worker-runner-rpc.module.js'
 import { ObservabilityWorkerModule } from './common/observability/observability-worker.module.js';
 import { AlertsWorkerModule } from './modules/alerts/alerts-worker.module.js';
 import { CompanyRuntimeModule } from './modules/company-runtime/company-runtime.module.js';
+import { CompanyExecutionCoordinationModule } from './common/coordination/company-execution-coordination.module.js';
+import { WorkerGovernanceModule } from './modules/governance/worker-governance.module.js';
 
 @Module({
   imports: [
     // 统一配置管理模块（全局模块）
     ConfigModule,
+    CompanyExecutionCoordinationModule,
+    WorkerGovernanceModule,
     WorkerApiRpcModule,
+    CollaborationMainChainSettingsModule,
     WorkerRunnerRpcModule,
     ObservabilityWorkerModule,
     // 消息队列模块（全局注册）
@@ -53,15 +59,3 @@ import { CompanyRuntimeModule } from './modules/company-runtime/company-runtime.
   providers: [],
 })
 export class AppModule {}
-
-
-
-
-
-
-
-
-
-
-
-

@@ -18,8 +18,7 @@ function roleFromNodeType(t: OrganizationNodeType | undefined | null): AgentRole
 
 /**
  * 将 agent.purchased 中的 marketplace_agent 物化为 company 下的 Agent。
- * - llmModel 固定为 assignedModelName
- * - llmKeyId 固定为 assignedLlmKeyId
+ * - llmModel / llmKeyId：若事件中带有安装期 Key 则写入；否则用商城 boundModelName，Key 留空由运行时 bindings 解析。
  */
 @Injectable()
 export class MarketplaceAgentMaterializationService {
@@ -64,6 +63,7 @@ export class MarketplaceAgentMaterializationService {
       expertise: string | null;
       systemPrompt: string | null;
       recommendedSkills: unknown[] | null;
+      boundModelName: string | null;
     }>('marketplace.agents.findOne', { id: marketplaceAgentId });
 
     const node = await this.rpc<{ id: string; type: OrganizationNodeType }>('organization.node.get', {
@@ -74,6 +74,15 @@ export class MarketplaceAgentMaterializationService {
 
     const role = roleFromNodeType(node?.type);
 
+    const snapModel =
+      (event.data.assignedModelName && String(event.data.assignedModelName).trim()) ||
+      (marketplaceAgent.boundModelName && String(marketplaceAgent.boundModelName).trim()) ||
+      undefined;
+    const snapKeyId =
+      event.data.assignedLlmKeyId && String(event.data.assignedLlmKeyId).trim()
+        ? String(event.data.assignedLlmKeyId).trim()
+        : undefined;
+
     const createdAgent = await this.rpc<{ id: string }>('agents.create', {
       companyId,
       actor,
@@ -83,11 +92,13 @@ export class MarketplaceAgentMaterializationService {
         role,
         expertise: marketplaceAgent.expertise ?? undefined,
         systemPrompt: marketplaceAgent.systemPrompt ?? undefined,
-        llmModel: event.data.assignedModelName,
-        llmKeyId: event.data.assignedLlmKeyId,
+        llmModel: snapModel,
+        llmKeyId: snapKeyId,
         metadata: {
           marketplaceAgentId,
           installedFromMarketplace: true,
+          employmentType: event.data.employmentType,
+          projectId: event.data.projectId,
         },
       },
     });
@@ -99,12 +110,16 @@ export class MarketplaceAgentMaterializationService {
 
     if (recommendedNames.length > 0) {
       const skillIds = await this.rpc<string[]>(
-        'skills.resolveGlobalSkillIdsByNames',
-        { names: recommendedNames },
+        'skills.resolveRequiredGlobalSkillIdsByNames',
+        {
+          names: recommendedNames,
+          source: 'worker_agent_purchased_materialization',
+          errorPrefix: `Marketplace Agent(${marketplaceAgentId}) 推荐技能缺失`,
+        },
       );
 
       if (skillIds.length > 0) {
-        await this.rpc('agents.bindSkills', {
+        const bindRes = await this.rpc<Record<string, unknown>>('agents.bindSkills', {
           companyId,
           actor,
           id: createdAgent.id,
@@ -112,6 +127,14 @@ export class MarketplaceAgentMaterializationService {
             skillIds,
           },
         });
+        if (bindRes && typeof bindRes === 'object' && bindRes['outcome'] === 'pending_approval') {
+          this.logger.warn({
+            msg: 'marketplace_agent_skill_bind_pending_approval',
+            companyId,
+            agentId: createdAgent.id,
+            approvalRequestId: bindRes['approvalRequestId'],
+          });
+        }
       }
     }
   }

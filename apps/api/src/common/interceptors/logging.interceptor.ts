@@ -6,12 +6,12 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
-import { createLogger, LogLevel } from '@service/logging';
+import { createLogger, LogLevel, resolveLogLevelFromEnv } from '@service/logging';
 
 const logger = createLogger({
   service: 'api-service',
   environment: process.env.NODE_ENV || 'development',
-  level: LogLevel.INFO,
+  level: resolveLogLevelFromEnv(),
 });
 
 /**

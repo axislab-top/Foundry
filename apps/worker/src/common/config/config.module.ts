@@ -4,9 +4,9 @@ import {
   ConfigAdapterType,
   ConfigPriority,
 } from '@service/config';
+import { MessagingModule } from '@service/messaging';
 import { configSchema } from './config.schema.js';
 import { ConfigService } from './config.service.js';
-
 /**
  * 配置模块
  * 全局模块，提供配置服务
@@ -14,6 +14,7 @@ import { ConfigService } from './config.service.js';
  */
 @Global()
 @Module({
+  imports: [MessagingModule],
   providers: [
     {
       provide: 'CONFIG_MANAGER',

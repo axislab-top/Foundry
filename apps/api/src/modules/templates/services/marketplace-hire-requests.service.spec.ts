@@ -8,10 +8,15 @@ import {
 } from '@nestjs/common';
 import { Agent } from '../../agents/entities/agent.entity.js';
 import { AgentValidatorService } from '../../agents/services/agent-validator.service.js';
+import { OrganizationNode } from '../../organization/entities/organization-node.entity.js';
+import { Project } from '../../projects/entities/project.entity.js';
 import { MarketplaceHireRequest } from '../entities/marketplace-hire-request.entity.js';
+import { MarketplaceAgentSubscription } from '../entities/marketplace-agent-subscription.entity.js';
 import { AgentPurchaseService } from './agent-purchase.service.js';
 import { MarketplaceService } from './marketplace.service.js';
 import { MarketplaceHireRequestsService } from './marketplace-hire-requests.service.js';
+import { BillingService } from '../../billing/services/billing.service.js';
+import { MarketplaceCatalogPricingService } from './marketplace-catalog-pricing.service.js';
 
 const MATERIALIZE_PENDING_MSG =
   '安装事件已发出，Agent 记录尚未就绪，请稍后刷新组织视图或联系管理员。';
@@ -38,7 +43,12 @@ describe('MarketplaceHireRequestsService', () => {
     };
     const agentsRepo = {
       createQueryBuilder: jest.fn(() => agentsQb),
+      findOne: jest.fn().mockResolvedValue({ id: 'agent-new', companyId, metadata: {} }),
+      save: jest.fn(async (x: Agent) => x),
     };
+    const projectsRepo = { findOne: jest.fn() };
+    const nodesRepo = { save: jest.fn(), find: jest.fn() };
+    const subsRepo = { save: jest.fn() };
     const validator = {
       assertActiveCompanyMember: jest.fn(async () => {
         if (!membershipOk) {
@@ -59,13 +69,40 @@ describe('MarketplaceHireRequestsService', () => {
       assertNodeHasNoAgent: jest.fn(),
     };
     const marketplaceService = {
-      findOne: jest.fn().mockResolvedValue({ id: 'm1', name: 'Test SKU' }),
+      findOne: jest.fn().mockResolvedValue({
+        id: 'm1',
+        name: 'Test SKU',
+        agentCategory: 'employee',
+        boundModelName: 'gpt-4o',
+      }),
+    };
+    const catalogPricingService = {
+      resolvePricingSnapshotForHire: jest.fn().mockResolvedValue({
+        inputPricePerMillion: '1',
+        outputPricePerMillion: '2',
+        currency: 'CREDIT',
+      }),
     };
     const agentPurchaseService = {
       purchase: jest.fn().mockResolvedValue({ ok: true, marketplaceAgentId: 'm1', eventId: 'evt-1' }),
     };
+    const billing = {
+      appendRecord: jest.fn().mockResolvedValue({ record: { id: 'br1' }, utilizationAfter: 0 }),
+    };
 
-    return { hireRepo, agentsRepo, agentsQb, validator, marketplaceService, agentPurchaseService };
+    return {
+      hireRepo,
+      agentsRepo,
+      agentsQb,
+      validator,
+      marketplaceService,
+      agentPurchaseService,
+      billing,
+      catalogPricingService,
+      projectsRepo,
+      nodesRepo,
+      subsRepo,
+    };
   }
 
   async function getSvc(ctx: ReturnType<typeof setup>) {
@@ -74,9 +111,14 @@ describe('MarketplaceHireRequestsService', () => {
         MarketplaceHireRequestsService,
         { provide: getRepositoryToken(MarketplaceHireRequest), useValue: ctx.hireRepo },
         { provide: getRepositoryToken(Agent), useValue: ctx.agentsRepo },
+        { provide: getRepositoryToken(Project), useValue: ctx.projectsRepo },
+        { provide: getRepositoryToken(OrganizationNode), useValue: ctx.nodesRepo },
+        { provide: getRepositoryToken(MarketplaceAgentSubscription), useValue: ctx.subsRepo },
         { provide: AgentValidatorService, useValue: ctx.validator },
         { provide: MarketplaceService, useValue: ctx.marketplaceService },
         { provide: AgentPurchaseService, useValue: ctx.agentPurchaseService },
+        { provide: BillingService, useValue: ctx.billing },
+        { provide: MarketplaceCatalogPricingService, useValue: ctx.catalogPricingService },
       ],
     }).compile();
     return moduleRef.get(MarketplaceHireRequestsService);
@@ -121,11 +163,11 @@ describe('MarketplaceHireRequestsService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('create should reject when node is not agent type', async () => {
+  it('create should reject when node type is not hirable (agent/department/ceo/board)', async () => {
     const ctx = setup(true, false);
     ctx.validator.assertNodeExists = jest.fn(async () => ({
       id: 'n1',
-      type: 'department',
+      type: 'invalid_node_kind',
       agentId: null,
       companyId,
     })) as any;
@@ -204,6 +246,8 @@ describe('MarketplaceHireRequestsService', () => {
       status: 'pending',
       marketplaceAgentId: 'm1',
       organizationNodeId: 'n1',
+      employmentType: 'permanent',
+      projectId: null,
     });
 
     const svc = await getSvc(ctx);
@@ -216,8 +260,21 @@ describe('MarketplaceHireRequestsService', () => {
       'm1',
       companyId,
       actorAdmin,
-      'n1',
-      { skipDirectPurchaseCheck: true, requireEventPublished: true },
+      'node-1',
+      expect.objectContaining({
+        skipDirectPurchaseCheck: true,
+        requireEventPublished: true,
+        employmentType: 'permanent',
+      }),
+    );
+    expect(ctx.billing.appendRecord).toHaveBeenCalledWith(
+      companyId,
+      expect.objectContaining({
+        recordType: 'other',
+        agentId: 'agent-new',
+        pricingSource: 'model_pricing',
+        metadata: expect.objectContaining({ collaborationTokenBillingAligned: true }),
+      }),
     );
   });
 

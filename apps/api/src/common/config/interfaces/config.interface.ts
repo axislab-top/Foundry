@@ -111,8 +111,15 @@ export interface MemoryConfig {
   openaiBaseUrl: string;
   embeddingModel: string;
   embeddingDimensions: number;
+  /** 上游向量维（多模态常见 2048）；仅 EMBEDDING_PROJECTION_ENABLED 时使用 */
+  embeddingModelOutputDim: number;
+  /** 入库与 GraphRAG 余弦检索目标维；投影开启时与 embeddingDimensions 一致 */
+  embeddingTargetDim: number;
+  embeddingProjectionEnabled: boolean;
   /** RAG SQL 执行超时（毫秒） */
   ragQueryTimeoutMs: number;
+  /** Embedding HTTP 请求超时（毫秒） */
+  embeddingFetchTimeoutMs: number;
   /** 混合检索：向量得分权重（余弦），其余为关键词匹配权重 */
   hybridVectorWeight: number;
   /**
@@ -122,10 +129,15 @@ export interface MemoryConfig {
   hybridFullTextSearch: boolean;
   /** 检索后按综合得分过滤（0=关闭） */
   ragMinScore: number;
-  /** 单日 Embedding 调用上限（0=不限制） */
-  embeddingDailyCap: number;
   /** 单日总结类 LLM 调用上限（0=不限制） */
   summaryDailyCap: number;
+
+  /** Hybrid search: enable external BM25 backend (Elastic/OpenSearch) */
+  elasticEnabled?: boolean;
+  elasticUrl?: string;
+  elasticApiKey?: string;
+  elasticIndexPrefix?: string;
+  elasticTimeoutMs?: number;
 }
 
 export interface ApiConfig {

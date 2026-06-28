@@ -14,6 +14,8 @@ export type MarketplaceHireRequestStatus =
   | 'completed'
   | 'failed';
 
+export type MarketplaceEmploymentType = 'permanent' | 'temporary';
+
 @Entity('marketplace_hire_requests')
 @Index(['companyId', 'status'])
 @Index(['companyId', 'createdAt'])
@@ -29,6 +31,13 @@ export class MarketplaceHireRequest {
 
   @Column({ name: 'organization_node_id', type: 'uuid' })
   organizationNodeId: string;
+
+  @Column({ name: 'employment_type', type: 'varchar', length: 16, default: 'permanent' })
+  employmentType: MarketplaceEmploymentType;
+
+  /** 临时雇佣绑定的项目（projects.id） */
+  @Column({ name: 'project_id', type: 'uuid', nullable: true })
+  projectId: string | null;
 
   @Column({ type: 'varchar', length: 32, default: 'pending' })
   status: MarketplaceHireRequestStatus;
