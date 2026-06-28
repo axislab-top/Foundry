@@ -13,7 +13,6 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "paths": {},
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
@@ -27,6 +26,6 @@
     "types": ["node", "multer"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts", "**/*.e2e-spec.ts"]
 }
 
