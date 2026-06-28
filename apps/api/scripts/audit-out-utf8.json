@@ -1,0 +1,703 @@
+﻿{
+  "summary": {
+    "totalAgents": 308,
+    "agentsByRole": {
+      "ceo": 44,
+      "director": 264
+    },
+    "totalEmployees": 0,
+    "ok": 0,
+    "noSkillsAtAll": 0,
+    "partialBind": 0,
+    "missingGlobalSkillsInDb": [],
+    "globalSkillCount": 80
+  },
+  "report": [],
+  "marketplaceEmployees": {
+    "totalInCatalog": 29,
+    "installedToCompanies": 0,
+    "notInstalledCount": 29,
+    "catalogOk": 21,
+    "catalogBroken": 8,
+    "okNames": [
+      "馃憗锔?Code Reviewer",
+      "馃Л Codebase Onboarding Engineer",
+      "馃梽锔?Database Optimizer",
+      "馃К AI Data Remediation Engineer",
+      "鈿?Autonomous Optimization Architect",
+      "馃П CMS Developer",
+      "鈿欙笍 DevOps Automator",
+      "馃摟 Email Intelligence Engineer",
+      "馃敥 Embedded Firmware Engineer",
+      "馃敆 Feishu Integration Developer",
+      "馃敡 Filament Optimization Specialist",
+      "馃尶 Git Workflow Master",
+      "馃毃 Incident Response Commander",
+      "馃 Minimal Change Engineer",
+      "馃敀 Security Engineer",
+      "馃彌锔?Software Architect",
+      "鉀擄笍 Solidity Smart Contract Engineer",
+      "馃洝锔?SRE (Site Reliability Engineer)",
+      "馃摎 Technical Writer",
+      "馃幆 Threat Detection Engineer",
+      "馃帣锔?Voice AI Integration Engineer"
+    ],
+    "broken": [
+      {
+        "name": "馃敡 Data Engineer",
+        "slug": "agency-engineering-engineering-data-engineer",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-api-integration"
+        ],
+        "ok": false
+      },
+      {
+        "name": "馃 AI Engineer",
+        "slug": "agency-engineering-engineering-ai-engineer",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-fullstack-implementer"
+        ],
+        "ok": false
+      },
+      {
+        "name": "馃彈锔?Backend Architect",
+        "slug": "agency-engineering-engineering-backend-architect",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-api-integration"
+        ],
+        "ok": false
+      },
+      {
+        "name": "馃枼锔?Frontend Developer",
+        "slug": "agency-engineering-engineering-frontend-developer",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-fullstack-implementer"
+        ],
+        "ok": false
+      },
+      {
+        "name": "馃摬 Mobile App Builder",
+        "slug": "agency-engineering-engineering-mobile-app-builder",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-fullstack-implementer"
+        ],
+        "ok": false
+      },
+      {
+        "name": "鈿?Rapid Prototyper",
+        "slug": "agency-engineering-engineering-rapid-prototyper",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-fullstack-implementer"
+        ],
+        "ok": false
+      },
+      {
+        "name": "馃拵 Senior Developer",
+        "slug": "agency-engineering-engineering-senior-developer",
+        "recommendedCount": 7,
+        "missingGlobal": [
+          "engineering-fullstack-implementer"
+        ],
+        "ok": false
+      },
+      {
+        "name": "馃挰 WeChat Mini Program Developer",
+        "slug": "agency-engineering-engineering-wechat-mini-program-developer",
+        "recommendedCount": 8,
+        "missingGlobal": [
+          "wechat-miniprogram-scaffold",
+          "wechat-miniprogram-page-builder"
+        ],
+        "ok": false
+      }
+    ]
+  },
+  "directors": {
+    "total": 264,
+    "ok": 91,
+    "zeroSkills": 173,
+    "partial": 0,
+    "byCompany": {
+      "123": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E Co 1778663238796": {
+        "total": 1,
+        "ok": 0,
+        "zeroSkills": 1,
+        "partial": 0
+      },
+      "E2E Co 1778663527669": {
+        "total": 1,
+        "ok": 0,
+        "zeroSkills": 1,
+        "partial": 0
+      },
+      "E2E Co 1778663831124": {
+        "total": 1,
+        "ok": 0,
+        "zeroSkills": 1,
+        "partial": 0
+      },
+      "E2E Co 1778664429581": {
+        "total": 1,
+        "ok": 0,
+        "zeroSkills": 1,
+        "partial": 0
+      },
+      "E2E Co 1778664776746": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E Journey 1778153897568": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "E2E Journey 1778154401673": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1778662822176": {
+        "total": 1,
+        "ok": 0,
+        "zeroSkills": 1,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1778664788273": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1778664872676": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1778664956020": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1778675126943": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1778684249427": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1779004489778": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1779011513164": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1779011764961": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1779012210699": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "E2E 鍏ㄩ摼璺?1779012412958": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "adsasd": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "chiu": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "czxzxc": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "dsa": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "dsaa": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "ixng": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "ke": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "kkk": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "ooo": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "sssss": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "szdsssd": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "testee": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "test娴嬭瘯鍏徃": {
+        "total": 7,
+        "ok": 7,
+        "zeroSkills": 0,
+        "partial": 0
+      },
+      "vdsav": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "viyvhikb": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "ysysys": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "yyy": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "zcxczx": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "zszszsz": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "zxczxc": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "鍙互鏅鸿兘绉戞妧鏈夐檺鍏徃": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "鍟婂疄鎵撳疄鎵撶畻": {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      },
+      "璇濊垂鐨勫洖澶?: {
+        "total": 7,
+        "ok": 0,
+        "zeroSkills": 7,
+        "partial": 0
+      }
+    },
+    "problemSamples": [
+      {
+        "name": "Sales Director",
+        "company": "E2E Co 1778663238796",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Sales Director",
+        "company": "E2E Co 1778663527669",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Sales Director",
+        "company": "E2E Co 1778663831124",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Sales Director",
+        "company": "E2E Co 1778664429581",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Administration Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Finance Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "HR Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Marketing Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Operations Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Product Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Sales Director",
+        "company": "E2E Journey 1778153897568",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Administration Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Finance Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "HR Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Marketing Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Operations Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Product Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Sales Director",
+        "company": "E2E Journey 1778154401673",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Sales Director",
+        "company": "E2E 鍏ㄩ摼璺?1778662822176",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      },
+      {
+        "name": "Administration Director",
+        "company": "adsasd",
+        "boundCount": 0,
+        "expectedCount": 5,
+        "missingGlobal": [],
+        "missingBound": [
+          "director-task-delegator",
+          "director-progress-reporter",
+          "director-subordinate-reviewer",
+          "department.knowledge.query",
+          "director-team-performance-coach"
+        ],
+        "ok": false,
+        "marketplace": null
+      }
+    ]
+  }
+}
