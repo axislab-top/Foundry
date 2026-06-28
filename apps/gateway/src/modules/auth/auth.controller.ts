@@ -20,13 +20,16 @@ import {
   ApiBody,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
 import type { Response, Request } from '../../common/types/express.types.js';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { LogoutDto } from './dto/logout.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ResetPasswordWithCodeDto } from './dto/reset-password-with-code.dto.js';
+import { SendRegistrationCodeDto } from './dto/send-registration-code.dto.js';
 import { WechatCallbackDto } from './dto/wechat-login.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RateLimitGuard } from '../rate-limiting/guards/rate-limit.guard.js';
@@ -62,9 +65,23 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @Post('register/send-verification-code')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    maxRequests: 5,
+    skipSuccessfulRequests: false,
+  })
+  @ApiOperation({ summary: '发送注册验证码', description: '向邮箱发送 6 位注册验证码' })
+  @ApiBody({ type: SendRegistrationCodeDto })
+  async sendRegistrationVerificationCode(@Body() dto: SendRegistrationCodeDto) {
+    return this.authService.sendRegistrationVerificationCode(dto);
+  }
+
   @Post('login')
-  // 注意：不使用 @HttpCode 装饰器，让 TransformInterceptor 和异常过滤器来处理状态码
-  // 这样在异常情况下，异常过滤器可以正确设置状态码
+  @HttpCode(HttpStatus.OK)
   @Public()
   @UseGuards(RateLimitGuard)
   @RateLimit({
@@ -106,10 +123,21 @@ export class AuthController {
     return this.authService.adminLogin(loginDto);
   }
 
+  @Post('admin/register')
+  @HttpCode(HttpStatus.CREATED)
+  @Public()
+  @ApiOperation({ summary: '管理员注册', description: '管理后台专用注册，使用独立管理员账号体系' })
+  @ApiBody({ type: RegisterDto })
+  @ApiResponse({ status: 201, description: '管理员注册成功，返回访问令牌和刷新令牌' })
+  @ApiResponse({ status: 400, description: '请求参数错误' })
+  @ApiResponse({ status: 409, description: '邮箱或用户名已存在' })
+  async adminRegister(@Body() registerDto: RegisterDto) {
+    return this.authService.adminRegister(registerDto);
+  }
+
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Public()
-  @UseGuards(AuthGuard('refresh'))
   @ApiOperation({ summary: '刷新令牌', description: '使用刷新令牌获取新的访问令牌' })
   @ApiBody({ type: RefreshTokenDto })
   @ApiResponse({ status: 200, description: '令牌刷新成功' })
@@ -132,6 +160,74 @@ export class AuthController {
   ) {
     await this.authService.logout(user.id, user.tokenId, logoutDto.refreshToken);
     return { message: 'Logout successful' };
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    maxRequests: 3,
+    skipSuccessfulRequests: false,
+  })
+  @ApiOperation({ summary: '忘记密码', description: '向注册邮箱发送密码重置链接' })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiResponse({ status: 200, description: '请求已受理（无论邮箱是否存在）' })
+  @ApiResponse({ status: 429, description: '请求过于频繁' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('forgot-password/send-code')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    maxRequests: 3,
+    skipSuccessfulRequests: false,
+  })
+  @ApiOperation({ summary: '发送重置密码验证码', description: '向邮箱发送 6 位重置密码验证码' })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiResponse({ status: 200, description: '验证码已发送' })
+  @ApiResponse({ status: 429, description: '请求过于频繁' })
+  async sendResetPasswordCode(@Body() dto: ForgotPasswordDto) {
+    return this.authService.sendResetPasswordCode(dto);
+  }
+
+  @Post('reset-password-with-code')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    maxRequests: 5,
+    skipSuccessfulRequests: false,
+  })
+  @ApiOperation({ summary: '使用验证码重置密码', description: '使用邮箱验证码设置新密码' })
+  @ApiBody({ type: ResetPasswordWithCodeDto })
+  @ApiResponse({ status: 200, description: '密码重置成功' })
+  @ApiResponse({ status: 400, description: '验证码无效或已过期' })
+  async resetPasswordWithCode(@Body() dto: ResetPasswordWithCodeDto) {
+    return this.authService.resetPasswordWithCode(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    ttl: 60,
+    maxRequests: 5,
+    skipSuccessfulRequests: false,
+  })
+  @ApiOperation({ summary: '重置密码', description: '使用邮件中的令牌设置新密码' })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({ status: 200, description: '密码重置成功' })
+  @ApiResponse({ status: 400, description: '令牌无效或已过期' })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   /**

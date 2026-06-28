@@ -1,0 +1,10 @@
+{
+  "name": "@infrastructure/llm-rules",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/llm-routing-rule.enforcer.ts",
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}
+

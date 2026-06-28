@@ -1,0 +1,15 @@
+# Sample: per-namespace ResourceQuota（适用于「每公司独立 Namespace」部署）。
+# 单 Namespace 多标签租户时，请使用 Runner 软配额（RUNNER_QUOTA_*）为主。
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: foundry-company-workspace
+  namespace: foundry-runner
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    persistentvolumeclaims: "5"
+    count/jobs.batch: "30"

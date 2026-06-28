@@ -62,7 +62,7 @@ export abstract class BaseStorageAdapter implements IStorageAdapter {
 
   abstract download(path: string): Promise<Buffer>;
 
-  abstract getUrl(path: string, expiresIn?: number): Promise<string>;
+  abstract getUrl(path: string, expiresIn?: number, downloadFileName?: string): Promise<string>;
 
   abstract delete(path: string): Promise<boolean>;
 

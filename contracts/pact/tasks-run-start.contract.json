@@ -4,7 +4,7 @@
   "request": {
     "companyId": "uuid",
     "actor": { "id": "uuid", "roles": ["admin"] },
-    "triggerSource": "temporal | schedule | manual | nest_timer",
+    "triggerSource": "temporal | schedule | manual | nest_timer | task_completed | budget_warning",
     "temporalWorkflowId": "string | optional",
     "temporalRunId": "string | optional",
     "metadata": "object | optional"

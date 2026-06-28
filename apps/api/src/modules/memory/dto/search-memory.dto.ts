@@ -60,6 +60,11 @@ export class SearchMemoryDto {
   @IsUUID()
   agentId?: string;
 
+  /** Optional projectId (tasks root id). Required for temporary agents. */
+  @IsOptional()
+  @IsUUID()
+  projectId?: string;
+
   @IsOptional()
   @IsUUID()
   organizationNodeId?: string;

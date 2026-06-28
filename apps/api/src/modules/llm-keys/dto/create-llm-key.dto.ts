@@ -1,7 +1,11 @@
-import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateLlmKeyRpcDto {
+  @IsOptional()
+  @IsUUID()
+  llmModelId?: string;
+
   @IsString()
   @MaxLength(32)
   provider: string;

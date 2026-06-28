@@ -20,6 +20,9 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "create", "patch", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots", "volumesnapshotcontents"]
+    verbs: ["get", "create", "list", "watch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -71,6 +74,17 @@ spec:
               value: "foundry-runner"
             - name: RUNNER_GVISOR_RUNTIME_CLASS
               value: "gvisor"
+            # P19：集群默认隔离运行时（gvisor | firecracker）；租户可经 DB 覆盖
+            - name: RUNNER_DEFAULT_RUNTIME_CLASS
+              value: "gvisor"
+            # 可选：与 Hybrid 重命令路由共用同一 Firecracker RuntimeClass 名
+            # - name: RUNNER_FIRECRACKER_RUNTIME_CLASS
+            #   value: "firecracker"
+            # Firecracker 节点隔离（JSON）；示例见 infrastructure/k8s/runner/runtimeclass-firecracker.yaml
+            # - name: RUNNER_FIRECRACKER_NODE_SELECTOR_JSON
+            #   value: '{"foundry.io/firecracker":"true"}'
+            # - name: RUNNER_FIRECRACKER_TOLERATIONS_JSON
+            #   value: '[{"key":"foundry.io/firecracker","operator":"Equal","value":"true","effect":"NoSchedule"}]'
             - name: API_RMQ_RPC_QUEUE
               value: "api-rpc-queue"
           resources:
@@ -92,3 +106,44 @@ spec:
   ports:
     - port: 3010
       targetPort: 3010
+---
+#
+# Sprint 2 P11：NetworkPolicy 加固
+# - 仅允许来自 Worker namespace 的入站（Runner RPC）
+# - 如需允许 API 直连（例如调试），请显式追加 namespaceSelector
+#
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foundry-runner-ingress-from-worker-only
+  namespace: foundry-runner
+spec:
+  podSelector:
+    matchLabels:
+      app: foundry-runner
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              foundry.io/namespace-role: worker
+      ports:
+        - protocol: TCP
+          port: 3010
+---
+#
+# Sprint 2 P11：ResourceQuota 加固
+# 防止 Runner / Job 控制面被误配置打爆节点（实际 Job 限额仍由各 Job 模板决定）。
+#
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: foundry-runner-rq
+  namespace: foundry-runner
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: "4Gi"
+    limits.cpu: "4"
+    limits.memory: "8Gi"

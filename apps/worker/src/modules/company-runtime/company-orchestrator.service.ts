@@ -19,6 +19,8 @@ import { Inject, Logger } from '@nestjs/common';
 import type { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
 import { ConfigService } from '../../common/config/config.service.js';
+import { PendingAgentTaskExecutionService } from '../tasks/pending-agent-tasks.service.js';
+import { HeartbeatEscalationDeciderService } from './heartbeat-escalation-decider.service.js';
 
 @Injectable()
 export class CompanyOrchestratorService {
@@ -36,6 +38,8 @@ export class CompanyOrchestratorService {
     private readonly stateService: CompanyStateService,
     private readonly cortex: CompanyCortexService,
     private readonly monitoring: MonitoringService,
+    private readonly pendingAgentTasks: PendingAgentTaskExecutionService,
+    private readonly heartbeatEscalation: HeartbeatEscalationDeciderService,
   ) {}
 
   private actor() {
@@ -115,12 +119,42 @@ export class CompanyOrchestratorService {
           triggerSource: ctx.triggerSource,
         });
       }
+      if (
+        shouldEnterEmergencyRecovery &&
+        this.config.isCompanyEmergencyRecoveryRunPending()
+      ) {
+        try {
+          await this.pendingAgentTasks.processPendingForCompany(ctx.companyId);
+        } catch (e: unknown) {
+          this.logger.warn('emergency recovery pending scan failed', {
+            companyId: ctx.companyId,
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+      let coordinatorOpts = { ...(ctx.options ?? {}) };
+      if (!shouldEnterEmergencyRecovery) {
+        const escalation = await this.heartbeatEscalation.decide({
+          companyId: ctx.companyId,
+          review: reviewResult,
+          snapshot,
+        });
+        coordinatorOpts = {
+          ...coordinatorOpts,
+          heartbeatTier: escalation.tier,
+          heartbeatTierReason: escalation.reason,
+          heartbeatFingerprint: escalation.fingerprint,
+        };
+      }
       const execution = shouldEnterEmergencyRecovery
         ? {
             runId: `recovery-${Date.now()}`,
             dispatchedActions: [] as string[],
           }
-        : await this.actorService.executePlan(ctx, plan);
+        : await this.actorService.executePlan(
+            { ...ctx, options: coordinatorOpts },
+            plan,
+          );
       await this.reporterService.generateAndPublishReport({
         context: ctx,
         review: reviewResult,

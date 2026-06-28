@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '../../common/config/config.module.js';
@@ -17,6 +17,7 @@ import { WebhooksRpcProxyService } from './proxies/webhooks-rpc-proxy.service.js
 import { WorkerProxyService } from './proxies/worker-proxy.service.js';
 import { RoutesController } from './routes.controller.js';
 import { ProxyController } from './proxy.controller.js';
+import { departmentSlugMiddleware } from '../../common/middleware/department-slug.middleware.js';
 import { RoutesInitializerService } from './services/routes-initializer.service.js';
 
 /**
@@ -47,7 +48,11 @@ import { RoutesInitializerService } from './services/routes-initializer.service.
   ],
   exports: [RoutingService, DynamicRoutesService],
 })
-export class RoutingModule {}
+export class RoutingModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(departmentSlugMiddleware).forRoutes(ProxyController);
+  }
+}
 
 
 

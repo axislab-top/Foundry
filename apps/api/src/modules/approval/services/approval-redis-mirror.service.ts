@@ -2,14 +2,19 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { createClient, type RedisClientType } from 'redis';
 import { ConfigService } from '../../../common/config/config.service.js';
 
+/** Redis 镜像载荷：字段名统一使用 executionTokenId（与 DTO / Span / 日志一致） */
 export interface ExecutionTokenMirrorPayload {
+  executionTokenId: string;
   companyId: string;
   approvalRequestId: string;
   action: string;
+  skillSlug?: string | null;
+  used: boolean;
+  expiresAtIso: string;
 }
 
 /**
- * 执行令牌 Redis 镜像：签发时 SETEX，消费成功后 DEL；用于快速拒绝错误租户/动作（可选）与与计划中的 JWT 黑名单对齐。
+ * 执行令牌 Redis 镜像：签发时 SETEX，消费成功后 DEL；用于快速拒绝错误租户/动作/skill 绑定。
  * 权威消费仍在 PostgreSQL；Redis 缺失时回退仅走 PG。
  */
 @Injectable()
@@ -19,12 +24,21 @@ export class ApprovalRedisMirrorService implements OnModuleDestroy {
 
   constructor(private readonly config: ConfigService) {}
 
-  private key(tokenId: string): string {
-    return `m4:exec:${tokenId}`;
+  private key(executionTokenId: string): string {
+    return `m4:executionTokenId:${executionTokenId}`;
   }
 
-  private usedKey(tokenId: string): string {
-    return `m4:exec:used:${tokenId}`;
+  /** 兼容历史键（仅 assert / onConsumed 读取或删除） */
+  private legacyKey(executionTokenId: string): string {
+    return `m4:exec:${executionTokenId}`;
+  }
+
+  private usedKey(executionTokenId: string): string {
+    return `m4:executionTokenId:used:${executionTokenId}`;
+  }
+
+  private legacyUsedKey(executionTokenId: string): string {
+    return `m4:exec:used:${executionTokenId}`;
   }
 
   isEnabled(): boolean {
@@ -69,11 +83,17 @@ export class ApprovalRedisMirrorService implements OnModuleDestroy {
   }
 
   /** 审批签发令牌后写入镜像（TTL 与 PG expires_at 对齐，单位秒） */
-  async setMirror(tokenId: string, payload: ExecutionTokenMirrorPayload, ttlSec: number): Promise<void> {
+  async setMirror(
+    executionTokenId: string,
+    payload: ExecutionTokenMirrorPayload,
+    ttlSec: number,
+  ): Promise<void> {
     const c = await this.ensureClient();
     if (!c) return;
     try {
-      await c.set(this.key(tokenId), JSON.stringify(payload), { EX: Math.max(30, ttlSec) });
+      await c.set(this.key(executionTokenId), JSON.stringify(payload), {
+        EX: Math.max(30, ttlSec),
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       this.logger.warn(`setMirror failed: ${msg}`);
@@ -81,24 +101,47 @@ export class ApprovalRedisMirrorService implements OnModuleDestroy {
   }
 
   /**
-   * 消费前快速校验：镜像存在且租户/动作不一致则拒绝（不碰 PG）。
+   * 消费前快速校验：镜像存在且租户/动作/skill 不一致则拒绝（不碰 PG）。
    * 镜像不存在则返回 true（走 PG 主路径）。
    */
   async assertMirrorMatchesOrAbsent(
-    tokenId: string,
+    executionTokenId: string,
     companyId: string,
     action: string,
+    skillSlug?: string | null,
   ): Promise<void> {
     const c = await this.ensureClient();
     if (!c) return;
     try {
-      const raw = await c.get(this.key(tokenId));
+      let raw = await c.get(this.key(executionTokenId));
+      if (!raw) {
+        raw = await c.get(this.legacyKey(executionTokenId));
+      }
       if (!raw) return;
-      const p = JSON.parse(raw) as ExecutionTokenMirrorPayload;
+      const p = JSON.parse(raw) as ExecutionTokenMirrorPayload & {
+        approvalRequestId?: string;
+        action?: string;
+      };
+      const pid = p.executionTokenId ?? executionTokenId;
+      if (pid !== executionTokenId) {
+        throw Object.assign(new Error('execution token id mismatch (redis)'), { status: 403 });
+      }
       if (p.companyId !== companyId || p.action !== action) {
         throw Object.assign(new Error('execution token tenant or action mismatch (redis)'), {
           status: 403,
         });
+      }
+      const bound = p.skillSlug != null && String(p.skillSlug).trim() !== '';
+      if (bound) {
+        const expect = skillSlug?.trim() ?? '';
+        if (!expect || expect !== String(p.skillSlug).trim()) {
+          throw Object.assign(new Error('execution token skillSlug mismatch (redis)'), {
+            status: 403,
+          });
+        }
+      }
+      if (p.used === true) {
+        throw Object.assign(new Error('execution token already used (redis)'), { status: 403 });
       }
     } catch (e: unknown) {
       if (e && typeof e === 'object' && 'status' in e) throw e;
@@ -108,12 +151,14 @@ export class ApprovalRedisMirrorService implements OnModuleDestroy {
   }
 
   /** PG 消费成功后删除镜像并写入短期「已用」键（防短时间重放探测） */
-  async onConsumed(tokenId: string): Promise<void> {
+  async onConsumed(executionTokenId: string): Promise<void> {
     const c = await this.ensureClient();
     if (!c) return;
     try {
-      await c.del(this.key(tokenId));
-      await c.set(this.usedKey(tokenId), '1', { EX: 86_400 });
+      await c.del(this.key(executionTokenId));
+      await c.del(this.legacyKey(executionTokenId));
+      await c.set(this.usedKey(executionTokenId), '1', { EX: 86_400 });
+      await c.set(this.legacyUsedKey(executionTokenId), '1', { EX: 86_400 });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       this.logger.warn(`onConsumed redis: ${msg}`);

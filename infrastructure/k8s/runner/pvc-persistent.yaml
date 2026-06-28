@@ -1,0 +1,19 @@
+# P14：示例 — 每公司持久 Runner workspace PVC（与 SandboxService.pvcNameForCompany 命名约定一致）
+# 实际 PVC 由 Runner 在首次执行时创建；本文件供集群预置 / 文档对齐。
+# 硬性：metadata.labels 必须含 company_id 与 foundry.io/company-id（同值 UUID）。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-00000000-0000-4000-8000-0000000000aa
+  namespace: foundry-runner
+  labels:
+    company_id: 00000000-0000-4000-8000-0000000000aa
+    foundry.io/company-id: 00000000-0000-4000-8000-0000000000aa
+    foundry.io/persistent: "true"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: your-scsi-class

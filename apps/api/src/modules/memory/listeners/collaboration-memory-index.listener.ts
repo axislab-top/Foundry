@@ -76,6 +76,12 @@ export class CollaborationMemoryIndexListener implements OnModuleInit {
       const text = message.content?.trim() ?? '';
       if (!text) return;
 
+      // Opt 3: skip trivial messages that provide no memory value
+      if (text.length < 5) return;
+      if (/^(好的|ok|okay|收到|嗯|了解|明白|知道了|没问题|可以|行|好|对|是|yes|no|sure|got it|understood|roger|10-4)[\s!！。.]*$/i.test(text)) {
+        return;
+      }
+
       const room = await this.roomsRepo.findOne({
         where: { id: message.roomId, companyId },
       });
@@ -89,12 +95,11 @@ export class CollaborationMemoryIndexListener implements OnModuleInit {
       const label = `Session room: ${room.name}`;
 
       try {
-        await this.memory.storeEntry({
+        const base = {
           companyId,
           namespace,
           collectionLabel: label,
           content: text,
-          sourceType: 'chat',
           sourceRef: message.id,
           metadata: {
             roomId: message.roomId,
@@ -106,7 +111,13 @@ export class CollaborationMemoryIndexListener implements OnModuleInit {
             memoryKind: 'collaboration_message',
           },
           skipAccessCheck: true,
-        });
+        };
+        const governanceV2 = this.config.get<boolean>('MEMORY_GOVERNANCE_V2_ENABLED', false);
+        if (governanceV2 && String(message.messageType) === 'summary') {
+          await this.memory.storeSummary(base);
+        } else {
+          await this.memory.storeEntry({ ...base, sourceType: 'chat' });
+        }
         if (
           this.config.isMemoryConsolidationEnabled() &&
           Number.isFinite(Number(message.seq)) &&

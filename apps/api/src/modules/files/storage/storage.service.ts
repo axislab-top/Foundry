@@ -62,10 +62,11 @@ export class StorageService {
     companyId: string,
     path: string,
     expiresIn?: number,
+    downloadFileName?: string,
   ): Promise<string> {
     const cid = this.assertCompanyId(companyId);
     const key = resolveTenantObjectKey(cid, path, 'read');
-    return this.adapter.getUrl(key, expiresIn);
+    return this.adapter.getUrl(key, expiresIn, downloadFileName);
   }
 
   async delete(companyId: string, path: string): Promise<boolean> {

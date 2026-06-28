@@ -16,6 +16,10 @@ export class ApprovalExecutionToken {
   @Column({ type: 'varchar', length: 128 })
   action: string;
 
+  /** P12：与 Runner `runner.skill.execute` 的 `skillSlug` 绑定；NULL 表示历史/非技能作用域令牌 */
+  @Column({ name: 'skill_slug', type: 'varchar', length: 128, nullable: true })
+  skillSlug: string | null;
+
   @Column({ name: 'expires_at', type: 'timestamp' })
   expiresAt: Date;
 

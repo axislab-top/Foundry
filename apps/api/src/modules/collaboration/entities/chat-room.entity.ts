@@ -7,7 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type ChatRoomType = 'main' | 'department' | 'task' | 'custom';
+export type ChatRoomType = 'main' | 'department' | 'task' | 'custom' | 'direct';
 
 /** 群协作路由模式：讨论 / 直聊 / 执行 / 等待审批 */
 export type CollaborationMode = 'discussion' | 'direct' | 'execution' | 'approval_wait';

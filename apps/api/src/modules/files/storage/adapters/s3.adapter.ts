@@ -8,6 +8,7 @@ import {
   UploadOptions,
   ListOptions,
 } from '../../interfaces/storage.interface.js';
+import { buildAttachmentContentDisposition } from '../content-disposition.util.js';
 
 /**
  * AWS S3 存储适配器
@@ -106,11 +107,18 @@ export class S3StorageAdapter extends BaseStorageAdapter implements IStorageAdap
     return Buffer.concat(chunks);
   }
 
-  async getUrl(path: string, expiresIn: number = 3600): Promise<string> {
+  async getUrl(
+    path: string,
+    expiresIn: number = 3600,
+    downloadFileName?: string,
+  ): Promise<string> {
     this.assertTenantObjectKey(path);
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: path,
+      ...(downloadFileName
+        ? { ResponseContentDisposition: buildAttachmentContentDisposition(downloadFileName) }
+        : {}),
     });
 
     return await getSignedUrl(this.client, command, { expiresIn });

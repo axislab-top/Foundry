@@ -5,28 +5,17 @@ jest.mock('../../common/config/config.service.js', () => ({
 import { AutonomousTriggerService } from './autonomous-trigger.service.js';
 
 describe('AutonomousTriggerService', () => {
-  it('applies cooldown per company and trigger kind', () => {
-    const config = {
-      getAutonomousCooldownTaskCompletedMs: () => 60_000,
-      getAutonomousCooldownBudgetWarningMs: () => 120_000,
+  it('delegates cooldown to coordination service', async () => {
+    const coordination = {
+      tryAutonomousTriggerAsync: jest
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false),
     };
-    const svc = new AutonomousTriggerService(config as any);
+    const config = {} as any;
+    const svc = new AutonomousTriggerService(config, coordination as any);
 
-    expect(svc.shouldRun('c1', 'task_completed')).toBe(true);
-    expect(svc.shouldRun('c1', 'task_completed')).toBe(false);
-    expect(svc.shouldRun('c2', 'task_completed')).toBe(true);
-
-    expect(svc.shouldRun('c1', 'budget_warning')).toBe(true);
-    expect(svc.shouldRun('c1', 'budget_warning')).toBe(false);
-  });
-
-  it('allows when cooldown is 0', () => {
-    const config = {
-      getAutonomousCooldownTaskCompletedMs: () => 0,
-      getAutonomousCooldownBudgetWarningMs: () => 0,
-    };
-    const svc = new AutonomousTriggerService(config as any);
-    expect(svc.shouldRun('c1', 'task_completed')).toBe(true);
-    expect(svc.shouldRun('c1', 'task_completed')).toBe(true);
+    expect(await svc.shouldRun('c1', 'task_completed')).toBe(true);
+    expect(await svc.shouldRun('c1', 'task_completed')).toBe(false);
   });
 });

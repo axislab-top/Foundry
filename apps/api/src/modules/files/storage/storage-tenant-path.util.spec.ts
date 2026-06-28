@@ -1,5 +1,6 @@
 import {
   resolveTenantObjectKey,
+  resolveTenantListPrefix,
   normalizeStorageKey,
 } from './storage-tenant-path.util.js';
 
@@ -48,5 +49,9 @@ describe('storage-tenant-path.util', () => {
 
   it('rejects path traversal', () => {
     expect(() => resolveTenantObjectKey(cid, '../x', 'write')).toThrow();
+  });
+
+  it('list prefix allows trailing slash for legacy memory path', () => {
+    expect(resolveTenantListPrefix(cid, `memory/${cid}/`)).toBe(`memory/${cid}/`);
   });
 });

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
+import { formatUnknownError } from '@service/logging';
 import { MessagingService } from '@service/messaging';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
 import type { BudgetCriticalLowEvent, BudgetExceededEvent } from '@contracts/events';
@@ -101,10 +102,9 @@ export class BudgetSignalsCollaborationListener implements OnModuleInit {
           `【预算】公司已超支（使用率 ${(event.data.utilization * 100).toFixed(0)}%）。新任务与高额工具将被暂停，是否补充预算？`,
         );
       } catch (e: unknown) {
-        this.logger.warn('budget.exceeded collaboration message failed', {
-          companyId,
-          message: e instanceof Error ? e.message : String(e),
-        });
+        this.logger.warn(
+          `budget.exceeded collaboration message failed companyId=${companyId}: ${formatUnknownError(e)}`,
+        );
       }
     });
   }
@@ -120,10 +120,9 @@ export class BudgetSignalsCollaborationListener implements OnModuleInit {
           `【预算】剩余约 ${rem.toFixed(0)}%（临界阈值 ${(event.data.criticalThreshold * 100).toFixed(0)}%）。请关注消耗曲线并及时充值。`,
         );
       } catch (e: unknown) {
-        this.logger.warn('budget.critical_low collaboration message failed', {
-          companyId,
-          message: e instanceof Error ? e.message : String(e),
-        });
+        this.logger.warn(
+          `budget.critical_low collaboration message failed companyId=${companyId}: ${formatUnknownError(e)}`,
+        );
       }
     });
   }

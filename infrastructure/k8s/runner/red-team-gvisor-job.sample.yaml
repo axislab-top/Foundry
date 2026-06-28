@@ -1,0 +1,40 @@
+# Sample: one-off red-team Job — mount ONE workspace PVC at /workspace, gVisor runtime.
+# Replace namespace / claimName / company UUID label before apply.
+# Prefer automation: `pnpm run red-team:sandbox:real` (see docs/security/tenant-red-team-plan.md).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: foundry-redteam-
+  namespace: foundry-runner
+  labels:
+    foundry.io/red-team: "true"
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    spec:
+      runtimeClassName: gvisor
+      restartPolicy: Never
+      containers:
+        - name: redteam
+          image: busybox:1.36
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo PASS:start
+              mkdir -p /workspace/sub && echo x > /workspace/sub/f
+              rm -rf /workspace/*
+              test ! -f /workspace/sub/f
+              echo PASS:rm_rf_only_workspace
+              mkdir -p /workspace/a && ln -sf /tmp /workspace/a/out
+              test -d /workspace/a/out
+              echo PASS:symlink_resolves_inside_mount
+              echo PASS:all
+          volumeMounts:
+            - name: ws
+              mountPath: /workspace
+      volumes:
+        - name: ws
+          persistentVolumeClaim:
+            claimName: workspace-replace-with-company-safe-name

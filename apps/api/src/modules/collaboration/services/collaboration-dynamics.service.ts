@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -176,6 +177,25 @@ export class CollaborationDynamicsService {
       });
     }
 
+    const departmentSlug =
+      (dto.departmentSlug?.trim() || this.toDepartmentSlug(node.name)).toLowerCase();
+    if (!departmentSlug) {
+      throw new ConflictException({
+        code: ErrorCode.BAD_REQUEST,
+        message: '部门标识不能为空',
+      });
+    }
+    const existing = await this.rooms.findDepartmentRoomBySlug(
+      companyId,
+      departmentSlug,
+    );
+    if (existing) {
+      throw new ConflictException({
+        code: ErrorCode.RECORD_ALREADY_EXISTS,
+        message: `部门群已存在（departmentSlug=${departmentSlug}）`,
+      });
+    }
+
     const name = dto.name?.trim() || `${node.name} · 部门群`;
 
     const room = await this.rooms.createRoom(companyId, {
@@ -183,7 +203,10 @@ export class CollaborationDynamicsService {
       name,
       createdBy: actor.id,
       organizationNodeId: dto.organizationNodeId,
-      metadata: { source: 'createDepartmentRoom' },
+      metadata: {
+        source: 'createDepartmentRoom',
+        departmentSlug,
+      },
     });
 
     await this.members.addMembers(companyId, room.id, [
@@ -213,6 +236,33 @@ export class CollaborationDynamicsService {
       `已创建部门协作群「${name}」，并拉入当前组织范围内的 Agent。`,
       { kind: 'room_created', roomType: 'department' },
     );
+
+    return room;
+  }
+
+  /**
+   * 查找或创建与 Agent 的私聊房间，并将双方加入成员列表。
+   */
+  async findOrCreateDirectRoom(
+    companyId: string,
+    actor: ActorRef,
+    agentId: string,
+    agentName: string,
+  ): Promise<ChatRoom> {
+    const existing = await this.rooms.findDirectRoom(companyId, actor.id, agentId);
+    if (existing) return existing;
+
+    const room = await this.rooms.createRoom(companyId, {
+      roomType: 'direct',
+      name: agentName,
+      createdBy: actor.id,
+      metadata: { directAgentId: agentId, source: 'findOrCreateDirectRoom' },
+    });
+
+    await this.members.addMembers(companyId, room.id, [
+      { memberType: 'human', memberId: actor.id },
+      { memberType: 'agent', memberId: agentId },
+    ]);
 
     return room;
   }
@@ -250,6 +300,48 @@ export class CollaborationDynamicsService {
       });
     }
     return { success: true, affected };
+  }
+
+  async addRoomMembers(
+    companyId: string,
+    actor: ActorRef,
+    dto: { roomId: string; members: Array<{ memberType: RoomMemberType; memberId: string }> },
+  ): Promise<{ inserted: number; skipped: number }> {
+    const room = await this.rooms.findOneOrFail(companyId, dto.roomId);
+    const allowedByMembership = await this.members.isActiveMember(
+      companyId,
+      dto.roomId,
+      'human',
+      actor.id,
+    );
+    if (!allowedByMembership) {
+      await this.assertCompanyOwnerOrAdmin(companyId, actor.id);
+    }
+    const policy =
+      (room.metadata &&
+      typeof room.metadata === 'object' &&
+      (room.metadata as Record<string, unknown>).groupPolicy &&
+      typeof (room.metadata as Record<string, unknown>).groupPolicy === 'object')
+        ? ((room.metadata as Record<string, unknown>).groupPolicy as Record<string, unknown>)
+        : {};
+    if (policy.allowMemberAdd === false && !allowedByMembership) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: '该群策略不允许非群成员直接加人',
+      });
+    }
+    return this.members.addMembersWithStats(companyId, dto.roomId, dto.members);
+  }
+
+  private toDepartmentSlug(input: string): string {
+    return input
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_]+/g, '-')
+      .replace(/[^a-z0-9-\u4e00-\u9fff]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 64);
   }
 
   private async assertCompanyOwnerOrAdmin(

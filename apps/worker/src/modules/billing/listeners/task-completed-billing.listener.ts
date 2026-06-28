@@ -48,11 +48,12 @@ export class TaskCompletedBillingListener implements OnModuleInit {
           companyId,
           recordType: 'llm',
           taskId,
-          modelName: 'gpt-4o-mini',
+          modelName: 'unknown',
           inputTokens: 20,
           outputTokens: 20,
           idempotencyKey,
           metadata: { source: 'task.completed' },
+          isNominal: true,
         },
       };
       const ok = await this.messaging.publish(ev, {

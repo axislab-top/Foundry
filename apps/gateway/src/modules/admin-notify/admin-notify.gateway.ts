@@ -10,7 +10,7 @@ import {
 import type { Server, Socket } from 'socket.io';
 import { TokenService } from '../auth/services/token.service.js';
 import { AuthService } from '../auth/auth.service.js';
-import { ConfigService } from '../../common/config/config.service.js';
+import { WsTenantGuard } from '../../common/guards/ws-tenant.guard.js';
 
 const roomName = (companyId: string) => `admin:alerts:${companyId}`;
 
@@ -34,7 +34,7 @@ export class AdminNotifyGateway implements OnGatewayConnection {
   constructor(
     private readonly tokenService: TokenService,
     private readonly authService: AuthService,
-    private readonly configService: ConfigService,
+    private readonly wsTenantGuard: WsTenantGuard,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -75,9 +75,11 @@ export class AdminNotifyGateway implements OnGatewayConnection {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { companyIds?: string[] },
   ): Promise<void> {
-    const roles = (client.data.roles as string[] | undefined) ?? [];
     const userId = client.data.userId as string | undefined;
-    const companyIds = body?.companyIds ?? [];
+    const companyIds = (body?.companyIds ?? [])
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
 
     if (!userId) {
       client.emit('error', { code: 'UNAUTHORIZED', message: 'not authenticated' });
@@ -89,7 +91,19 @@ export class AdminNotifyGateway implements OnGatewayConnection {
       return;
     }
 
-    // MVP: client decides companyIds; backend should ideally enforce tenant membership here.
+    try {
+      for (const companyId of companyIds) {
+        await this.wsTenantGuard.assertMembershipOrThrow({
+          userId,
+          companyId,
+          event: 'alerts:subscribe',
+          socketId: client.id,
+        });
+      }
+    } catch {
+      client.emit('error', { code: 'FORBIDDEN', message: 'forbidden tenant access' });
+      return;
+    }
     await Promise.all(companyIds.map((cid) => client.join(roomName(cid))));
     client.emit('alerts:subscribed', { companyIds });
   }

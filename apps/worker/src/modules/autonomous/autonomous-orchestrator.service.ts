@@ -1,34 +1,40 @@
 import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { firstValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   buildHierarchicalHeartbeatGraph,
+  CeoSupervisorAnnotation,
+  HierarchicalHeartbeatDynamicSubGraphRegistry,
   ToolRegistry,
   type CeoSupervisorState,
+  type HierarchicalExpandHandler,
 } from '@service/ai';
 import type { BaseCheckpointSaver } from '@langchain/langgraph';
-import { MemorySaver } from '@langchain/langgraph';
+import { END, MemorySaver, START, StateGraph } from '@langchain/langgraph';
 import { TenantContextService } from '@service/tenant';
 import { MessagingService } from '@service/messaging';
 import type {
   AutonomousCeoApprovalRequiredEvent,
   AutonomousCeoHeartbeatCompletedEvent,
   BillingConsumptionRequestedEvent,
+  CollaborationHeartbeatCorrelationPayload,
   SkillToolSnapshot,
   TaskBreakdownRequestedEvent,
 } from '@contracts/events';
-import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { metrics, trace, SpanStatusCode } from '@opentelemetry/api';
 import type { ZodIssue, ZodSchema } from 'zod';
 import { ConfigService } from '../../common/config/config.service.js';
 import { CeoChatModelFactory } from './ceo-chat-model.factory.js';
 import {
+  CEO_PLAN_DEFAULT_SUMMARY,
   ceoPlanIntentSchema,
   ceoPlanSchema,
   ceoPlanTasksExpansionSchema,
   type CeoPlanOutput,
 } from './ceo-plan.schema.js';
+import { CollaborationPipelineV2Service } from '../collaboration/pipeline-v2/collaboration-pipeline-v2.service.js';
 import {
   collectOrganizationNodeIds,
   compactOrgTreeForPrompt,
@@ -45,6 +51,22 @@ import {
 import { WorkerExecutionLogService } from '../../common/observability/worker-execution-log.service.js';
 import { MonitoringService } from '../../common/monitoring/monitoring.service.js';
 import { COLLAB_LLM_TRACE, safeLlmBaseUrlForLog } from '../../common/logging/collab-llm-trace.util.js';
+import { ConversationOutputSanitizerService } from '../collaboration/conversation-output-sanitizer.service.js';
+import { CeoLayerConfigResolverService } from '../collaboration/ceo/resolver/ceo-layer-config-resolver.service.js';
+import { ResiliencePolicyService } from '../../common/resilience/resilience-policy.service.js';
+import { DegradationPolicyService } from '../collaboration/degradation/degradation-policy.service.js';
+import { L1FeatureFlagService } from '../collaboration/l1/l1-feature-flag.service.js';
+import { memoryReferencesFromSearchHits } from '../collaboration/utils/memory-references-from-hits.util.js';
+import { CostAwareRouterService } from '../billing/cost-aware-router.service.js';
+import { CeoEarlyExitDeciderService } from './ceo-early-exit-decider.service.js';
+import { CollaborationSessionLeaseService } from '../collaboration/session/collaboration-session-lease.service.js';
+import { CompanyExecutionCoordinationService } from '../../common/coordination/company-execution-coordination.service.js';
+import {
+  ensureJsonKeywordForStructuredOutput,
+  isJsonObjectPromptFormatError,
+  readBreakdownContextFromState,
+  structuredOutputMethodForCeoPlan,
+} from './ceo-structured-output.util.js';
 
 export interface RunHeartbeatOptions {
   triggerSource?: 'schedule' | 'task_completed' | 'budget_warning' | 'collaboration_mention';
@@ -52,31 +74,14 @@ export interface RunHeartbeatOptions {
   traceId?: string;
   /** 协作消息触发的房间：notify 优先发往此房间 */
   collaborationRoomId?: string;
+  breakdownContext?: Record<string, unknown>;
 }
 
 /**
  * LangChain 对「非 gpt-3 / 非 gpt-4-* / 非 gpt-4」模型名默认走 response_format=json_schema。
  * 智谱 GLM、DeepSeek 等 OpenAI 兼容网关往往不支持或长时间挂起，应使用 json_mode。
+ * @see structuredOutputMethodForCeoPlan in ceo-structured-output.util.ts
  */
-function structuredOutputMethodForCeoPlan(modelName: string): 'jsonSchema' | 'jsonMode' {
-  const m = (modelName || '').trim().toLowerCase();
-  if (
-    m.includes('glm-') ||
-    m.includes('deepseek') ||
-    m.includes('qwen') ||
-    m.includes('doubao') ||
-    m.includes('moonshot') ||
-    m.includes('kimi') ||
-    m.includes('ernie') ||
-    m.includes('hunyuan')
-  ) {
-    return 'jsonMode';
-  }
-  if (m.includes('gpt-4o') || m.includes('gpt-5') || /^o[0-9]/.test(m)) {
-    return 'jsonSchema';
-  }
-  return 'jsonMode';
-}
 
 @Injectable()
 export class AutonomousOrchestratorService implements OnModuleInit {
@@ -85,6 +90,17 @@ export class AutonomousOrchestratorService implements OnModuleInit {
   /** 群聊 @CEO 拆解：不用 Postgres checkpoint，避免 invoke 首帧读/写库卡住导致长时间无日志 */
   private graphBreakdown!: ReturnType<typeof buildHierarchicalHeartbeatGraph>;
   private readonly ceoAgentIdCache = new Map<string, { agentId: string; expiresAt: number }>();
+  /**
+   * 规划「可恢复」失败 streak（24h 滑动窗口）。用于抬高 HITL：仅连续 ≥3 次或模型级错误才强制审批。
+   */
+  private readonly ceoPlanSoftFailureStreak = new Map<
+    string,
+    { count: number; windowStartMs: number }
+  >();
+  private static readonly CEO_PLAN_SOFT_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+  private static readonly TASK_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+  private readonly graphMeter = metrics.getMeter('foundry.graph');
+  private readonly graphSubgraphCount = this.graphMeter.createCounter('foundry.graph.subgraph.count');
 
   constructor(
     private readonly tenantContext: TenantContextService,
@@ -99,14 +115,45 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     private readonly memoryPort: RpcMemoryAdapter,
     private readonly executionLog: WorkerExecutionLogService,
     private readonly registry: ToolRegistry,
+    private readonly ceoLayerConfigResolver: CeoLayerConfigResolverService,
+    private readonly resilience: ResiliencePolicyService,
+    private readonly degradationPolicy: DegradationPolicyService,
+    private readonly collabPipelineV2: CollaborationPipelineV2Service,
+    private readonly l1FeatureFlags: L1FeatureFlagService,
+    private readonly costAwareRouter: CostAwareRouterService,
+    /** CEO 心跳图中 `hierarchicalExpand` 的动态子图注册表（单例，可经模块 export 扩展）。 */
+    private readonly hierarchicalSubGraphRegistry: HierarchicalHeartbeatDynamicSubGraphRegistry,
+    private readonly ceoEarlyExitDecider: CeoEarlyExitDeciderService,
+    private readonly executionCoordination: CompanyExecutionCoordinationService,
     @Optional() private readonly monitoring?: MonitoringService,
+    @Optional() private readonly collabSessionLease?: CollaborationSessionLeaseService,
   ) {}
 
   onModuleInit(): void {
+    this.registerW7DynamicSubgraphs();
+    this.hierarchicalSubGraphRegistry.registerEarlyExitDecider((s) => this.ceoEarlyExitDecider.decide(s));
+    let hierarchicalExpandHandler: HierarchicalExpandHandler = (s) => this.hierarchicalExpand(s);
+    if (this.config.isMultiAgentGraphV2Enabled()) {
+      hierarchicalExpandHandler = this.hierarchicalSubGraphRegistry.wrapHierarchicalExpand(
+        hierarchicalExpandHandler,
+        {
+          shouldRunDynamic: async (merged) =>
+            this.config.isMultiAgentGraphV2Enabled() &&
+            (await this.l1FeatureFlags.isMultiAgentGraphV2Effective(merged.companyId)),
+          onSubgraphInvoked: (n) => this.graphSubgraphCount.add(n),
+          parallelDynamicSubgraphs:
+            this.config.isMultiAgentGraphV2Enabled() &&
+            (this.config.isDirectorAutonomousEnabled() || this.config.isEmployeeAutonomousEnabled()),
+        },
+      );
+    }
+    if (this.config.isMultiAgentGraphV2Enabled() && this.config.isCrossDepartmentCoordinationEnabled()) {
+      hierarchicalExpandHandler = this.wrapHierarchicalExpandWithL2Coordination(hierarchicalExpandHandler);
+    }
     const handlers = {
       ingest: (s: CeoSupervisorState) => this.ingest(s),
-      plan: (s: CeoSupervisorState) => this.plan(s),
-      hierarchicalExpand: (s: CeoSupervisorState) => this.hierarchicalExpand(s),
+      plan: (s: CeoSupervisorState) => this.planWithEarlyExitDecider(s),
+      hierarchicalExpand: hierarchicalExpandHandler,
       validatePersist: (s: CeoSupervisorState) => this.validatePersist(s),
       summarize: (s: CeoSupervisorState) => this.summarize(s),
       notify: (s: CeoSupervisorState) => this.notify(s),
@@ -125,6 +172,93 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     });
   }
 
+  /**
+   * W7：注册 `director_autonomous` / `employee_autonomous` 占位子图，供 plan JSON `dynamicSubGraphNodeIds` 引用。
+   */
+  private registerW7DynamicSubgraphs(): void {
+    if (!this.config.isMultiAgentGraphV2Enabled()) return;
+
+    const passthrough = (label: string) => (_ctx: CeoSupervisorState) => {
+      const n = `${label}_noop`;
+      const g = new StateGraph(CeoSupervisorAnnotation)
+        .addNode(n, async () => ({}))
+        .addEdge(START, n)
+        .addEdge(n, END);
+      return g as any;
+    };
+
+    // W9：Graph V2 + Director 自主双开时注册真实 director-task-graph；否则保持 CEO 主路径兼容的 noop。
+    if (this.config.isDirectorAutonomousEnabled()) {
+      this.hierarchicalSubGraphRegistry.registerDirectorSubGraph();
+    } else {
+      this.hierarchicalSubGraphRegistry.addDynamicSubGraph('director_autonomous', passthrough('director_autonomous'));
+    }
+    // W10：Graph V2 + 员工自主双开时注册真实 employee 子图。
+    if (this.config.isEmployeeAutonomousEnabled()) {
+      this.hierarchicalSubGraphRegistry.registerEmployeeSubGraph();
+    } else {
+      this.hierarchicalSubGraphRegistry.addDynamicSubGraph('employee_autonomous', passthrough('employee_autonomous'));
+    }
+
+    if (this.config.isCrossDepartmentCoordinationEnabled()) {
+      this.hierarchicalSubGraphRegistry.registerL2CrossDeptGraph();
+    } else {
+      this.hierarchicalSubGraphRegistry.addDynamicSubGraph('l2_cross_department', passthrough('l2_cross_department'));
+    }
+  }
+
+  /**
+   * W11：CEO plan 显式 `crossDepartmentL2: true` 时，在 hierarchicalExpand 动态子图之后追加 L2 跨部门图（零 breaking：默认不触发）。
+   */
+  private wrapHierarchicalExpandWithL2Coordination(inner: HierarchicalExpandHandler): HierarchicalExpandHandler {
+    return async (state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> => {
+      const out = await inner(state);
+      if (!this.config.isMultiAgentGraphV2Enabled() || !this.config.isCrossDepartmentCoordinationEnabled()) {
+        return out;
+      }
+      const merged: CeoSupervisorState = { ...state, ...out } as CeoSupervisorState;
+      if (!(await this.l1FeatureFlags.isCrossDepartmentCoordinationEffective(merged.companyId))) {
+        return out;
+      }
+      let plan: Record<string, unknown> = {};
+      try {
+        plan = JSON.parse(merged.planResultJson || '{}') as Record<string, unknown>;
+      } catch {
+        plan = {};
+      }
+      if (plan.crossDepartmentL2 !== true) {
+        return out;
+      }
+      const nodeIds = Array.isArray(plan.crossDepartmentTargetNodeIds)
+        ? (plan.crossDepartmentTargetNodeIds as unknown[]).map((x) => String(x ?? '').trim()).filter(Boolean)
+        : [];
+      const l2Out = await this.hierarchicalSubGraphRegistry.invokeStandaloneSubGraph('l2_cross_department', {
+        ...merged,
+        contextBundle: JSON.stringify({
+          crossDepartmentSignal: true,
+          contentPreview: String(merged.goal ?? '').slice(0, 800),
+          targetDepartmentNodeIds: nodeIds,
+          l2ParallelSubGraphIds: ['director_autonomous', 'employee_autonomous'],
+        }),
+      });
+      let meta: Record<string, unknown> = {};
+      try {
+        meta = JSON.parse(String(out.hierarchicalMetaJson ?? state.hierarchicalMetaJson ?? '{}')) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        meta = {};
+      }
+      meta.l2CrossDepartmentOrchestratorHook = l2Out?.hierarchicalMetaJson ?? null;
+      return {
+        ...out,
+        hierarchicalMetaJson: JSON.stringify(meta),
+        reportDraft: String(l2Out?.reportDraft ?? out.reportDraft ?? merged.reportDraft ?? ''),
+      };
+    };
+  }
+
   private actor() {
     return {
       id: this.config.getWorkerActorUserId(),
@@ -135,7 +269,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
   private baseState(
     companyId: string,
     tickAt: string,
-    runKind: 'heartbeat' | 'breakdown',
+    runKind: 'heartbeat' | 'breakdown' | 'graph',
     goal: string,
     rootTaskId: string | undefined,
     opts?: RunHeartbeatOptions,
@@ -158,11 +292,108 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       persistErrorsJson: '[]',
       llmMetaJson: '{}',
       skipPlanReason: '',
-      hierarchicalMetaJson: '{}',
+      hierarchicalMetaJson: JSON.stringify({
+        breakdownContext: opts?.breakdownContext ?? {},
+      }),
       mainRoomId: '',
       ceoAgentId: '',
       collaborationRoomId: opts?.collaborationRoomId?.trim() ?? '',
       reportDraft: '',
+      earlyExitJson: '{}',
+    };
+  }
+
+  private readEarlyExitSnapshot(state: CeoSupervisorState): {
+    earlyExit: boolean;
+    layerStoppedAt?: number;
+    confidence?: number;
+  } {
+    try {
+      const j = JSON.parse(state.earlyExitJson || '{}') as {
+        earlyExit?: boolean;
+        layerStoppedAt?: number;
+        confidence?: number;
+      };
+      return {
+        earlyExit: j.earlyExit === true,
+        layerStoppedAt: typeof j.layerStoppedAt === 'number' ? j.layerStoppedAt : undefined,
+        confidence: typeof j.confidence === 'number' ? j.confidence : undefined,
+      };
+    } catch {
+      return { earlyExit: false };
+    }
+  }
+
+  /**
+   * Phase 3.5：Layer1(plan) 完成后运行 Early-Exit 仲裁；命中则写入 earlyExitJson + reportDraft，后续节点短路。
+   */
+  private async planWithEarlyExitDecider(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
+    const earlyExitPhaseStartedAt = Date.now();
+    const out = await this.plan(state);
+    if (!this.config.isCeoEarlyExitEnabled()) {
+      return out;
+    }
+    if (out.skipPlanReason) {
+      return out;
+    }
+    const merged = { ...state, ...out } as CeoSupervisorState;
+    const decision = await this.hierarchicalSubGraphRegistry.invokeEarlyExitDecide(merged);
+    const th = this.config.getEarlyExitConfidenceThreshold();
+    const conf =
+      decision != null && typeof decision.confidence === 'number' && Number.isFinite(decision.confidence)
+        ? decision.confidence
+        : 0;
+    const reply = (decision?.suggestedReply ?? '').trim();
+    const eligible =
+      decision != null && Boolean(decision.canEarlyExit) && conf > th && reply.length > 0;
+    const span = trace.getActiveSpan();
+    if (eligible) {
+      span?.setAttribute('foundry.ceo.early_exit', 'hit');
+      span?.setAttribute('foundry.ceo.early_exit.confidence', conf);
+      span?.setAttribute('foundry.ceo.layer_stopped_at', 1);
+      this.monitoring?.recordCeoEarlyExitDecision('hit');
+      this.logger.log('foundry.ceo.early_exit.decision', {
+        outcome: 'hit',
+        earlyExit: true,
+        layerStoppedAt: 1,
+        confidence: conf,
+        routeTag: decision?.routeTag ?? 'autonomous_graph',
+        reason: decision?.reason,
+        elapsedMsBeforeExit: Date.now() - earlyExitPhaseStartedAt,
+        traceId: state.traceId,
+        companyId: state.companyId,
+        runKind: state.runKind,
+      });
+      return {
+        ...out,
+        reportDraft: reply,
+        earlyExitJson: JSON.stringify({
+          earlyExit: true,
+          layerStoppedAt: 1,
+          confidence: conf,
+        }),
+      };
+    }
+    span?.setAttribute('foundry.ceo.early_exit', 'miss');
+    span?.setAttribute('foundry.ceo.early_exit.confidence', conf);
+    this.monitoring?.recordCeoEarlyExitDecision('miss');
+    this.logger.log('foundry.ceo.early_exit.decision', {
+      outcome: 'miss',
+      earlyExit: false,
+      confidence: conf,
+      routeTag: decision?.routeTag ?? 'none',
+      reason: decision?.reason,
+      elapsedMsBeforeExit: Date.now() - earlyExitPhaseStartedAt,
+      traceId: state.traceId,
+      companyId: state.companyId,
+      runKind: state.runKind,
+    });
+    return {
+      ...out,
+      earlyExitJson: JSON.stringify({
+        earlyExit: false,
+        confidence: conf,
+      }),
     };
   }
 
@@ -172,7 +403,24 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     opts?: RunHeartbeatOptions,
   ): Promise<void> {
     await this.tenantContext.runWithCompanyId(companyId, async () => {
+      if (this.collabSessionLease && (await this.collabSessionLease.isHeavyCollaborationLeaseActive(companyId))) {
+        this.logger.log('foundry.ceo.heartbeat.deferred_collab_session_lease', {
+          companyId,
+          triggerSource: opts?.triggerSource ?? 'schedule',
+          triggerRef: opts?.triggerRef ?? null,
+        });
+        return;
+      }
       await this.invokeGraph(this.baseState(companyId, tickAt, 'heartbeat', '', undefined, opts));
+    });
+  }
+
+  /**
+   * W5：`runKind=graph` 时使用与心跳相同的持久化 LangGraph（非 breakdown 内存图）。
+   */
+  async runGraph(companyId: string, tickAt: string, opts?: RunHeartbeatOptions): Promise<void> {
+    await this.tenantContext.runWithCompanyId(companyId, async () => {
+      await this.invokeGraph(this.baseState(companyId, tickAt, 'graph', '', undefined, opts));
     });
   }
 
@@ -193,12 +441,29 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           triggerSource: collaborationRoomId ? 'collaboration_mention' : 'schedule',
           triggerRef,
           collaborationRoomId,
+          breakdownContext: {
+            ...(ctx && typeof ctx === 'object' ? (ctx as Record<string, unknown>) : {}),
+          },
         }),
       );
     });
   }
 
   private async invokeGraph(initial: CeoSupervisorState): Promise<void> {
+    const ran = await this.executionCoordination.withCeoGraphLock(initial.companyId, async () => {
+      await this.invokeGraphInner(initial);
+    });
+    if (ran === undefined) {
+      this.logger.log('CEO graph skipped: company graph lock contention', {
+        companyId: initial.companyId,
+        traceId: initial.traceId,
+        runKind: initial.runKind,
+        triggerSource: initial.triggerSource,
+      });
+    }
+  }
+
+  private async invokeGraphInner(initial: CeoSupervisorState): Promise<void> {
     const rpcTier =
       initial.runKind === 'breakdown' && initial.triggerSource === 'collaboration_mention'
         ? 'interactive'
@@ -292,6 +557,21 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           outputSnapshot: { reportPreview: preview.slice(0, 800), threadId },
         });
       }
+      const outRec = out as Record<string, unknown>;
+      const graphMainRoomId = typeof outRec.mainRoomId === 'string' ? outRec.mainRoomId.trim() : '';
+      let heartbeatCorrelation: CollaborationHeartbeatCorrelationPayload | undefined;
+      if (this.config.isCollabHeartbeatCorrelationEnabled()) {
+        const collabRoom = initial.collaborationRoomId?.trim() ?? '';
+        const surface = collabRoom || graphMainRoomId;
+        heartbeatCorrelation = {
+          heartbeatRunId: initial.traceId,
+          tickAt: initial.tickAt,
+          triggerSource: initial.triggerSource,
+          runKind: initial.runKind,
+          mainRoomId: graphMainRoomId || null,
+          collaborationSurfaceRoomId: surface || null,
+        };
+      }
       const completed: AutonomousCeoHeartbeatCompletedEvent = {
         eventId: randomUUID(),
         eventType: 'autonomous.ceo.heartbeat.completed',
@@ -307,6 +587,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           reportPreview: preview,
           threadId,
           ...(initial.runKind === 'heartbeat' ? { runId: initial.traceId } : {}),
+          ...(heartbeatCorrelation ? { heartbeatCorrelation } : {}),
         },
       };
       await this.messaging.publish(completed, {
@@ -503,6 +784,275 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const t = (s ?? '').trim();
     if (!t) return '';
     return t.length <= max ? t : `${t.slice(0, max)}…`;
+  }
+
+  private isCeoPlanModelLevelFailure(message: string): boolean {
+    const m = message.toLowerCase();
+    return (
+      /\b(401|403|429)\b/.test(m) ||
+      /unauthorized|invalid.*api.*key|incorrect api key|authentication failed|access denied/i.test(m) ||
+      /rate limit|too many requests|quota exceeded|insufficient[_\s]*quota/i.test(m) ||
+      /model[_\s]*not[_\s]*found|invalid[_\s]*model|does not exist|unknown model/i.test(m) ||
+      /billing.*block|payment required/i.test(m)
+    );
+  }
+
+  private isRateLimitError(message: string): boolean {
+    const m = (message || '').toLowerCase();
+    return /\b429\b/.test(m) || /rate limit|too many requests|quota exceeded|insufficient[_\s]*quota/i.test(m);
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  }
+
+  private planSingleFlightKey(state: CeoSupervisorState): string {
+    return `autonomous:plan:single-flight:${state.companyId}:${state.runKind}`;
+  }
+
+  private planRateLimitCooldownKey(state: CeoSupervisorState): string {
+    return `autonomous:plan:429-cooldown:${state.companyId}:${state.runKind}`;
+  }
+
+  private buildTaskIdempotencyKey(traceId: string, title: string, description: string, ordinal: number): string {
+    const normalized = `${traceId}|${ordinal}|${title.trim().toLowerCase()}|${description.trim().toLowerCase()}`;
+    const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 24);
+    return `autonomous:task:${traceId}:${ordinal}:${hash}`;
+  }
+
+  private bumpCeoPlanSoftFailureStreak(companyId: string): number {
+    const now = Date.now();
+    const w = AutonomousOrchestratorService.CEO_PLAN_SOFT_FAILURE_WINDOW_MS;
+    let rec = this.ceoPlanSoftFailureStreak.get(companyId);
+    if (!rec || now - rec.windowStartMs > w) {
+      rec = { count: 0, windowStartMs: now };
+    }
+    rec.count += 1;
+    this.ceoPlanSoftFailureStreak.set(companyId, rec);
+    return rec.count;
+  }
+
+  private resetCeoPlanSoftFailureStreak(companyId: string): void {
+    this.ceoPlanSoftFailureStreak.delete(companyId);
+  }
+
+  private buildDynamicCeoApprovalReason(
+    kind: string,
+    technicalDetail: string,
+    streak: number,
+    modelFatal: boolean,
+  ): string {
+    const head = modelFatal
+      ? '【模型/鉴权或配额】战略规划无法自动继续，需要人工确认环境与密钥。'
+      : `【连续失败 ${streak} 次≥阈值】战略规划多次未能自动完成，需要人工确认是否继续自动拆解。`;
+    // Keep user-facing approval reason concise; detailed diagnostics stay in worker logs.
+    return `${head}（阶段: ${kind}）`;
+  }
+
+  private async maybeStructuredLightFallbackAfterPlanFailure(
+    state: CeoSupervisorState,
+    _detail: string,
+  ): Promise<void> {
+    if (state.runKind !== 'breakdown') return;
+    const roomId = state.collaborationRoomId?.trim();
+    const messageId = state.triggerRef?.trim();
+    const ceoAgentId = state.ceoAgentId?.trim();
+    const goal = (state.goal || '').trim();
+    if (!roomId || !messageId || !ceoAgentId || !goal) {
+      this.logger.debug('skip plan-failure light fallback: missing room/message/ceo/goal', {
+        traceId: state.traceId,
+      });
+      return;
+    }
+    if (this.config.isGoalDraftAutoKickoffSilent()) {
+      const src = await this.resolveBreakdownSourceTag(state.companyId, messageId, state.traceId);
+      if (src === 'goal_draft_approved_auto_kickoff' || src === 'approval_resolved') {
+        this.logger.log('skip light fallback for approved kickoff; keep heavy-only path', {
+          traceId: state.traceId,
+          companyId: state.companyId,
+          messageId,
+          source: src,
+        });
+        return;
+      }
+    }
+    try {
+      await this.collabPipelineV2.fastReply({
+        companyId: state.companyId,
+        roomId,
+        ceoAgentId,
+        sourceMessageId: messageId,
+        threadId: null,
+        userGoal: goal,
+        traceId: state.traceId ?? null,
+        reason: 'autonomous_plan_failure_fallback',
+        heartbeatCorrelation: this.config.isCollabHeartbeatCorrelationEnabled()
+          ? {
+              heartbeatRunId: state.traceId,
+              tickAt: state.tickAt,
+              triggerSource: state.triggerSource,
+              runKind: state.runKind,
+              mainRoomId: null,
+              collaborationSurfaceRoomId: roomId,
+            }
+          : undefined,
+      });
+    } catch (e: unknown) {
+      this.logger.warn('structured light fallback after plan failure failed', {
+        traceId: state.traceId,
+        message: this.formatErrorMessage(e).slice(0, 400),
+      });
+    }
+  }
+
+  private async resolveBreakdownSourceTag(
+    companyId: string,
+    messageId: string,
+    traceId: string,
+  ): Promise<string | null> {
+    const msg = await this.rpc<{ metadata?: Record<string, unknown> | null }>(
+      'collaboration.messages.get',
+      {
+        companyId,
+        actor: this.actor(),
+        messageId,
+      },
+      traceId,
+    ).catch(() => null as { metadata?: Record<string, unknown> | null } | null);
+    const source = msg?.metadata && typeof msg.metadata.source === 'string' ? msg.metadata.source.trim() : '';
+    return source || null;
+  }
+
+  private async maybeDiagnosticFallbackAfterPlanFailure(
+    state: CeoSupervisorState,
+    detail: string,
+  ): Promise<void> {
+    if (state.runKind !== 'breakdown') return;
+    const roomId = state.collaborationRoomId?.trim();
+    const messageId = state.triggerRef?.trim();
+    const ceoAgentId = state.ceoAgentId?.trim();
+    if (!roomId || !messageId || !ceoAgentId) return;
+    if (this.config.isPostApprovalSilentModeEnabled()) {
+      const src = await this.resolveBreakdownSourceTag(state.companyId, messageId, state.traceId);
+      if (src === 'goal_draft_approved_auto_kickoff' || src === 'approval_resolved') {
+        this.logger.log('skip diagnostic fallback for approved kickoff; silent wait for heavy retry', {
+          traceId: state.traceId,
+          companyId: state.companyId,
+          messageId,
+          source: src,
+        });
+        return;
+      }
+    }
+    await this.rpc(
+      'collaboration.messages.appendAgent',
+      {
+        companyId: state.companyId,
+        actor: this.actor(),
+        roomId,
+        agentId: ceoAgentId,
+        content: ConversationOutputSanitizerService.toVisibleLayer(
+          '当前深度规划通道短暂波动，我已安全记录你的请求。你可以稍后重试，或让我先给出轻量结构化方案。',
+        ),
+        messageType: 'text',
+        metadata: {
+          source: 'autonomous_diagnostic_fallback',
+          sourceMessageId: messageId,
+          directReplyToMessageId: messageId,
+          detailPreview: this.clip(detail, 200),
+        },
+      },
+      state.traceId,
+    ).catch(() => undefined);
+  }
+
+  private async finalizeCeoPlanSoftFailurePath(params: {
+    state: CeoSupervisorState;
+    technicalDetail: string;
+    kind: 'intent_parse' | 'plan_exception';
+    skipPlanReasonCode: string;
+    friendlySummaryNoHitl: string;
+    suppressHitl?: boolean;
+  }): Promise<{ skipPlanReason: string; planResultJson: string; llmMetaJson: string }> {
+    const { state, technicalDetail, kind, skipPlanReasonCode, friendlySummaryNoHitl, suppressHitl } = params;
+    const modelFatal = this.isCeoPlanModelLevelFailure(technicalDetail);
+    const streak = this.bumpCeoPlanSoftFailureStreak(state.companyId);
+    const requireHitl = suppressHitl ? false : modelFatal || streak >= 3;
+    const approvalReason = requireHitl
+      ? this.buildDynamicCeoApprovalReason(kind, technicalDetail, streak, modelFatal)
+      : undefined;
+
+    const softSummary = requireHitl
+      ? `战略规划自动化出现异常（当前 24h 内已连续失败 ${streak} 次${modelFatal ? '，且检测到模型/密钥侧错误' : ''}）。下方为系统摘要；审批原因中含具体技术摘要，与「询问 skills」等日常对话无必然关系。`
+      : friendlySummaryNoHitl;
+
+    const tasks: CeoPlanOutput['tasks'] = requireHitl
+      ? [
+          {
+            title: '排查 CEO 自动规划并在恢复后重试本轮拆解',
+            description: `此任务用于运维/Owner 排查，与「技能列表」或普通问答无必然关系。建议检查：LLM 密钥与模型可用性、公司预算/配额、网络稳定性。技术摘要：${this.clip(technicalDetail.replace(/\s+/g, ' ').trim(), 520)}`,
+            priority: 'high',
+          },
+        ]
+      : [];
+
+    const fallback: CeoPlanOutput = {
+      summary: softSummary,
+      tasks,
+      neededSkills: [],
+      requiresHumanApproval: requireHitl,
+      approvalReason,
+    };
+
+    if (!requireHitl) {
+      const fallbackMessageId = (state.triggerRef || state.traceId || '').trim();
+      const decision = this.degradationPolicy.decideFallback({
+        flow: 'autonomous_plan',
+        companyId: state.companyId,
+        messageId: fallbackMessageId || state.traceId,
+        traceId: state.traceId,
+        errorMessage: technicalDetail,
+        postApprovalSilent: this.config.isPostApprovalSilentModeEnabled()
+          ? ['goal_draft_approved_auto_kickoff', 'approval_resolved'].includes(
+              (await this.resolveBreakdownSourceTag(
+                state.companyId,
+                fallbackMessageId || state.traceId,
+                state.traceId,
+              )) ?? '',
+            )
+          : false,
+      });
+      if (decision?.nextMode === 'light') {
+        await this.maybeStructuredLightFallbackAfterPlanFailure(state, technicalDetail);
+      } else if (decision?.nextMode === 'diagnostic') {
+        await this.maybeDiagnosticFallbackAfterPlanFailure(state, technicalDetail);
+      }
+    }
+
+    this.logger.warn('CEO plan soft failure path', {
+      traceId: state.traceId,
+      companyId: state.companyId,
+      kind,
+      requireHitl,
+      streak,
+      modelFatal,
+      detailPreview: this.clip(technicalDetail, 240),
+      suppressHitl: Boolean(suppressHitl),
+    });
+
+    return {
+      skipPlanReason: skipPlanReasonCode,
+      planResultJson: JSON.stringify(fallback),
+      llmMetaJson: JSON.stringify({
+        error: true,
+        stage: kind,
+        planSoftDegraded: true,
+        requireHitl,
+        softFailureStreak: streak,
+        modelFatal,
+        rawDetail: this.clip(technicalDetail, 800),
+      }),
+    };
   }
 
   private parseCeoPlanUnsafe(raw: string | undefined): unknown {
@@ -801,12 +1351,24 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
     await safe('modelRouter', async () => {
       const ceo = (bundle.ceoAgents as { items?: { llmModel?: string | null }[] })?.items?.[0];
-      const taskPriority =
+      const baseline =
         state.triggerSource === 'collaboration_mention'
           ? 'high'
           : state.triggerSource === 'budget_warning'
             ? 'low'
             : 'normal';
+      let taskPriority: 'low' | 'normal' | 'high' | 'urgent' = baseline;
+      if (this.config.isCostAwareRoutingEnabled()) {
+        const effective = await this.l1FeatureFlags.isCostAwareRoutingEffective(companyId);
+        const complexityScore = Math.min(1, JSON.stringify(bundle).length / 50_000);
+        taskPriority = await this.costAwareRouter.decideTaskPriority({
+          companyId,
+          effective,
+          agentLevel: 1,
+          complexityScore,
+          baselinePriority: baseline,
+        });
+      }
       bundle.modelRouter = await this.rpc(
         'billing.modelRouter.resolve',
         {
@@ -853,19 +1415,63 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       this.ceoAgentIdCache.set(companyId, { agentId: ceoAgentId, expiresAt: now + 5 * 60_000 });
     }
 
+    (bundle as Record<string, unknown>).memoryReferences = memoryReferencesFromSearchHits(bundle.memorySearch);
+
     return {
       contextBundle: JSON.stringify(bundle),
       ceoAgentId,
     };
   }
 
-  private async plan(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
+  private async plan(state: CeoSupervisorState, singleFlightWrapped = false): Promise<Partial<CeoSupervisorState>> {
+    if (!singleFlightWrapped) {
+      const sf = await this.resilience.runSingleFlight(this.planSingleFlightKey(state), async () =>
+        this.plan(state, true),
+      );
+      if (sf.shared) {
+        this.monitoring?.incCeoPlanFailfast('single_flight_shared');
+        this.logger.warn('autonomous-trace | ceo_plan.single_flight_shared', {
+          traceId: state.traceId,
+          companyId: state.companyId,
+          runKind: state.runKind,
+        });
+      }
+      return sf.value;
+    }
     this.logger.log('CEO plan node entered', {
       companyId: state.companyId,
       traceId: state.traceId,
       runKind: state.runKind,
       triggerSource: state.triggerSource,
     });
+
+    const cooldown = this.resilience.isCoolingDown(this.planRateLimitCooldownKey(state));
+    if (cooldown.active) {
+      this.monitoring?.incCeoPlanRateLimit('cooldown_block');
+      this.monitoring?.incCeoPlanFailfast('rate_limit_cooldown');
+      this.logger.warn('autonomous-trace | ceo_plan.rate_limit_failfast', {
+        traceId: state.traceId,
+        companyId: state.companyId,
+        runKind: state.runKind,
+        cooldownRemainingMs: cooldown.remainingMs,
+        reason: cooldown.reason ?? 'rate_limit',
+      });
+      const fallback: CeoPlanOutput = {
+        summary: '【系统提示】当前规划通道触发短时限流保护，已自动切换轻量策略。请稍后重试。',
+        tasks: [],
+        neededSkills: [],
+        requiresHumanApproval: false,
+      };
+      return {
+        skipPlanReason: 'rate_limit_cooldown_failfast',
+        planResultJson: JSON.stringify(fallback),
+        llmMetaJson: JSON.stringify({
+          skipped: true,
+          stage: 'rate_limit_cooldown',
+          cooldownRemainingMs: cooldown.remainingMs,
+        }),
+      };
+    }
 
     const estimated = this.config.getCeoLlmEstimatedCost();
     const actor = this.actor();
@@ -917,13 +1523,18 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const modelRouter = parsed.modelRouter as
       | { modelName: string; degraded: boolean; utilization: number; reason: string }
       | undefined;
-    const modelName = modelRouter?.modelName ?? 'gpt-4o-mini';
+    const modelName = (
+      modelRouter?.modelName ||
+      this.config.getCeoSupervisionModel() ||
+      this.config.getCeoOrchestrationModel() ||
+      this.config.getCollabDirectReplyModel() ||
+      ''
+    ).trim();
+    if (!modelName) {
+      throw new Error('missing_model_router_and_no_configured_fallback_model');
+    }
 
-    const ceoAgents = parsed.ceoAgents as { items?: Record<string, unknown>[] } | undefined;
-    const ceo = ceoAgents?.items?.[0];
-    const systemPrompt =
-      (ceo?.systemPrompt as string | undefined)?.slice(0, 8000) ||
-      '你是公司 CEO，负责根据上下文提出可执行的子任务，并遵守组织结构。';
+    const ceoAgentRow = (parsed.ceoAgents as { items?: { llmKeyId?: string | null }[] } | undefined)?.items?.[0];
 
     const orgTree = (parsed.organizationTree ?? []) as OrgTreeNodeShape[];
     const orgPrompt = orgTree.length ? compactOrgTreeForPrompt(orgTree) : '(无组织树)';
@@ -958,10 +1569,29 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     }
     const recentContext = memoryLines.join('\n').slice(0, 1200);
 
+    const systemPromptPrefix = await this.ceoLayerConfigResolver.getFullPrompt({
+      companyId: state.companyId,
+      layer: 'supervision',
+      purpose: 'autonomous_plan_intent_json',
+      vars: {
+        // Only supply what differs per attempt; strict JSON shell defaults live in resolver.
+        schemaLabel: 'Intent Schema',
+        schemaHint:
+          '{"summary":"string(10-800)","nextStep":"generate_tasks|summary_only","requiresHumanApproval":"boolean","approvalReason?":"string","neededSkills?":"string[]<=5(kebab-case)"}',
+        neededSkillsSpec:
+          '输出字段约束：`neededSkills` 为可选数组（skill slug，kebab-case），仅在确有必要时填写；最多 5 个。',
+        orgPrompt,
+        recentContext: recentContext || '(无)',
+        budgetLine: `预算利用率: ${modelRouter?.utilization ?? 'n/a'}；模型降级: ${modelRouter?.degraded ? '是' : '否'}。`,
+      },
+    });
+
     let llmInvokeStartedAt = 0;
     try {
       const fixedLlmKeyId =
-        typeof ceo?.llmKeyId === 'string' && ceo.llmKeyId.trim() ? ceo.llmKeyId.trim() : undefined;
+        typeof ceoAgentRow?.llmKeyId === 'string' && ceoAgentRow.llmKeyId.trim()
+          ? ceoAgentRow.llmKeyId.trim()
+          : undefined;
 
       // For breakdown runs (Layer-3 heavy), prefer per-layer key pool candidates when available.
       let candidateLlmKeyIds: string[] = [];
@@ -1000,6 +1630,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
       const tKey = Date.now();
       const llmKey = await this.llmKeyResolver.acquireWithFallback({
+        companyId: state.companyId,
         requestedModelName: modelName,
         fixedLlmKeyId,
         candidateLlmKeyIds,
@@ -1023,6 +1654,9 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       );
       const useGlmSlimContext = isGlmBreakdown && this.config.isCeoGlmSlimContextEnabled();
       const maxLlmAttempts = useGlmSlimContext ? 3 : 2;
+      const max429Retries = this.config.getAutonomousPlan429RetryMaxAttempts();
+      const backoffBaseMs = this.config.getAutonomousPlan429BackoffBaseMs();
+      let rateLimitRetriesUsed = 0;
       // breakdown（含群聊 @CEO）走结构化输出，比心跳慢；默认用更长超时，减少 OpenAI「Request timed out」
       const llmTimeoutMs =
         state.runKind === 'breakdown'
@@ -1040,28 +1674,37 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       const soMethod = structuredOutputMethodForCeoPlan(effectiveModelName);
       const structuredOpts =
         soMethod === 'jsonSchema' ? ({ method: 'jsonSchema' as const } as object) : { method: 'jsonMode' as const };
-      const structuredIntent = (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(
-        ceoPlanIntentSchema,
-        structuredOpts,
-      );
-      const structuredTasks = (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(
-        ceoPlanTasksExpansionSchema,
-        structuredOpts,
-      );
+      const bindStructured = (schema: unknown, label: string) => {
+        try {
+          return (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(
+            schema,
+            structuredOpts,
+          );
+        } catch (e: unknown) {
+          const es = this.formatErrorMessage(e);
+          if (/transforms cannot be represented|json schema/i.test(es)) {
+            this.logger.warn('CEO plan: json_schema conversion failed; falling back to json_mode', {
+              traceId: state.traceId,
+              label,
+              detail: es.slice(0, 500),
+            });
+            return (model as { withStructuredOutput: (s: unknown, c?: object) => any }).withStructuredOutput(schema, {
+              method: 'jsonMode' as const,
+            });
+          }
+          throw e;
+        }
+      };
+      const structuredIntent = bindStructured(ceoPlanIntentSchema, 'intent');
+      const structuredTasks = bindStructured(ceoPlanTasksExpansionSchema, 'tasks');
 
-      const neededSkillsSpec =
-        '输出字段约束：`neededSkills` 为可选数组（skill slug，kebab-case），仅在确有必要时填写；最多 5 个。';
-      const strictJsonRule = [
-        'You MUST respond with NOTHING but a single valid JSON object matching the schema.',
-        'No markdown, no explanations, no code blocks, no leading/trailing text.',
-      ].join('\n');
       const intentSchemaHint =
         '{"summary":"string(10-800)","nextStep":"generate_tasks|summary_only","requiresHumanApproval":"boolean","approvalReason?":"string","neededSkills?":"string[]<=5(kebab-case)"}';
       const taskSchemaHint =
         '{"tasks":[{"title":"string","description?":"string","organizationNodeId?":"uuid","assigneeAgentId?":"uuid","priority?":"low|normal|high|urgent"}]<=20}';
-      const systemFull = `${systemPrompt}\n\n${strictJsonRule}\n\nIntent Schema:\n${intentSchemaHint}\n\n${neededSkillsSpec}\n\n组织树（仅允许将任务关联到以下节点 id）：\n${orgPrompt}\n\n最近公司上下文（记忆 + 教训，可能已截断）:\n${recentContext || '(无)'}\n\n预算利用率: ${modelRouter?.utilization ?? 'n/a'}；模型降级: ${modelRouter?.degraded ? '是' : '否'}。\n\nIntent Schema(end):\n${intentSchemaHint}`;
+      const systemFull = systemPromptPrefix;
       const systemForLlm = isGlmBreakdown
-        ? `${systemPrompt.slice(0, 2200)}\n\n${strictJsonRule}\n\nIntent Schema:\n${intentSchemaHint}\n\n${neededSkillsSpec}\n\n组织树（节点 id）：\n${orgPrompt.slice(0, 3200)}\n\n预算: ${modelRouter?.utilization ?? 'n/a'}；降级: ${modelRouter?.degraded ? '是' : '否'}。\n\nIntent Schema(end):\n${intentSchemaHint}`
+        ? systemFull.slice(0, 3200)
         : systemFull;
 
       let rawIntent: unknown;
@@ -1102,10 +1745,9 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
         lastUserContent = userContent;
 
+        const sysForAttemptRaw = useGlmSlimContext && attempt >= 3 ? systemForLlm.slice(0, 1800) : systemForLlm;
         const sysForAttempt =
-          useGlmSlimContext && attempt >= 3
-            ? `${systemPrompt.slice(0, 1400)}\n\n组织树（节点 id，仅可选用以下）：\n${orgPrompt.slice(0, 520)}\n\n预算: ${modelRouter?.utilization ?? 'n/a'}`
-            : systemForLlm;
+          soMethod === 'jsonMode' ? ensureJsonKeywordForStructuredOutput(sysForAttemptRaw) : sysForAttemptRaw;
 
         this.logger.log(
           soMethod === 'jsonSchema'
@@ -1129,8 +1771,8 @@ export class AutonomousOrchestratorService implements OnModuleInit {
             attempt,
             maxAttempts: maxLlmAttempts,
             systemChars: sysForAttempt.length,
-            systemPreview: this.clip(sysForAttempt, 600),
-            userPreview: this.clip(userContent, 900),
+            systemHash: createHash('sha256').update(sysForAttempt).digest('hex').slice(0, 16),
+            userHash: createHash('sha256').update(userContent).digest('hex').slice(0, 16),
             runKind: state.runKind,
             rootTaskId: state.rootTaskId ?? null,
             sourceMessageId: state.triggerRef || null,
@@ -1156,6 +1798,40 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           }
           break;
         } catch (e: unknown) {
+          const errMsg = this.formatErrorMessage(e);
+          if (isJsonObjectPromptFormatError(errMsg) && soMethod === 'jsonMode') {
+            this.logger.warn('CEO plan json_mode prompt rejected; retrying with explicit json hint', {
+              traceId: state.traceId,
+              attempt,
+            });
+            try {
+              rawIntent = (await structuredIntent.invoke([
+                new SystemMessage(ensureJsonKeywordForStructuredOutput(sysForAttemptRaw)),
+                new HumanMessage(`${userContent}\n\nReturn JSON only.`),
+              ])) as unknown;
+              break;
+            } catch (retryErr: unknown) {
+              throw retryErr;
+            }
+          }
+          if (this.isRateLimitError(errMsg)) {
+            this.monitoring?.incCeoPlanRateLimit('llm_call');
+            if (rateLimitRetriesUsed < max429Retries) {
+              rateLimitRetriesUsed += 1;
+              const jitterMs = Math.floor(Math.random() * 500);
+              const waitMs = backoffBaseMs * 2 ** (rateLimitRetriesUsed - 1) + jitterMs;
+              this.logger.warn('autonomous-trace | ceo_plan.rate_limit_backoff_retry', {
+                traceId: state.traceId,
+                companyId: state.companyId,
+                attempt,
+                rateLimitRetriesUsed,
+                waitMs,
+              });
+              await this.sleep(waitMs);
+              continue;
+            }
+            throw e;
+          }
           if (attempt >= maxLlmAttempts || !this.isLikelyLlmTimeoutError(e)) {
             throw e;
           }
@@ -1198,22 +1874,10 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           );
       if (!safeIntent) {
         intentFallbackUsed = true;
-        const fallbackResult = ceoPlanSchema.parse({
-          summary:
-            '本轮 CEO 心跳规划输出格式异常，已切换为安全兜底方案。建议人工补充本周期的关键战略目标与优先级，然后重新触发 Heartbeat。',
-          tasks: [
-            {
-              title: '补充本周期的公司关键目标与优先级（兜底占位任务）',
-              description:
-                '大模型规划失败，系统自动生成的默认任务。请由公司负责人在协作群内补充：1) 本周期最重要的 1-3 个业务目标；2) 关键风险与约束；3) 希望 CEO Agent 聚焦的方向。',
-              priority: 'high',
-            },
-          ],
-          neededSkills: [],
-          requiresHumanApproval: true,
-          approvalReason: '规划输出异常，需人工确认默认任务与后续战略方向。',
-        });
-        this.logger.warn('CEO plan intent unrecoverable; fallback used', {
+        const issueText = checkedIntent.success
+          ? 'unknown_intent_parse_failure'
+          : this.renderZodIssues(checkedIntent.error.issues);
+        this.logger.warn('CEO plan intent unrecoverable; soft failure path', {
           traceId: state.traceId,
           model: effectiveModelName,
           issues: checkedIntent.success ? [] : checkedIntent.error.issues.map((i) => `${i.path.join('.') || 'root'}:${i.message}`).slice(0, 10),
@@ -1232,11 +1896,13 @@ export class AutonomousOrchestratorService implements OnModuleInit {
             repairAttempts: intentRepairAttempts,
           },
         });
-        return {
-          skipPlanReason: 'intent_structured_output_failed',
-          planResultJson: JSON.stringify(fallbackResult),
-          llmMetaJson: JSON.stringify({ error: true, stage: 'intent' }),
-        };
+        return await this.finalizeCeoPlanSoftFailurePath({
+          state,
+          technicalDetail: `规划输出 schema 校验失败（intent）: ${issueText}`,
+          kind: 'intent_parse',
+          skipPlanReasonCode: 'intent_structured_output_failed',
+          friendlySummaryNoHitl: `${CEO_PLAN_DEFAULT_SUMMARY} 若你只是在问能力、skills 或常见问题，可忽略任务区；我已尽量用轻量对话继续回复。`,
+        });
       }
 
       if (checkedIntent.success) {
@@ -1258,7 +1924,16 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
       let tasks: CeoPlanOutput['tasks'] = [];
       if (safeIntent.nextStep === 'generate_tasks') {
-        const taskSystem = `${systemPrompt}\n\n${strictJsonRule}\n\nTask Schema:\n${taskSchemaHint}\n\n组织树（仅允许将任务关联到以下节点 id）：\n${orgPrompt}\n\nTask Schema(end):\n${taskSchemaHint}`;
+      const taskSystem = await this.ceoLayerConfigResolver.getFullPrompt({
+        companyId: state.companyId,
+        layer: 'supervision',
+        purpose: 'autonomous_plan_tasks_json',
+        vars: {
+          schemaLabel: 'Task Schema',
+          schemaHint: taskSchemaHint,
+          orgPrompt,
+        },
+      });
         const taskUser = [
           `trigger=${state.triggerSource}`,
           state.triggerRef ? `triggerRef=${state.triggerRef}` : null,
@@ -1337,7 +2012,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         tasks,
         neededSkills: safeIntent.neededSkills ?? [],
         requiresHumanApproval: safeIntent.requiresHumanApproval,
-        approvalReason: safeIntent.approvalReason,
+        approvalReason: safeIntent.approvalReason == null ? undefined : safeIntent.approvalReason,
       });
 
       // Layer-3 (Heavy/Breakdown) response log: what the LLM produced (clipped)
@@ -1388,12 +2063,22 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
       await this.publishLlmBilling(state, meta);
 
+      this.resetCeoPlanSoftFailureStreak(state.companyId);
+
       return {
         planResultJson: JSON.stringify(result),
         llmMetaJson: JSON.stringify(meta),
       };
     } catch (e: unknown) {
       const msg = this.formatErrorMessage(e);
+      if (this.isRateLimitError(msg)) {
+        this.monitoring?.incCeoPlanRateLimit('soft_failure');
+        this.resilience.openCooldown(
+          this.planRateLimitCooldownKey(state),
+          this.config.getAutonomousPlanRateLimitCooldownMs(),
+          'provider_429',
+        );
+      }
       const llmElapsedMs = llmInvokeStartedAt > 0 ? Date.now() - llmInvokeStartedAt : undefined;
       const likelyUpstreamReadTimeout =
         /timed out/i.test(msg) &&
@@ -1413,25 +2098,19 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         /timed out|timeout/i.test(msg) && state.runKind === 'breakdown'
           ? '抱歉，本次规划调用大模型超时（常见于智谱等线路约 150 秒限制或网络波动）。请稍后再试，或请管理员为 CEO 更换更稳定的模型/线路。'
           : `规划失败: ${msg}`;
-      const fallback: CeoPlanOutput = {
-        summary: friendlyTimeout,
-        tasks: [
-          {
-            title: '确认 CEO Heartbeat 规划失败原因并补充战略输入（兜底占位任务）',
-            description:
-              '本轮 CEO 规划调用失败（包含可能的超时/网络问题）。请由负责人在协作群内说明：1) 当前周期的核心业务目标；2) 是否需要立刻重新触发 Heartbeat；3) 是否需要更换模型或缩短上下文。',
-            priority: 'high',
-          },
-        ],
-        neededSkills: [],
-        requiresHumanApproval: true,
-        approvalReason: '规划执行失败，需人工检查并决定后续动作。',
-      };
-      return {
-        skipPlanReason: friendlyTimeout,
-        planResultJson: JSON.stringify(fallback),
-        llmMetaJson: JSON.stringify({ error: true, rawMessage: msg }),
-      };
+      const friendlyNoHitl =
+        /timed out|timeout/i.test(msg) && state.runKind === 'breakdown'
+          ? friendlyTimeout
+          : `${CEO_PLAN_DEFAULT_SUMMARY} 自动规划暂时中断，你可继续用对话提问；若多次失败将才需要人工审批。技术摘要：${this.clip(msg, 280)}`;
+      const rateLimitSuppressed = this.isRateLimitError(msg);
+      return await this.finalizeCeoPlanSoftFailurePath({
+        state,
+        technicalDetail: msg,
+        kind: 'plan_exception',
+        skipPlanReasonCode: friendlyTimeout,
+        friendlySummaryNoHitl: friendlyNoHitl,
+        suppressHitl: rateLimitSuppressed,
+      });
     }
   }
 
@@ -1469,6 +2148,18 @@ export class AutonomousOrchestratorService implements OnModuleInit {
    * CEO → 部门：对带 organizationNodeId 但未指定 assigneeAgentId 的任务，按节点解析默认执行 Agent。
    */
   private async hierarchicalExpand(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
+    if (this.readEarlyExitSnapshot(state).earlyExit) {
+      trace.getActiveSpan()?.setAttribute('foundry.ceo.layer_stopped_at', 1);
+      return {
+        hierarchicalMetaJson: JSON.stringify({
+          earlyExitSkippedExpand: true,
+          layerStoppedAt: 1,
+          autoAssigned: [],
+          errors: [],
+          breakdownContext: readBreakdownContextFromState(state.hierarchicalMetaJson),
+        }),
+      };
+    }
     const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'hierarchicalExpand');
 
     // plan 输出的 neededSkills：异步触发绑定，不阻塞本轮 pipeline（后续执行阶段自然走 snapshots 注入）
@@ -1533,7 +2224,10 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const updatedPlan: CeoPlanOutput = { ...plan, tasks };
     return {
       planResultJson: JSON.stringify(updatedPlan),
-      hierarchicalMetaJson: JSON.stringify(meta),
+      hierarchicalMetaJson: JSON.stringify({
+        ...meta,
+        breakdownContext: readBreakdownContextFromState(state.hierarchicalMetaJson),
+      }),
     };
   }
 
@@ -1588,7 +2282,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           return;
         }
 
-        await this.rpcInteractive('agents.bindSkills', {
+        const bindRes = await this.rpcInteractive<Record<string, unknown>>('agents.bindSkills', {
           companyId,
           actor,
           id: ceoAgentId,
@@ -1601,20 +2295,42 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         });
 
         const ms = Date.now() - startedAt;
-        this.logger.log('CEO neededSkills preload triggered (bindSkills)', {
-          traceId: state.traceId,
-          companyId,
-          ceoAgentId,
-          neededSkills: needed,
-          boundSkillIds: skillIds,
-          ms,
-        });
-        await this.executionLog.appendForRun(companyId, state.traceId, {
-          stepType: 'ceo.skills.preload',
-          traceId: state.traceId,
-          message: `ok skills=${skillIds.length} ms=${ms}`,
-          outputSnapshot: { ceoAgentId, neededSkills: needed, resolvedSkillIds: skillIds, ms },
-        });
+        if (bindRes?.outcome === 'pending_approval') {
+          this.logger.warn('CEO neededSkills preload: bindSkills pending approval', {
+            traceId: state.traceId,
+            companyId,
+            ceoAgentId,
+            approvalRequestId: bindRes.approvalRequestId,
+            pendingSkillIds: bindRes.pendingSkillIds,
+          });
+          await this.executionLog.appendForRun(companyId, state.traceId, {
+            stepType: 'ceo.skills.preload',
+            traceId: state.traceId,
+            message: `pending_approval approvalRequestId=${String(bindRes.approvalRequestId ?? '')} ms=${ms}`,
+            outputSnapshot: {
+              ceoAgentId,
+              neededSkills: needed,
+              resolvedSkillIds: skillIds,
+              bindResult: bindRes,
+              ms,
+            },
+          });
+        } else {
+          this.logger.log('CEO neededSkills preload triggered (bindSkills)', {
+            traceId: state.traceId,
+            companyId,
+            ceoAgentId,
+            neededSkills: needed,
+            boundSkillIds: skillIds,
+            ms,
+          });
+          await this.executionLog.appendForRun(companyId, state.traceId, {
+            stepType: 'ceo.skills.preload',
+            traceId: state.traceId,
+            message: `ok skills=${skillIds.length} ms=${ms}`,
+            outputSnapshot: { ceoAgentId, neededSkills: needed, resolvedSkillIds: skillIds, ms },
+          });
+        }
         span.setStatus({ code: SpanStatusCode.OK });
       } catch (e: unknown) {
         const msg = this.formatErrorMessage(e);
@@ -1717,6 +2433,12 @@ export class AutonomousOrchestratorService implements OnModuleInit {
   }
 
   private async validatePersist(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
+    if (this.readEarlyExitSnapshot(state).earlyExit) {
+      return {
+        createdTaskIdsJson: '[]',
+        persistErrorsJson: '[]',
+      };
+    }
     const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'validatePersist');
 
     let parsedCtx: Record<string, unknown> = {};
@@ -1752,7 +2474,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const created: string[] = [];
     const errors: { title?: string; error: string }[] = [];
 
-    for (const t of plan.tasks) {
+    for (const [idx, t] of plan.tasks.entries()) {
       try {
         if (t.organizationNodeId && !validNodeIds.has(t.organizationNodeId)) {
           errors.push({ title: t.title, error: 'organizationNodeId 不在组织树中' });
@@ -1798,6 +2520,25 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
         let createdTask: Record<string, unknown>;
         let delegatedByCeo = false;
+        const idemKey = this.buildTaskIdempotencyKey(
+          state.traceId,
+          t.title || '',
+          t.description || '',
+          idx,
+        );
+        const allowCreate = this.resilience.markIfNew(
+          `autonomous:task:create:${state.companyId}:${idemKey}`,
+          AutonomousOrchestratorService.TASK_IDEMPOTENCY_TTL_MS,
+        );
+        if (!allowCreate) {
+          this.logger.warn('autonomous-trace | validatePersist.duplicate_task_blocked', {
+            traceId: state.traceId,
+            companyId: state.companyId,
+            idempotencyKey: idemKey,
+            title: this.clip(t.title || '', 120),
+          });
+          continue;
+        }
         if (t.assigneeAgentId && state.ceoAgentId) {
           try {
             const target = await this.rpc<Record<string, unknown>>(
@@ -1824,6 +2565,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
                     requiresHumanApproval: plan.requiresHumanApproval,
                     traceId: state.traceId,
                     source: 'ceo-strategic-breakdown',
+                    idempotencyKey: idemKey,
                   },
                 },
                 state.traceId,
@@ -1845,6 +2587,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
                     requiresHumanApproval: plan.requiresHumanApproval,
                     metadata: {
                       ceoTraceId: state.traceId,
+                      idempotencyKey: idemKey,
                       organizationNodeId: t.organizationNodeId,
                       ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
                     },
@@ -1869,6 +2612,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
                   requiresHumanApproval: plan.requiresHumanApproval,
                   metadata: {
                     ceoTraceId: state.traceId,
+                    idempotencyKey: idemKey,
                     organizationNodeId: t.organizationNodeId,
                     ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
                   },
@@ -1893,6 +2637,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
                 requiresHumanApproval: plan.requiresHumanApproval,
                 metadata: {
                   ceoTraceId: state.traceId,
+                  idempotencyKey: idemKey,
                   organizationNodeId: t.organizationNodeId,
                   ...(dynamicsRoomId ? { roomId: dynamicsRoomId } : {}),
                 },
@@ -1994,6 +2739,9 @@ export class AutonomousOrchestratorService implements OnModuleInit {
 
   private async summarize(state: CeoSupervisorState): Promise<Partial<CeoSupervisorState>> {
     const plan = this.parseCeoPlanWithGuard(state.planResultJson, state.traceId, 'summarize');
+    if (this.readEarlyExitSnapshot(state).earlyExit && (state.reportDraft ?? '').trim()) {
+      return { reportDraft: state.reportDraft!.trim() };
+    }
     let created: string[] = [];
     let persistErrors: { title?: string; error: string }[] = [];
     try {
@@ -2015,6 +2763,14 @@ export class AutonomousOrchestratorService implements OnModuleInit {
         ? `[Heartbeat ${state.tickAt}] trace=${state.traceId}`
         : `[战略拆解] ${state.goal?.slice(0, 120) ?? ''}`;
 
+    let planMeta: Record<string, unknown> = {};
+    try {
+      planMeta = JSON.parse(state.llmMetaJson || '{}') as Record<string, unknown>;
+    } catch {
+      planMeta = {};
+    }
+    const planSoftDegraded = planMeta.planSoftDegraded === true && state.runKind === 'breakdown';
+
     let hierMeta = '';
     try {
       const hm = JSON.parse(state.hierarchicalMetaJson || '{}') as {
@@ -2028,22 +2784,29 @@ export class AutonomousOrchestratorService implements OnModuleInit {
       hierMeta = '';
     }
 
-    const lines = [
-      header,
-      `公司: ${state.companyId}`,
-      `supervisorRun: ${state.supervisorRunId || state.traceId}`,
-      `触发: ${state.triggerSource}${state.triggerRef ? ` ref=${state.triggerRef}` : ''}`,
-      state.rootTaskId ? `根任务: ${state.rootTaskId}` : null,
-      state.skipPlanReason ? `跳过规划: ${state.skipPlanReason}` : null,
-      hierMeta || null,
-      '--- CEO 摘要 ---',
-      plan.summary,
-      '--- 新任务建议（已持久化）---',
-      created.length ? created.join(', ') : '(无)',
-      '--- 持久化错误 ---',
-      persistErrors.length ? JSON.stringify(persistErrors) : '(无)',
-      plan.requiresHumanApproval ? `需要人工审批: ${plan.approvalReason ?? ''}` : null,
-    ].filter(Boolean) as string[];
+    const lines = planSoftDegraded
+      ? [
+          '[战略拆解]',
+          '本轮深度规划暂时不可用，我已切换为轻量对话模式继续协助。',
+          plan.summary ? `摘要：${plan.summary}` : null,
+          plan.requiresHumanApproval ? '当前需要人工审批后再继续自动拆解。' : null,
+        ].filter(Boolean) as string[]
+      : [
+          header,
+          `公司: ${state.companyId}`,
+          `supervisorRun: ${state.supervisorRunId || state.traceId}`,
+          `触发: ${state.triggerSource}${state.triggerRef ? ` ref=${state.triggerRef}` : ''}`,
+          state.rootTaskId ? `根任务: ${state.rootTaskId}` : null,
+          state.skipPlanReason ? `跳过规划: ${state.skipPlanReason}` : null,
+          hierMeta || null,
+          '--- CEO 摘要 ---',
+          plan.summary,
+          '--- 新任务建议（已持久化）---',
+          created.length ? created.join(', ') : '(无)',
+          '--- 持久化错误 ---',
+          persistErrors.length ? JSON.stringify(persistErrors) : '(无)',
+          plan.requiresHumanApproval ? `需要人工审批: ${plan.approvalReason ?? ''}` : null,
+        ].filter(Boolean) as string[];
 
     return {
       reportDraft: lines.join('\n'),
@@ -2077,11 +2840,24 @@ export class AutonomousOrchestratorService implements OnModuleInit {
     const postRoomId = collabRoom || mainRoomId;
     const ceoId = state.ceoAgentId?.trim() ?? '';
 
-    if (postRoomId && ceoId) {
+    const shouldPostToRoom = state.triggerSource !== 'schedule';
+
+    if (postRoomId && ceoId && shouldPostToRoom) {
       try {
         if (report.trim().length) {
           const msgSource =
             state.triggerSource === 'collaboration_mention' ? 'ceo_collaboration' : 'ceo_heartbeat';
+          const heartbeatCorrelation: CollaborationHeartbeatCorrelationPayload | undefined =
+            this.config.isCollabHeartbeatCorrelationEnabled()
+              ? {
+                  heartbeatRunId: state.traceId,
+                  tickAt: state.tickAt,
+                  triggerSource: state.triggerSource,
+                  runKind: state.runKind,
+                  mainRoomId: mainRoomId || null,
+                  collaborationSurfaceRoomId: postRoomId || null,
+                }
+              : undefined;
           // 先模拟“流式块”输出（stream_chunk -> WS message:chunk）
           const streamId = `ceo_report:${state.traceId}`;
           const chunkSize = 200;
@@ -2099,7 +2875,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
                 actor,
                 roomId: postRoomId,
                 agentId: ceoId,
-                content: chunks[i]!,
+                content: ConversationOutputSanitizerService.toVisibleLayer(chunks[i]!),
                 messageType: 'stream_chunk',
                 metadata: {
                   traceId: state.traceId,
@@ -2107,6 +2883,7 @@ export class AutonomousOrchestratorService implements OnModuleInit {
                   streamId,
                   chunkIndex: i,
                   chunkCount: chunks.length,
+                  ...(heartbeatCorrelation ? { heartbeatCorrelation } : {}),
                 },
               },
               state.traceId,
@@ -2121,9 +2898,13 @@ export class AutonomousOrchestratorService implements OnModuleInit {
               actor,
               roomId: postRoomId,
               agentId: ceoId,
-              content: report,
+              content: ConversationOutputSanitizerService.toVisibleLayer(report),
               messageType: 'system',
-              metadata: { traceId: state.traceId, source: msgSource },
+              metadata: {
+                traceId: state.traceId,
+                source: msgSource,
+                ...(heartbeatCorrelation ? { heartbeatCorrelation } : {}),
+              },
             },
             state.traceId,
           );
@@ -2133,6 +2914,11 @@ export class AutonomousOrchestratorService implements OnModuleInit {
           message: this.formatErrorMessage(e),
         });
       }
+    } else if (postRoomId && ceoId && !shouldPostToRoom) {
+      this.logger.debug('skip collaboration notify for scheduled heartbeat', {
+        companyId: state.companyId,
+        traceId: state.traceId,
+      });
     } else if (postRoomId && !ceoId) {
       this.logger.warn('skip collaboration notify: missing ceoAgentId', {
         companyId: state.companyId,
@@ -2156,7 +2942,22 @@ export class AutonomousOrchestratorService implements OnModuleInit {
             collectionLabel: `heartbeat:${state.tickAt}`,
             content: report,
             sourceType: 'summary',
-            metadata: { traceId: state.traceId, triggerSource: state.triggerSource },
+            metadata: {
+              traceId: state.traceId,
+              triggerSource: state.triggerSource,
+              ...(this.config.isCollabHeartbeatCorrelationEnabled()
+                ? {
+                    heartbeatCorrelation: {
+                      heartbeatRunId: state.traceId,
+                      tickAt: state.tickAt,
+                      triggerSource: state.triggerSource,
+                      runKind: state.runKind,
+                      mainRoomId: mainRoomId || null,
+                      collaborationSurfaceRoomId: postRoomId || null,
+                    },
+                  }
+                : {}),
+            },
             /** RpcMemoryAdapter 发送前剥离，不进入 API DTO */
             pipelineTraceId: state.traceId,
           },
@@ -2172,7 +2973,22 @@ export class AutonomousOrchestratorService implements OnModuleInit {
               collectionLabel: `heartbeat:${state.tickAt}`,
               content: report,
               sourceType: 'summary',
-              metadata: { traceId: state.traceId, triggerSource: state.triggerSource },
+              metadata: {
+                traceId: state.traceId,
+                triggerSource: state.triggerSource,
+                ...(this.config.isCollabHeartbeatCorrelationEnabled()
+                  ? {
+                      heartbeatCorrelation: {
+                        heartbeatRunId: state.traceId,
+                        tickAt: state.tickAt,
+                        triggerSource: state.triggerSource,
+                        runKind: state.runKind,
+                        mainRoomId: mainRoomId || null,
+                        collaborationSurfaceRoomId: postRoomId || null,
+                      },
+                    }
+                  : {}),
+              },
             },
           },
           state.traceId,

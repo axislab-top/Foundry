@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
+import { formatUnknownError } from '@service/logging';
 import { MessagingService } from '@service/messaging';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
 import type { TaskHeartbeatTickEvent } from '@contracts/events';
@@ -49,8 +50,9 @@ export class BudgetSignalsHeartbeatListener implements OnModuleInit {
             .pipe(timeout(rpcMs)),
         );
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        this.logger.warn('billing.signals.refresh failed', { companyId, message });
+        this.logger.warn(
+          `billing.signals.refresh failed companyId=${companyId}: ${formatUnknownError(e)}`,
+        );
       }
     });
   }

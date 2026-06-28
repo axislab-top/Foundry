@@ -25,6 +25,8 @@ SERVICES=(
   "api:apps/api"
   "gateway:apps/gateway"
   "logging:apps/logging"
+  "nginx:infrastructure/nginx"
+  "runner:apps/runner"
   "webhooks:apps/webhooks"
   "worker:apps/worker"
 )

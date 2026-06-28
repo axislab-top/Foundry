@@ -8,11 +8,15 @@ export type LlmKeyProvider = 'openai' | 'anthropic' | 'azure' | string;
  */
 @Entity('llm_keys')
 @Index(['provider', 'modelName'])
+@Index(['llmModelId'])
 @Index(['isActive'])
 @Index(['keyAlias'])
 export class LlmKey {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ name: 'llm_model_id', type: 'uuid', nullable: true })
+  llmModelId: string | null;
 
   @Column({ type: 'varchar', length: 32 })
   provider: LlmKeyProvider;

@@ -38,18 +38,33 @@ export class CompanyCreatedCollaborationListener implements OnModuleInit {
     await this.tenantContext.runWithCompanyId(companyId, async () => {
       try {
         await this.agentsBootstrap.ensureDefaultAgentsForCompany(companyId);
-        await this.collaborationBootstrap.ensureMainRoomForCompany(
+        await this.agentsBootstrap.atomicInitializeCeoLayers(companyId, 'bestEffort');
+        await this.collaborationBootstrap.ensureMainRoomConvergedForCompany(
           companyId,
           event.data.createdBy,
           event.data.name,
+        );
+      } catch (err: any) {
+        this.logger.error('Collaboration critical bootstrap failed; will retry by MQ', {
+          companyId,
+          eventId: event.eventId,
+          error: err?.message,
+        });
+        throw err;
+      }
+      try {
+        await this.collaborationBootstrap.ensureDepartmentRoomsForCompany(
+          companyId,
+          event.data.createdBy,
         );
         this.logger.log('Collaboration main room after company.created', {
           companyId,
           eventId: event.eventId,
         });
       } catch (err: any) {
-        this.logger.warn('Collaboration bootstrap skipped or failed', {
+        this.logger.warn('Collaboration non-critical bootstrap skipped or failed', {
           companyId,
+          eventId: event.eventId,
           error: err?.message,
         });
       }

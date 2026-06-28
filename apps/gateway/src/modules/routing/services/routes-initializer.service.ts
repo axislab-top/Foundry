@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Route } from '../entities/route.entity.js';
+import { isLegacyAuthHttpProxyRoute } from '../config/edge-routing.constants.js';
 import { DynamicRoutesService } from './dynamic-routes.service.js';
 
 /**
@@ -19,7 +20,48 @@ export class RoutesInitializerService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    await this.retireLegacyAuthHttpProxyRoutes();
     await this.initializeDefaultRoutes();
+  }
+
+  /**
+   * 退役历史 auth HTTP 代理路由：认证面已迁移为 Gateway-native（AuthController）。
+   */
+  private async retireLegacyAuthHttpProxyRoutes(): Promise<void> {
+    try {
+      const legacy = await this.routeRepository.find({
+        where: { isActive: true },
+      });
+      const toRetire = legacy.filter((row) =>
+        isLegacyAuthHttpProxyRoute({
+          path: row.path,
+          transport: row.transport,
+          service: row.service,
+        }),
+      );
+      if (toRetire.length === 0) {
+        return;
+      }
+      for (const row of toRetire) {
+        row.isActive = false;
+        row.description = [
+          row.description?.trim(),
+          'Retired: auth HTTP is Gateway-native (AuthController), not proxied to API.',
+        ]
+          .filter(Boolean)
+          .join(' | ');
+      }
+      await this.routeRepository.save(toRetire);
+      await this.dynamicRoutesService.refreshRoutes();
+      this.logger.warn(
+        `Retired ${toRetire.length} legacy /auth/* HTTP proxy route(s); auth is Gateway-native.`,
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        'Failed to retire legacy auth HTTP proxy routes',
+        error?.message ?? error,
+      );
+    }
   }
 
   /**
@@ -49,15 +91,6 @@ export class RoutesInitializerService implements OnModuleInit {
           transport: 'http' as const,
           priority: 100,
           description: 'API 服务路由 - 转发到 API Service',
-        },
-        {
-          path: '/auth/*',
-          service: 'api' as const,
-          rewritePath: '/api/auth',
-          authRequired: false,
-          transport: 'http' as const,
-          priority: 100,
-          description: '认证服务路由 - 转发到 API Service 的认证端点',
         },
         {
           path: '/webhooks/*',

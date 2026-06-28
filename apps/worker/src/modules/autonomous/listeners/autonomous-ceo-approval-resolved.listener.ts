@@ -6,6 +6,7 @@ import { MessagingService } from '@service/messaging';
 import type { AutonomousCeoApprovalResolvedEvent, TaskHeartbeatTickEvent } from '@contracts/events';
 import { ConfigService } from '../../../common/config/config.service.js';
 import { CeoApprovalGateService } from '../services/ceo-approval-gate.service.js';
+import { RedisCacheService } from '../../../common/cache/redis-cache.service.js';
 
 @Injectable()
 export class AutonomousCeoApprovalResolvedListener implements OnModuleInit {
@@ -16,6 +17,7 @@ export class AutonomousCeoApprovalResolvedListener implements OnModuleInit {
     @Inject('API_RPC_CLIENT') private readonly apiRpc: ClientProxy,
     private readonly config: ConfigService,
     private readonly gate: CeoApprovalGateService,
+    private readonly redisCache: RedisCacheService,
   ) {}
 
   onModuleInit() {
@@ -50,6 +52,20 @@ export class AutonomousCeoApprovalResolvedListener implements OnModuleInit {
   private async handle(event: AutonomousCeoApprovalResolvedEvent): Promise<void> {
     try {
       const { companyId, approvalId, decision, metadata } = event.data;
+      const approvalKey = String(approvalId ?? '').trim();
+      if (approvalKey) {
+        const prefix = this.config.getRedisKeyPrefix().trim();
+        const p = prefix ? `${prefix}:` : '';
+        const dedupeKey = `${p}ceo:approval:resolved:${companyId}:${approvalKey}`;
+        const acquired = await this.redisCache.setNxPx(dedupeKey, '1', 24 * 60 * 60 * 1000);
+        if (!acquired) {
+          this.logger.debug('autonomous.ceo.approval.resolved skipped (idempotent)', {
+            companyId,
+            approvalId: approvalKey,
+          });
+          return;
+        }
+      }
       const note = metadata && typeof (metadata as any).note === 'string' ? (metadata as any).note : undefined;
       const normalizedDecision = decision === 'rejected' ? 'rejected' : 'approved';
 
@@ -62,6 +78,10 @@ export class AutonomousCeoApprovalResolvedListener implements OnModuleInit {
       let matchedCount = 0;
 
       const statuses: Array<'pending' | 'review' | 'in_progress'> = ['pending', 'review', 'in_progress'];
+      const matchedTasks: Array<{
+        id: string;
+        metadata?: Record<string, unknown> | null;
+      }> = [];
       for (const st of statuses) {
         // 任务列表分页：因为 tasks.findAll 返回 totalPages
         let page = 1;
@@ -89,33 +109,37 @@ export class AutonomousCeoApprovalResolvedListener implements OnModuleInit {
             const meta = (task.metadata ?? {}) as Record<string, unknown>;
             if (meta.ceoApprovalId !== approvalId) continue;
 
-            matchedCount += 1;
-            const ceoTraceId = meta.ceoTraceId;
-            if (typeof ceoTraceId === 'string') {
-              matchedTraceIds.add(ceoTraceId);
-            }
-
-            await this.rpc('tasks.update', {
-              companyId,
-              actor,
-              id: task.id,
-              data: {
-                status: normalizedDecision === 'approved' ? 'in_progress' : 'blocked',
-                progress: normalizedDecision === 'approved' ? 5 : undefined,
-                blockedReason:
-                  normalizedDecision === 'rejected' ? (note ?? 'CEO rejected') : undefined,
-                metadata: {
-                  ceoApprovalDecision: normalizedDecision,
-                  ceoApprovalResolvedAt: tickAt,
-                  ...(note ? { ceoApprovalNote: note } : {}),
-                },
-              },
-            });
+            matchedTasks.push({ id: task.id, metadata: task.metadata ?? null });
           }
 
           if (!pageRes || page >= pageRes.totalPages) break;
           page += 1;
         }
+      }
+
+      for (const task of matchedTasks) {
+        const meta = (task.metadata ?? {}) as Record<string, unknown>;
+        matchedCount += 1;
+        const ceoTraceId = meta.ceoTraceId;
+        if (typeof ceoTraceId === 'string') {
+          matchedTraceIds.add(ceoTraceId);
+        }
+
+        await this.rpc('tasks.update', {
+          companyId,
+          actor,
+          id: task.id,
+          data: {
+            status: normalizedDecision === 'approved' ? 'in_progress' : 'blocked',
+            progress: normalizedDecision === 'approved' ? 5 : undefined,
+            blockedReason: normalizedDecision === 'rejected' ? (note ?? 'CEO rejected') : undefined,
+            metadata: {
+              ceoApprovalDecision: normalizedDecision,
+              ceoApprovalResolvedAt: tickAt,
+              ...(note ? { ceoApprovalNote: note } : {}),
+            },
+          },
+        });
       }
 
       // 同步到进程内存 gate（可选，但能提升本实例行为一致性）

@@ -3,9 +3,10 @@
  */
 describe('Company membership roles (contract)', () => {
   it('defines expected role strings for company_memberships.role', () => {
-    const roles = ['owner', 'admin', 'member'] as const;
+    const roles = ['owner', 'admin', 'supervisor', 'member'] as const;
     expect(roles).toContain('owner');
     expect(roles).toContain('admin');
+    expect(roles).toContain('supervisor');
     expect(roles).toContain('member');
   });
 });

@@ -7,6 +7,7 @@ import {
   UploadOptions,
   ListOptions,
 } from '../../interfaces/storage.interface.js';
+import { buildAttachmentContentDisposition } from '../content-disposition.util.js';
 
 /**
  * MinIO 存储适配器
@@ -120,14 +121,21 @@ export class MinIOStorageAdapter
     });
   }
 
-  async getUrl(path: string, expiresIn: number = 7 * 24 * 60 * 60): Promise<string> {
+  async getUrl(
+    path: string,
+    expiresIn: number = 7 * 24 * 60 * 60,
+    downloadFileName?: string,
+  ): Promise<string> {
     this.assertTenantObjectKey(path);
     try {
-      // 生成预签名 URL
+      const respHeaders = downloadFileName
+        ? { 'response-content-disposition': buildAttachmentContentDisposition(downloadFileName) }
+        : undefined;
       const url = await this.client.presignedGetObject(
         this.bucketName,
         path,
         expiresIn,
+        respHeaders,
       );
       return url;
     } catch (error) {

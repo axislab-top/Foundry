@@ -6,6 +6,7 @@ import type {
   CollaborationMemoryConsolidateRequestedEvent,
 } from '@contracts/events';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
+import { ExperienceLearnerService } from '../services/experience-learner.service.js';
 
 /**
  * 讨论收敛后触发记忆 consolidation（与 collaboration.memory.consolidate.requested 对齐）。
@@ -17,6 +18,7 @@ export class DiscussionConvergedMemoryListener implements OnModuleInit {
   constructor(
     private readonly messaging: MessagingService,
     private readonly tenantContext: TenantContextService,
+    private readonly experienceLearner: ExperienceLearnerService,
   ) {}
 
   onModuleInit() {
@@ -61,6 +63,13 @@ export class DiscussionConvergedMemoryListener implements OnModuleInit {
           message: e instanceof Error ? e.message : String(e),
         });
       }
+
+      // Fire-and-forget: recap generation should not block consolidation.
+      void this.experienceLearner.generateRecap({
+        ...event,
+        companyId,
+        data: { ...event.data, threadId },
+      });
     });
   }
 }

@@ -16,25 +16,79 @@ import {
   TenantContextService,
 } from '@service/tenant';
 import type {
+  BaseEvent,
   CompanyCreatedEvent,
   CompanyStatusChangedEvent,
   CompanyUpdatedEvent,
 } from '@contracts/events';
+import { normalizeCeoLayerConfig } from '@foundry/skills';
 import { CacheService } from '../../common/cache/cache.service.js';
 import { ErrorCode } from '../../common/exceptions/error-codes.js';
 import { OrganizationInitializerService } from '../organization/services/organization-initializer.service.js';
+import { Agent } from '../agents/entities/agent.entity.js';
 import { MarketplaceAgent } from '../templates/entities/marketplace-agent.entity.js';
 import { Company } from './entities/company.entity.js';
+import {
+  CompanyHeartbeatConfig,
+  type CompanyHeartbeatFrequency,
+} from './entities/company-heartbeat-config.entity.js';
 import { CompanyMembership } from './entities/company-membership.entity.js';
 import type { DepartmentPlacementDto } from './dto/department-placement.dto.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { QueryCompanyDto } from './dto/query-company.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { UpdateCompanyStatusDto } from './dto/update-company-status.dto.js';
+import { UpdateCompanyHeartbeatConfigDto } from './dto/update-company-heartbeat-config.dto.js';
+import { UpdateCompanyCeoDecisionConfigDto } from './dto/update-company-ceo-decision-config.dto.js';
+import { UpdateCompanyCeoGovernancePolicyDto } from './dto/update-company-ceo-governance-policy.dto.js';
+import { SkillRuntimeResolverService } from './services/skill-runtime-resolver.service.js';
+import { CeoLayerConfigService, mergePlatformContextPolicyFallback } from './services/ceo-layer-config.service.js';
+import {
+  CompanyRuntimePreferenceService,
+  type CeoGovernancePolicyV1,
+} from './services/company-runtime-preference.service.js';
+import { ApprovalService } from '../approval/services/approval.service.js';
+import { PolicyAuditService } from '../approval/services/policy-audit.service.js';
+import { CollaborationBootstrapService } from '../collaboration/services/collaboration-bootstrap.service.js';
+import { LlmKeysService } from '../llm-keys/llm-keys.service.js';
+import { sanitizeCeoLayerConfigLlmKeyIds } from '../../common/utils/ceo-layer-llm-key-sanitizer.util.js';
+import { CompanyCreationQuotaService } from './services/company-creation-quota.service.js';
 
 interface Actor {
   id: string;
   roles?: string[];
+}
+
+export interface CompanySnapshotRecord {
+  id: string;
+  companyId: string;
+  version: string;
+  snapshot: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface CompanyCeoDecisionConfig {
+  ceoDecisionModel: string | null;
+  ceoDecisionLlmKeyId: string | null;
+}
+
+export interface CompanyCeoLayerConfigResponse {
+  templateConfig: Record<string, unknown>;
+  companyConfig: Record<string, unknown>;
+}
+
+export interface CompanyCeoGovernancePolicyUpdateResult {
+  applied: boolean;
+  pendingApproval: boolean;
+  approvalRequestId: string | null;
+  policy: CeoGovernancePolicyV1 | null;
+}
+
+export interface CeoGovernancePolicyTemplate {
+  id: string;
+  label: string;
+  description: string;
+  policyPatch: Record<string, unknown>;
 }
 
 export interface PaginatedResult<T> {
@@ -55,16 +109,64 @@ export class CompaniesService {
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectRepository(CompanyMembership)
     private readonly membershipsRepo: Repository<CompanyMembership>,
+    @InjectRepository(CompanyHeartbeatConfig)
+    private readonly heartbeatConfigRepo: Repository<CompanyHeartbeatConfig>,
     @InjectRepository(MarketplaceAgent)
     private readonly marketplaceAgentsRepo: Repository<MarketplaceAgent>,
+    @InjectRepository(Agent)
+    private readonly agentsRepo: Repository<Agent>,
     private readonly cacheService: CacheService,
     private readonly messagingService: MessagingService,
     private readonly tenantContext: TenantContextService,
     private readonly organizationInitializer: OrganizationInitializerService,
+    private readonly skillRuntimeResolver: SkillRuntimeResolverService,
+    private readonly ceoLayerConfigService: CeoLayerConfigService,
+    private readonly runtimePreference: CompanyRuntimePreferenceService,
+    private readonly approvalService: ApprovalService,
+    private readonly policyAudit: PolicyAuditService,
+    private readonly collaborationBootstrap: CollaborationBootstrapService,
+    private readonly llmKeysService: LlmKeysService,
+    private readonly creationQuota: CompanyCreationQuotaService,
   ) {}
+
+  /** 建公司/转正后同步主群，避免用户进协作页时 MQ 尚未消费导致空列表。 */
+  private async ensureCollaborationReadyForNewCompany(
+    company: Company,
+    ownerUserId: string,
+  ): Promise<void> {
+    await this.tenantContext.runWithCompanyId(company.id, async () => {
+      await this.collaborationBootstrap.ensureMainRoomConvergedForCompany(
+        company.id,
+        ownerUserId,
+        company.name ?? undefined,
+      );
+    });
+  }
 
   private actorIsPlatformAdmin(actor: Actor): boolean {
     return Boolean(actor?.roles?.some((r) => r === 'admin' || r === 'superadmin'));
+  }
+
+  private async getPlatformIntentLayerGlobalSettings(): Promise<Record<string, unknown>> {
+    const rows = await this.dataSource.query(
+      `SELECT value FROM platform_settings WHERE key = $1 LIMIT 1`,
+      ['collab.intentLayer.globalSettings'],
+    );
+    const value = rows?.[0]?.value;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private async getPlatformReplayGlobalSettings(): Promise<Record<string, unknown>> {
+    const rows = await this.dataSource.query(
+      `SELECT value FROM platform_settings WHERE key = $1 LIMIT 1`,
+      ['collab.replay.globalSettings'],
+    );
+    const value = rows?.[0]?.value;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   }
 
   /** 校验 departmentPlacements 中引用的商城 slug 均已上架 */
@@ -118,6 +220,7 @@ export class CompaniesService {
 
   async create(createDto: CreateCompanyDto, actor: Actor): Promise<Company> {
     await this.assertDepartmentPlacementSlugs(createDto.departmentPlacements);
+    await this.creationQuota.assertCanCreateCompany(actor);
 
     const companyId = randomUUID();
     const now = new Date();
@@ -131,6 +234,7 @@ export class CompaniesService {
       await queryRunner.connect();
       await queryRunner.startTransaction();
       try {
+        await this.creationQuota.assertCanCreateCompanyInTransaction(queryRunner, actor);
         await queryRunner.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
 
         await queryRunner.query(
@@ -195,6 +299,16 @@ export class CompaniesService {
       company.industryCode || undefined,
       createDto.departmentPlacements,
     );
+    const platformIntentLayerSettings = await this.getPlatformIntentLayerGlobalSettings();
+    await this.ceoLayerConfigService.applyPlatformIntentLayerGlobalSettingsToCompany(
+      company.id,
+      platformIntentLayerSettings,
+    );
+    const platformReplaySettings = await this.getPlatformReplayGlobalSettings();
+    if (Object.keys(platformReplaySettings).length > 0) {
+      await this.ceoLayerConfigService.applyPlatformReplayGlobalSettingsToCompany(company.id, platformReplaySettings);
+    }
+    await this.ensureCollaborationReadyForNewCompany(company, actor.id);
     await this.publishCompanyCreated(company, actor.id);
     return company;
   }
@@ -203,6 +317,8 @@ export class CompaniesService {
    * 向导用草稿公司：有合法 companyId 与成员关系，但不初始化组织、不发布 company.created。
    */
   async createDraftShell(actor: Actor): Promise<Company> {
+    await this.creationQuota.assertCanCreateCompany(actor);
+
     const companyId = randomUUID();
     const now = new Date();
     const slug = `draft-${companyId.replace(/-/g, '').slice(0, 12)}`;
@@ -212,6 +328,7 @@ export class CompaniesService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
+      await this.creationQuota.assertCanCreateCompanyInTransaction(queryRunner, actor);
       await queryRunner.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
 
       await queryRunner.query(
@@ -253,18 +370,39 @@ export class CompaniesService {
    * 草稿转正：写入向导最终字段、激活，并执行组织初始化与 company.created。
    */
   async completeWizard(companyId: string, dto: CreateCompanyDto, actor: Actor): Promise<Company> {
-    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
-    const first = await this.findOne(companyId);
+    await this.assertCanCompleteWizard(companyId, actor);
+    // Avoid relying on CLS-based RLS when the first read happens right after a transaction.
+    // We set app.current_tenant explicitly so the companies row won't be filtered out as "not found".
+    const first = await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      return manager.getRepository(Company).findOne({ where: { id: companyId } });
+    });
+    if (!first) {
+      throw new NotFoundException({
+        code: ErrorCode.RECORD_NOT_FOUND,
+        message: '公司不存在',
+      });
+    }
     if (first.status !== 'draft') {
+      // 幂等：首次 complete 已成功但客户端重试（双点、刷新后 session 残留等）时直接返回已激活公司。
+      if (first.status === 'active') {
+        const creatorId = first.createdBy ? String(first.createdBy) : null;
+        const actorId = String(actor.id);
+        if ((creatorId && creatorId === actorId) || this.actorIsPlatformAdmin(actor)) {
+          try {
+            await this.ensureCollaborationReadyForNewCompany(first, actor.id);
+          } catch (err: unknown) {
+            this.logger.warn('Idempotent completeWizard: main room bootstrap failed', {
+              companyId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return this.findOne(companyId);
+        }
+      }
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
         message: '该公司已创建或状态不是草稿，无法通过向导完成',
-      });
-    }
-    if (first.createdBy !== actor.id && !this.actorIsPlatformAdmin(actor)) {
-      throw new ForbiddenException({
-        code: ErrorCode.FORBIDDEN,
-        message: '仅创建者可完成该公司的向导提交',
       });
     }
 
@@ -272,33 +410,66 @@ export class CompaniesService {
 
     let slug = this.generateSlug(dto.name);
     for (let attempts = 1; attempts <= 5; attempts += 1) {
-      const company = await this.findOne(companyId);
-      company.name = dto.name;
-      company.slug = slug;
-      company.industry = dto.industry ?? null;
-      company.industryCode = dto.industryCode ?? null;
-      company.scale = dto.scale ?? null;
-      company.goal = dto.goal ?? null;
-      company.initialBudget =
-        dto.initialBudget != null && Number.isFinite(dto.initialBudget)
-          ? String(dto.initialBudget)
-          : null;
-      company.description = dto.description ?? null;
-      company.logoUrl = dto.logoUrl ?? null;
-      company.timezone = dto.timezone ?? null;
-      company.status = 'active';
-      company.isActive = true;
-
       try {
-        await this.companiesRepo.save(company);
+        const refreshed = await this.dataSource.transaction(async (manager) => {
+          await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+
+          const company = await manager.getRepository(Company).findOne({ where: { id: companyId } });
+          if (!company) {
+            throw new NotFoundException({
+              code: ErrorCode.RECORD_NOT_FOUND,
+              message: '公司不存在',
+            });
+          }
+
+          company.name = dto.name;
+          company.slug = slug;
+          company.industry = dto.industry ?? null;
+          company.industryCode = dto.industryCode ?? null;
+          company.scale = dto.scale ?? null;
+          company.goal = dto.goal ?? null;
+          company.initialBudget =
+            dto.initialBudget != null && Number.isFinite(dto.initialBudget)
+              ? String(dto.initialBudget)
+              : null;
+          company.description = dto.description ?? null;
+          company.logoUrl = dto.logoUrl ?? null;
+          company.timezone = dto.timezone ?? null;
+          company.status = 'active';
+          company.isActive = true;
+
+          await manager.getRepository(Company).save(company);
+
+          const updated = await manager.getRepository(Company).findOne({ where: { id: companyId } });
+          if (!updated) {
+            throw new NotFoundException({
+              code: ErrorCode.RECORD_NOT_FOUND,
+              message: '公司不存在',
+            });
+          }
+          return updated;
+        });
+
         await this.clearCompanyCache(companyId);
-        const refreshed = await this.findOne(companyId);
         await this.organizationInitializer.initializeForCompany(
           refreshed.id,
           refreshed.industry || undefined,
           refreshed.industryCode || undefined,
           dto.departmentPlacements,
         );
+        const platformIntentLayerSettings = await this.getPlatformIntentLayerGlobalSettings();
+        await this.ceoLayerConfigService.applyPlatformIntentLayerGlobalSettingsToCompany(
+          refreshed.id,
+          platformIntentLayerSettings,
+        );
+        const platformReplaySettings = await this.getPlatformReplayGlobalSettings();
+        if (Object.keys(platformReplaySettings).length > 0) {
+          await this.ceoLayerConfigService.applyPlatformReplayGlobalSettingsToCompany(
+            refreshed.id,
+            platformReplaySettings,
+          );
+        }
+        await this.ensureCollaborationReadyForNewCompany(refreshed, actor.id);
         await this.publishCompanyCreated(refreshed, actor.id);
         return refreshed;
       } catch (error: any) {
@@ -403,6 +574,10 @@ export class CompaniesService {
       });
     }
 
+    if (query.createdBy && this.actorIsPlatformAdmin(actor)) {
+      queryBuilder.andWhere('company.created_by = :createdBy', { createdBy: query.createdBy });
+    }
+
     // 向导草稿公司不应出现在列表；用户在向导内通过专用草稿 ID 会话工作。
     queryBuilder.andWhere('company.status != :draftOnly', { draftOnly: 'draft' });
 
@@ -470,10 +645,457 @@ export class CompaniesService {
   }
 
   async validateAccess(companyId: string, userId: string): Promise<boolean> {
-    const membership = await this.membershipsRepo.findOne({
-      where: { companyId, userId, isActive: true } as FindOptionsWhere<CompanyMembership>,
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      await manager.query(SQL_SET_LOCAL_MEMBERSHIP_LISTING_USER, [userId]);
+      const membership = await manager.getRepository(CompanyMembership).findOne({
+        where: { companyId, userId, isActive: true } as FindOptionsWhere<CompanyMembership>,
+      });
+      return !!membership;
     });
-    return !!membership;
+  }
+
+  /**
+   * 内网 RPC：解析用户在租户内的活跃 membership 角色（owner/admin/member）。
+   */
+  async findActiveMembership(
+    companyId: string,
+    userId: string,
+  ): Promise<{ role: CompanyMembership['role'] } | null> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      await manager.query(SQL_SET_LOCAL_MEMBERSHIP_LISTING_USER, [userId]);
+      const membership = await manager.getRepository(CompanyMembership).findOne({
+        where: { companyId, userId, isActive: true } as FindOptionsWhere<CompanyMembership>,
+      });
+      if (!membership) return null;
+      return { role: membership.role };
+    });
+  }
+
+  async countActiveMemberships(companyId: string): Promise<number> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      const count = await manager.getRepository(CompanyMembership).count({
+        where: { companyId, isActive: true } as FindOptionsWhere<CompanyMembership>,
+      });
+      return count;
+    });
+  }
+
+  async getHeartbeatConfig(companyId: string, actor: Actor): Promise<CompanyHeartbeatConfig> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    return this.getOrCreateHeartbeatConfig(companyId);
+  }
+
+  async updateHeartbeatConfig(
+    companyId: string,
+    dto: UpdateCompanyHeartbeatConfigDto,
+    actor: Actor,
+  ): Promise<CompanyHeartbeatConfig> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+
+    const config = await this.getOrCreateHeartbeatConfig(companyId);
+    if (dto.enabled !== undefined) {
+      config.enabled = dto.enabled;
+    }
+    if (dto.frequency !== undefined) {
+      config.frequency = dto.frequency;
+    }
+    if (dto.metadata) {
+      config.metadata = {
+        ...(config.metadata || {}),
+        ...dto.metadata,
+      };
+    }
+    return this.heartbeatConfigRepo.save(config);
+  }
+
+  async getCeoDecisionConfig(companyId: string, actor: Actor): Promise<CompanyCeoDecisionConfig> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    const config = await this.getOrCreateHeartbeatConfig(companyId);
+    const metadata = (config.metadata ?? {}) as Record<string, unknown>;
+    const rows = await this.dataSource.query(
+      `
+      select llm_model as "llmModel", llm_key_id as "llmKeyId"
+      from agents
+      where company_id = $1 and role = 'ceo'
+      order by created_at asc
+      limit 1
+    `,
+      [companyId],
+    );
+    const fallback = (rows?.[0] ?? {}) as { llmModel?: string | null; llmKeyId?: string | null };
+    return {
+      ceoDecisionModel:
+        typeof metadata.ceoDecisionModel === 'string'
+          ? metadata.ceoDecisionModel
+          : (fallback.llmModel ?? null),
+      ceoDecisionLlmKeyId:
+        typeof metadata.ceoDecisionLlmKeyId === 'string'
+          ? metadata.ceoDecisionLlmKeyId
+          : (fallback.llmKeyId ?? null),
+    };
+  }
+
+  async updateCeoDecisionConfig(
+    companyId: string,
+    dto: UpdateCompanyCeoDecisionConfigDto,
+    actor: Actor,
+  ): Promise<CompanyCeoDecisionConfig> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    const config = await this.getOrCreateHeartbeatConfig(companyId);
+    const metadata = { ...(config.metadata ?? {}) } as Record<string, unknown>;
+    if (dto.ceoDecisionModel !== undefined) {
+      metadata.ceoDecisionModel = dto.ceoDecisionModel?.trim() || null;
+    }
+    if (dto.ceoDecisionLlmKeyId !== undefined) {
+      metadata.ceoDecisionLlmKeyId = dto.ceoDecisionLlmKeyId || null;
+    }
+    config.metadata = metadata;
+    await this.heartbeatConfigRepo.save(config);
+    return this.getCeoDecisionConfig(companyId, actor);
+  }
+
+  async getCeoLayerConfig(
+    companyId: string,
+    actor: Actor,
+  ): Promise<CompanyCeoLayerConfigResponse> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+
+    const templateRow = await this.marketplaceAgentsRepo.findOne({
+      where: { slug: 'ceo', isPublished: true },
+    });
+    const templateConfig = templateRow
+      ? normalizeCeoLayerConfig(templateRow.ceoLayerConfig ?? {})
+      : ({} as Record<string, unknown>);
+    const storedCompanyConfig = await this.ceoLayerConfigService.getStoredLayerConfig(companyId);
+    const runtimeCompanyConfig = await this.skillRuntimeResolver.getResolvedCeoTemplateForWorker(
+      companyId,
+      templateRow,
+    );
+    const companyConfig = {
+      ...(runtimeCompanyConfig ?? {}),
+      ...((storedCompanyConfig ?? {}) as Record<string, unknown>),
+      strategy: {
+        ...(((runtimeCompanyConfig as Record<string, unknown> | null)?.strategy ?? {}) as Record<
+          string,
+          unknown
+        >),
+        ...(((storedCompanyConfig as Record<string, unknown> | null)?.strategy ?? {}) as Record<
+          string,
+          unknown
+        >),
+      },
+    };
+
+    const activeChatKeyIds = await this.llmKeysService.loadActiveChatKeyIdSet();
+    const sanitizedTemplate = sanitizeCeoLayerConfigLlmKeyIds(templateConfig, activeChatKeyIds);
+    const sanitizedCompany = sanitizeCeoLayerConfigLlmKeyIds(companyConfig, activeChatKeyIds);
+    const platformReplay = await this.getPlatformReplayGlobalSettings();
+    const platformIntent = await this.getPlatformIntentLayerGlobalSettings();
+    const companyWithPlatformContext = mergePlatformContextPolicyFallback(
+      sanitizedCompany,
+      platformReplay,
+      platformIntent,
+    );
+
+    return { templateConfig: sanitizedTemplate, companyConfig: companyWithPlatformContext };
+  }
+
+  /**
+   * 管理端：以事务写入 `company_ceo_layer_configs`（模板按层合并 + 三层键补全）并 **声明式** 将并集 skillIds 同步到 CEO Agent。
+   * 与「从商城模板重新同步三层」共用同一原子路径，供显式「强制同步」入口调用。
+   */
+  private async applyAtomicCeoLayerTemplateToCompanyAndAgent(companyId: string): Promise<void> {
+    const template = await this.marketplaceAgentsRepo.findOne({
+      where: { slug: 'ceo', isPublished: true },
+    });
+    if (!template) {
+      throw new NotFoundException({
+        code: ErrorCode.RECORD_NOT_FOUND,
+        message: '未找到已上架的 CEO 商城模板（slug=ceo）',
+      });
+    }
+    const merged = await this.ceoLayerConfigService.atomicEnsureAndSync(
+      companyId,
+      normalizeCeoLayerConfig(template.ceoLayerConfig ?? {}),
+    );
+    const ceo = await this.agentsRepo.findOne({
+      where: { companyId, role: 'ceo' } as any,
+    });
+    if (!ceo?.id) {
+      throw new NotFoundException({
+        code: ErrorCode.RECORD_NOT_FOUND,
+        message: '公司尚未创建 CEO Agent',
+      });
+    }
+    await this.ceoLayerConfigService.syncLayerConfigToCeoAgent(companyId, ceo.id, merged);
+  }
+
+  /**
+   * 管理端：仅将 **当前 DB 快照** `company_ceo_layer_configs` 增量推到 CEO `agent_skills`（不读商城模板）。
+   */
+  async syncCeoLayerSkillsToAgent(companyId: string, actor: Actor): Promise<{ ok: true }> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    const stored = await this.ceoLayerConfigService.getStoredLayerConfig(companyId);
+    if (!stored) {
+      throw new NotFoundException({
+        code: ErrorCode.RECORD_NOT_FOUND,
+        message: '公司尚无 CEO 三层快照，请使用「从商城模板重新同步三层」。',
+      });
+    }
+    const ceo = await this.agentsRepo.findOne({
+      where: { companyId, role: 'ceo' } as any,
+    });
+    if (!ceo?.id) {
+      throw new NotFoundException({
+        code: ErrorCode.RECORD_NOT_FOUND,
+        message: '公司尚未创建 CEO Agent',
+      });
+    }
+    await this.ceoLayerConfigService.syncStoredLayerConfigToCeoAgent(companyId, ceo.id);
+    return { ok: true };
+  }
+
+  /**
+   * 管理端：以商城 `slug=ceo` 模板 **按层合并** 进公司快照，再增量同步 `agent_skills`。
+   */
+  async syncCeoLayerConfigFromTemplate(companyId: string, actor: Actor): Promise<{ ok: true }> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    await this.applyAtomicCeoLayerTemplateToCompanyAndAgent(companyId);
+    return { ok: true };
+  }
+
+  /**
+   * 管理端：强制走与新建公司相同的三层原子初始化路径（事务写入 `company_ceo_layer_configs` + CEO `agent_skills` 并集）。
+   */
+  async atomicSyncCeoLayerConfigToAgent(companyId: string, actor: Actor): Promise<{ ok: true }> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    await this.applyAtomicCeoLayerTemplateToCompanyAndAgent(companyId);
+    return { ok: true };
+  }
+
+  async updateCeoLayerConfig(
+    companyId: string,
+    ceoLayerConfig: Record<string, unknown>,
+    actor: Actor,
+  ): Promise<CompanyCeoLayerConfigResponse> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    await this.ceoLayerConfigService.saveLayerConfig(companyId, ceoLayerConfig ?? {});
+    return this.getCeoLayerConfig(companyId, actor);
+  }
+
+  async getCeoGovernancePolicy(companyId: string, actor: Actor): Promise<CeoGovernancePolicyV1> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    return this.runtimePreference.getCeoGovernancePolicy(companyId);
+  }
+
+  async getCeoGovernancePolicyTemplates(companyId: string, actor: Actor): Promise<CeoGovernancePolicyTemplate[]> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    return [
+      {
+        id: 'chairman-mainroom-default',
+        label: '董事长主群默认',
+        description: '角色召唤优先放行，信息不足降级回复，不阻断',
+        policyPatch: {
+          defaults: {
+            allowRoleSpeakerWithoutProfile: true,
+            suppressProfileFollowup: true,
+            forceFactsQueryTypes: ['role_presence', 'room_members'],
+          },
+        },
+      },
+      {
+        id: 'department-room-cautious',
+        label: '部门群谨慎模式',
+        description: '要求更强事实校验，保留降级回复但减少主观结论',
+        policyPatch: {
+          defaults: {
+            allowRoleSpeakerWithoutProfile: true,
+            suppressProfileFollowup: true,
+            forceFactsQueryTypes: ['role_presence', 'room_members', 'org_structure'],
+          },
+        },
+      },
+    ];
+  }
+
+  private isHighRiskGovernancePatch(patch: Record<string, unknown>): boolean {
+    const defaults =
+      patch.defaults && typeof patch.defaults === 'object' && !Array.isArray(patch.defaults)
+        ? (patch.defaults as Record<string, unknown>)
+        : {};
+    const roomOverrides =
+      patch.roomOverrides && typeof patch.roomOverrides === 'object' && !Array.isArray(patch.roomOverrides)
+        ? (patch.roomOverrides as Record<string, unknown>)
+        : {};
+    const roleOverrides =
+      patch.roleOverrides && typeof patch.roleOverrides === 'object' && !Array.isArray(patch.roleOverrides)
+        ? (patch.roleOverrides as Record<string, unknown>)
+        : {};
+    if (typeof defaults.allowRoleSpeakerWithoutProfile === 'boolean' && defaults.allowRoleSpeakerWithoutProfile === false) {
+      return true;
+    }
+    const containsForcedUnsafe = (obj: Record<string, unknown>): boolean => {
+      for (const v of Object.values(obj)) {
+        if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+        const r = v as Record<string, unknown>;
+        if (typeof r.allowRoleSpeakerWithoutProfile === 'boolean' && r.allowRoleSpeakerWithoutProfile === false) return true;
+      }
+      return false;
+    };
+    return containsForcedUnsafe(roomOverrides) || containsForcedUnsafe(roleOverrides);
+  }
+
+  async updateCeoGovernancePolicy(
+    companyId: string,
+    dto: UpdateCompanyCeoGovernancePolicyDto,
+    actor: Actor,
+  ): Promise<CompanyCeoGovernancePolicyUpdateResult> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+    const current = await this.runtimePreference.getCeoGovernancePolicy(companyId);
+    const patch: Record<string, unknown> = {
+      ...(dto.version ? { version: dto.version } : {}),
+      ...(typeof dto.requireApprovalForHighRiskChanges === 'boolean'
+        ? { requireApprovalForHighRiskChanges: dto.requireApprovalForHighRiskChanges }
+        : {}),
+      ...(dto.defaults && typeof dto.defaults === 'object' ? { defaults: dto.defaults } : {}),
+      ...(dto.roomOverrides && typeof dto.roomOverrides === 'object' ? { roomOverrides: dto.roomOverrides } : {}),
+      ...(dto.roleOverrides && typeof dto.roleOverrides === 'object' ? { roleOverrides: dto.roleOverrides } : {}),
+    };
+    const highRisk = this.isHighRiskGovernancePatch(patch);
+    const requireApproval = Boolean(current.requireApprovalForHighRiskChanges);
+
+    if (highRisk && requireApproval && !dto.approvedByUserId) {
+      const approval = await this.approvalService.create(companyId, {
+        actionType: 'company.ceo.governance_policy.update',
+        riskLevel: 'L3',
+        context: {
+          title: 'CEO 治理策略高风险变更',
+          summary: dto.changeReason ?? '治理策略高风险变更需董事长审批后生效',
+          governancePolicyPatch: patch,
+          companyId,
+        },
+        createdBy: actor.id,
+      });
+      await this.policyAudit
+        .append({
+          companyId,
+          policyKey: 'ceo.governance_policy.v1',
+          policyVersion: Math.max(1, Math.floor(Date.now() / 1000)),
+          eventType: 'used_for_approval',
+          actorId: actor.id,
+          payload: {
+            highRisk: true,
+            approvalRequestId: approval.id,
+            patchKeys: Object.keys(patch),
+          },
+        })
+        .catch(() => undefined);
+      await this.publishGovernancePolicyChanged({
+        companyId,
+        actorId: actor.id,
+        highRisk: true,
+        pendingApproval: true,
+        approvalRequestId: approval.id,
+        patchKeys: Object.keys(patch),
+      });
+      return {
+        applied: false,
+        pendingApproval: true,
+        approvalRequestId: approval.id,
+        policy: null,
+      };
+    }
+
+    const policy = await this.runtimePreference.upsertCeoGovernancePolicy({
+      companyId,
+      patch,
+      updatedBy: dto.approvedByUserId ?? actor.id,
+    });
+    await this.policyAudit
+      .append({
+        companyId,
+        policyKey: 'ceo.governance_policy.v1',
+        policyVersion: Math.max(1, Math.floor(Date.now() / 1000)),
+        eventType: 'published',
+        actorId: dto.approvedByUserId ?? actor.id,
+        payload: {
+          directApply: true,
+          highRisk,
+          patchKeys: Object.keys(patch),
+        },
+      })
+      .catch(() => undefined);
+    await this.publishGovernancePolicyChanged({
+      companyId,
+      actorId: dto.approvedByUserId ?? actor.id,
+      highRisk,
+      pendingApproval: false,
+      approvalRequestId: null,
+      patchKeys: Object.keys(patch),
+    });
+    return {
+      applied: true,
+      pendingApproval: false,
+      approvalRequestId: null,
+      policy,
+    };
+  }
+
+  private async publishGovernancePolicyChanged(params: {
+    companyId: string;
+    actorId: string | null;
+    highRisk: boolean;
+    pendingApproval: boolean;
+    approvalRequestId: string | null;
+    patchKeys: string[];
+  }): Promise<void> {
+    try {
+      const event: BaseEvent = {
+        eventId: randomUUID(),
+        eventType: 'company.ceo.governance_policy.changed',
+        aggregateId: params.companyId,
+        aggregateType: 'company',
+        occurredAt: new Date().toISOString(),
+        version: 1,
+        companyId: params.companyId,
+        data: {
+          companyId: params.companyId,
+          actorId: params.actorId,
+          highRisk: params.highRisk,
+          pendingApproval: params.pendingApproval,
+          approvalRequestId: params.approvalRequestId,
+          patchKeys: params.patchKeys,
+        },
+      };
+      await this.messagingService.publish(event, {
+        routingKey: 'company.ceo.governance_policy.changed',
+        persistent: true,
+      });
+    } catch (error: any) {
+      this.logger.warn('publish company.ceo.governance_policy.changed failed', {
+        companyId: params.companyId,
+        error: error?.message,
+      });
+    }
+  }
+
+  private async getOrCreateHeartbeatConfig(companyId: string): Promise<CompanyHeartbeatConfig> {
+    await this.findOne(companyId);
+    let config = await this.heartbeatConfigRepo.findOne({ where: { companyId } });
+    if (config) {
+      return config;
+    }
+    config = this.heartbeatConfigRepo.create({
+      companyId,
+      enabled: false,
+      frequency: 'daily' as CompanyHeartbeatFrequency,
+      lastExecutedAt: null,
+      metadata: {},
+    });
+    return this.heartbeatConfigRepo.save(config);
   }
 
   async remove(companyId: string, actor: Actor): Promise<{ ok: true }> {
@@ -485,11 +1107,73 @@ export class CompaniesService {
     return { ok: true };
   }
 
-  private async assertCanManageCompany(companyId: string, userId: string, roles?: string[]): Promise<void> {
-    if (roles?.includes('admin')) return;
+  /**
+   * 向导完成：草稿公司以 companies.created_by 为准（与 createDraftShell 一致）；
+   * 若仅依赖 company_memberships，在成员行缺失或与 JWT actor 不一致时会误 403。
+   * 非草稿公司仍按 Owner/Admin 成员关系校验。
+   */
+  private async assertCanCompleteWizard(companyId: string, actor: Actor): Promise<void> {
+    if (this.actorIsPlatformAdmin(actor)) {
+      return;
+    }
 
-    const membership = await this.membershipsRepo.findOne({
-      where: { companyId, userId, isActive: true } as FindOptionsWhere<CompanyMembership>,
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      await manager.query(SQL_SET_LOCAL_MEMBERSHIP_LISTING_USER, [actor.id]);
+
+      const rows = await manager.query(
+        `SELECT status, created_by AS "createdBy" FROM companies WHERE id = $1 LIMIT 1`,
+        [companyId],
+      );
+      const row = rows?.[0] as { status?: string; createdBy?: string | null } | undefined;
+      if (!row) {
+        throw new NotFoundException({
+          code: ErrorCode.RECORD_NOT_FOUND,
+          message: '公司不存在',
+        });
+      }
+
+      if (row.status === 'draft') {
+        const creatorId = row.createdBy ? String(row.createdBy) : null;
+        const actorId = String(actor.id);
+        if (creatorId && creatorId === actorId) {
+          return;
+        }
+        throw new ForbiddenException({
+          code: ErrorCode.FORBIDDEN,
+          message: '仅创建者可完成该公司的向导提交',
+        });
+      }
+
+      const membership = await manager.getRepository(CompanyMembership).findOne({
+        where: { companyId, userId: actor.id, isActive: true } as FindOptionsWhere<CompanyMembership>,
+      });
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        throw new ForbiddenException({
+          code: ErrorCode.FORBIDDEN,
+          message: '仅公司 Owner/Admin 可执行此操作',
+        });
+      }
+    });
+  }
+
+  private async assertCanManageCompany(companyId: string, userId: string, roles?: string[]): Promise<void> {
+    if (this.actorIsPlatformAdmin({ id: userId, roles })) {
+      return;
+    }
+
+    /**
+     * company_memberships RLS（CompanyListRlsForMembershipScope）：
+     * company_id = app.current_tenant OR user_id = app.membership_listing_user
+     * 仅靠连接上 session 的 app.current_tenant（TenantTypeormContextBootstrapper）在 RPC/连接池场景下不可靠；
+     * 在短事务内 SET LOCAL 两枚 GUC，与迁移策略一致，保证成员行可读。
+     */
+    const membership = await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [companyId]);
+      await manager.query(SQL_SET_LOCAL_MEMBERSHIP_LISTING_USER, [userId]);
+      return manager.getRepository(CompanyMembership).findOne({
+        where: { companyId, userId, isActive: true } as FindOptionsWhere<CompanyMembership>,
+      });
     });
     if (!membership || !['owner', 'admin'].includes(membership.role)) {
       throw new ForbiddenException({
@@ -497,6 +1181,73 @@ export class CompaniesService {
         message: '仅公司 Owner/Admin 可执行此操作',
       });
     }
+  }
+
+  /**
+   * 提供给 Controller/跨模块基础设施调用的权限断言。
+   * 规则与公司治理类接口一致：Platform Admin 或该公司 Owner/Admin。
+   */
+  async assertCanManageCompanyAsActor(companyId: string, actor: Actor): Promise<void> {
+    await this.assertCanManageCompany(companyId, actor.id, actor.roles);
+  }
+
+  async saveSnapshot(params: {
+    companyId: string;
+    version: string;
+    snapshot: Record<string, unknown>;
+    actor: Actor;
+  }): Promise<CompanySnapshotRecord> {
+    await this.assertCanManageCompany(params.companyId, params.actor.id, params.actor.roles);
+    const row = await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [params.companyId]);
+      const inserted = await manager.query(
+        `
+          INSERT INTO company_snapshots (company_id, version, snapshot)
+          VALUES ($1, $2, $3::jsonb)
+          ON CONFLICT (company_id, version)
+          DO UPDATE SET snapshot = EXCLUDED.snapshot
+          RETURNING id, company_id, version, snapshot, created_at
+        `,
+        [params.companyId, params.version, JSON.stringify(params.snapshot)],
+      );
+      return inserted?.[0];
+    });
+    return {
+      id: String(row.id),
+      companyId: String(row.company_id),
+      version: String(row.version),
+      snapshot: (row.snapshot ?? {}) as Record<string, unknown>,
+      createdAt: new Date(row.created_at).toISOString(),
+    };
+  }
+
+  async getLatestSnapshot(params: {
+    companyId: string;
+    actor: Actor;
+  }): Promise<CompanySnapshotRecord | null> {
+    await this.assertCanManageCompany(params.companyId, params.actor.id, params.actor.roles);
+    const row = await this.dataSource.transaction(async (manager) => {
+      await manager.query(SQL_SET_LOCAL_CURRENT_TENANT, [params.companyId]);
+      const rows = await manager.query(
+        `
+          SELECT id, company_id, version, snapshot, created_at
+          FROM company_snapshots
+          WHERE company_id = $1
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+        [params.companyId],
+      );
+      return rows?.[0] ?? null;
+    });
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      companyId: String(row.company_id),
+      version: String(row.version),
+      snapshot: (row.snapshot ?? {}) as Record<string, unknown>,
+      createdAt: new Date(row.created_at).toISOString(),
+    };
   }
 
   private generateSlug(name: string): string {

@@ -9,6 +9,7 @@ import type {
   MemoryEntryPromotedEvent,
 } from '@contracts/events';
 import { ConfigService } from '../../../common/config/config.service.js';
+import { MonitoringService } from '../../../common/monitoring/monitoring.service.js';
 
 interface ChatMessageShape {
   id: string;
@@ -23,11 +24,20 @@ interface ChatMessageShape {
 export class MemoryConsolidationListener implements OnModuleInit {
   private readonly logger = new Logger(MemoryConsolidationListener.name);
 
+  private readFlag(key: string, defaultValue: boolean): boolean {
+    const cfg = this.config as unknown as { get?: <T>(k: string, d?: T) => T };
+    if (typeof cfg.get === 'function') {
+      return Boolean(cfg.get<boolean>(key, defaultValue));
+    }
+    return defaultValue;
+  }
+
   constructor(
     private readonly messaging: MessagingService,
     private readonly tenantContext: TenantContextService,
     @Inject('API_RPC_CLIENT') private readonly apiRpc: ClientProxy,
     private readonly config: ConfigService,
+    private readonly monitoring: MonitoringService,
   ) {}
 
   onModuleInit() {
@@ -68,6 +78,10 @@ export class MemoryConsolidationListener implements OnModuleInit {
         .map((m) => `${m.senderType}: ${m.content?.trim() ?? ''}`)
         .filter((t) => t.length > 2);
       if (!lines.length) return;
+      const messageIds = messages
+        .filter((m) => m.messageType !== 'stream_chunk')
+        .map((m) => m.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
 
       const summaryRes = await this.rpc<{ summary: string }>('memory.summarize', {
         companyId,
@@ -86,9 +100,10 @@ export class MemoryConsolidationListener implements OnModuleInit {
         roomId: event.data.roomId,
         trigger: event.data.trigger,
         sourceMessageId: event.data.sourceMessageId,
+        messageIds,
       });
 
-      const room = await this.rpc<{ organizationNodeId?: string | null }>(
+      const room = await this.rpc<{ organizationNodeId?: string | null; taskId?: string | null }>(
         'collaboration.rooms.findOne',
         {
           companyId,
@@ -96,9 +111,13 @@ export class MemoryConsolidationListener implements OnModuleInit {
           roomId: event.data.roomId,
         },
       );
-      const targetNs = room?.organizationNodeId
-        ? `dept:${room.organizationNodeId}`
-        : 'company';
+      // Project isolation: if this room is bound to a task(project), promote only into project namespace.
+      const roomProjectId = room?.taskId ?? null;
+      const targetNs = roomProjectId
+        ? `project:${roomProjectId}`
+        : room?.organizationNodeId
+          ? `dept:${room.organizationNodeId}`
+          : 'company';
       await this.storeSummary(
         companyId,
         actor,
@@ -108,6 +127,8 @@ export class MemoryConsolidationListener implements OnModuleInit {
         {
           roomId: event.data.roomId,
           promotedFrom: sessionNs,
+          ...(roomProjectId ? { projectId: roomProjectId } : {}),
+          messageIds,
         },
       );
       await this.publishPromoted(companyId, sessionNs, targetNs);
@@ -151,17 +172,88 @@ export class MemoryConsolidationListener implements OnModuleInit {
     content: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    await this.rpc('memory.entries.store', {
-      companyId,
-      actor,
-      data: {
+    const useGovernanceV2 = this.readFlag('MEMORY_GOVERNANCE_V2_ENABLED', false);
+    const promoteGraphEdges = await this.shouldWriteMemoryGraphEdges(companyId, actor);
+    const storePattern = useGovernanceV2 ? 'memory.summary.store' : 'memory.entries.store';
+    try {
+      const stored = await this.rpc<{ id?: string }>(storePattern, {
+        companyId,
+        actor,
+        data: {
+          namespace,
+          collectionLabel: label,
+          content,
+          sourceType: 'summary',
+          metadata,
+        },
+      });
+      const summaryEntryId = typeof stored?.id === 'string' ? stored.id : null;
+      if (promoteGraphEdges && summaryEntryId) {
+        const messageIds = (metadata as any)?.messageIds;
+        if (Array.isArray(messageIds) && messageIds.length) {
+          await this.rpc('memory.graph.promoteSummaryFromMessages', {
+            companyId,
+            actor,
+            summaryEntryId,
+            messageIds,
+          }).catch(() => undefined);
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/MEMORY_NAMESPACE_FORBIDDEN|MEMORY_STORE_FORBIDDEN|无权/i.test(msg) || namespace === 'company') {
+        throw e;
+      }
+      this.monitoring.incMemoryPermissionDenied('consolidation_store');
+      this.monitoring.incMemoryFallbackToCompany('consolidation_store');
+      this.logger.warn('memory consolidation namespace denied; fallback to company', {
         namespace,
-        collectionLabel: label,
-        content,
-        sourceType: 'summary',
-        metadata,
-      },
-    });
+        companyId,
+        message: msg,
+      });
+      const stored = await this.rpc<{ id?: string }>(storePattern, {
+        companyId,
+        actor,
+        data: {
+          namespace: 'company',
+          collectionLabel: `${label} (fallback)`,
+          content,
+          sourceType: 'summary',
+          metadata: { ...metadata, fallbackFromNamespace: namespace },
+        },
+      });
+      const summaryEntryId = typeof stored?.id === 'string' ? stored.id : null;
+      if (promoteGraphEdges && summaryEntryId) {
+        const messageIds = (metadata as any)?.messageIds;
+        if (Array.isArray(messageIds) && messageIds.length) {
+          await this.rpc('memory.graph.promoteSummaryFromMessages', {
+            companyId,
+            actor,
+            summaryEntryId,
+            messageIds,
+          }).catch(() => undefined);
+        }
+      }
+    }
+  }
+
+  /** W13：进程开关 + API 公司级 rollout（与 hybrid 检索同源） */
+  private async shouldWriteMemoryGraphEdges(
+    companyId: string,
+    actor: { id: string; roles: string[] },
+  ): Promise<boolean> {
+    if (!this.config.isMemoryGraphV2Enabled()) {
+      return false;
+    }
+    try {
+      const r = await this.rpc<{ effective?: boolean }>('memory.rollout.memoryGraphV2Effective', {
+        companyId,
+        actor,
+      });
+      return r?.effective === true;
+    } catch {
+      return false;
+    }
   }
 
   private async publishPromoted(

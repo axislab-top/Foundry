@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { firstValueFrom, timeout } from 'rxjs';
 import type { ClientProxy } from '@nestjs/microservices';
 import { API_RPC_CLIENT } from '../../common/rpc/rpc.constants.js';
+import { throwGatewayFromApiRpcError } from '../../common/rpc/handle-api-rpc-error.js';
 import { ErrorCode } from '../../common/exceptions/error-codes.js';
 import { GatewayException } from '../../common/exceptions/filters/gateway-exception.filter.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -26,7 +27,11 @@ export class AlertsAdminController {
   constructor(@Inject(API_RPC_CLIENT) private readonly api: ClientProxy) {}
 
   private async rpc<T>(pattern: string, payload: Record<string, unknown>): Promise<T> {
-    return await firstValueFrom(this.api.send<T>(pattern, payload).pipe(timeout(RPC_TIMEOUT_MS)));
+    try {
+      return await firstValueFrom(this.api.send<T>(pattern, payload).pipe(timeout(RPC_TIMEOUT_MS)));
+    } catch (error: unknown) {
+      throwGatewayFromApiRpcError(error, pattern);
+    }
   }
 
   @Get()

@@ -1,55 +1,64 @@
-// Load .env before app bootstrap.
-import { readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
-
-// turbo 运行时 process.cwd() = 包目录 (apps/worker)，不是项目根
-// 项目根 = process.cwd()/../../
-const possibleEnvPaths = [
-  resolve(process.cwd(), '../../.env.shared'),
-  resolve(process.cwd(), '../../.env'),
-  resolve(process.cwd(), '.env.shared'),
-  resolve(process.cwd(), '.env'),
-];
-
-let envLoaded = false;
-for (const envPath of possibleEnvPaths) {
-  if (!existsSync(envPath)) continue;
-  try {
-    const envFile = readFileSync(envPath, 'utf-8');
-    envFile.split(/\r?\n/).forEach((line) => {
-      const trimmedLine = line.trim();
-      if (!trimmedLine || trimmedLine.startsWith('#')) return;
-      const equalIndex = trimmedLine.indexOf('=');
-      if (equalIndex <= 0) return;
-      const key = trimmedLine.substring(0, equalIndex).trim();
-      let value = trimmedLine.substring(equalIndex + 1).trim();
-      if (!value.startsWith('"') && !value.startsWith("'")) {
-        const commentIndex = value.indexOf('#');
-        if (commentIndex >= 0) value = value.substring(0, commentIndex).trim();
-      }
-      const cleanValue = value.replace(/^["'](.*)["']$/, '$1');
-      if (!process.env[key] && key) process.env[key] = cleanValue;
-    });
-    envLoaded = true;
-    break;
-  } catch { continue; }
-}
-if (!envLoaded) {
-  console.warn('Warning: Could not find .env file, using system environment variables only');
-}
-
+import fs from 'fs';
+import path from 'path';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
-import { createLogger, LogLevel } from '@service/logging';
+import { createLogger, LogLevel, getNestBootstrapLoggerLevels, resolveLogLevelFromEnv } from '@service/logging';
 import { ConfigService } from './common/config/config.service.js';
 import { startWorkerOtel } from './otel-bootstrap.js';
+import { StructuredDomainExceptionFilter } from './common/filters/structured-domain-exception.filter.js';
+import { startEventLoopLagMonitor } from '@service/monitoring';
 
+function applyEnvFileContents(raw: string): void {
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const m = t.match(/^([^#=]+?)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1]!.trim();
+    let value = (m[2] ?? '').trim();
+    if (!(value.startsWith('"') || value.startsWith("'"))) {
+      const idx = value.indexOf('#');
+      if (idx >= 0) value = value.slice(0, idx).trim();
+    }
+    const dq = value.match(/^"(.*)"$/);
+    const sq = value.match(/^'(.*)'$/);
+    if (dq) value = dq[1]!;
+    else if (sq) value = sq[1]!;
+    if (!key) continue;
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+function loadEnvFileIfPresent(): void {
+  // 与 API 一致：按顺序合并多个文件（apps/worker/.env 优先，再 .env.shared 补 MEMORY_GRAPH_* / FORCE_* 等）。
+  const candidates = [
+    path.resolve(process.cwd(), 'apps/worker/.env'),
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), '../.env'),
+    path.resolve(process.cwd(), '.env.shared'),
+    path.resolve(process.cwd(), '../.env.shared'),
+    path.resolve(process.cwd(), '../../.env.shared'),
+    path.resolve(process.cwd(), '../../.env'),
+  ];
+  for (const envPath of candidates) {
+    if (!fs.existsSync(envPath)) continue;
+    try {
+      applyEnvFileContents(fs.readFileSync(envPath, 'utf-8'));
+    } catch {
+      // Best-effort
+    }
+  }
+}
+
+loadEnvFileIfPresent();
 startWorkerOtel();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    logger: getNestBootstrapLoggerLevels(),
   });
   app.enableShutdownHooks();
 
@@ -64,6 +73,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  app.useGlobalFilters(new StructuredDomainExceptionFilter());
 
   // 全局前缀
   app.setGlobalPrefix('api');
@@ -73,10 +83,7 @@ async function bootstrap() {
   const appConfig = configService.getAppConfig();
   
   // 从环境变量读取日志级别，默认为 INFO
-  const logLevelEnv = (process.env.LOG_LEVEL?.toLowerCase() || 'info') as LogLevel;
-  const logLevel = Object.values(LogLevel).includes(logLevelEnv) 
-    ? logLevelEnv 
-    : LogLevel.INFO;
+  const logLevel = resolveLogLevelFromEnv();
   
   // 创建应用日志器
   const logger = createLogger({
@@ -84,6 +91,7 @@ async function bootstrap() {
     environment: appConfig.nodeEnv,
     level: logLevel,
   });
+  startEventLoopLagMonitor(logger);
 
   await app.listen(appConfig.port);
   
@@ -94,7 +102,11 @@ async function bootstrap() {
   });
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error('Worker bootstrap failed:', message);
+  process.exit(1);
+});
 
 
 

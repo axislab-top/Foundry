@@ -3,7 +3,7 @@ import { MessagingService } from '@service/messaging';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
 import type { OrganizationNodeCreatedEvent } from '@contracts/events';
 import { MemoryService } from '../services/memory.service.js';
-import { agentNamespace, departmentNamespace } from '../utils/memory-namespace.js';
+import { agentNamespace, resolveDepartmentMemoryNamespace } from '../utils/memory-namespace.js';
 
 /**
  * 组织节点创建后预置部门 / Agent 记忆集合
@@ -35,11 +35,14 @@ export class OrganizationNodeMemoryListener implements OnModuleInit {
     if (!companyId) return;
 
     await this.tenantContext.runWithCompanyId(companyId, async () => {
-      const { nodeId, type, name, agentId } = event.data;
+      const { nodeId, type, name, agentId, platformDepartmentSlug } = event.data;
       if (type === 'department') {
         await this.memory.ensureCollection(
           companyId,
-          departmentNamespace(nodeId),
+          resolveDepartmentMemoryNamespace({
+            organizationNodeId: nodeId,
+            platformDepartmentSlug: platformDepartmentSlug ?? null,
+          }),
           `Dept: ${name}`,
           'organization.node',
         );

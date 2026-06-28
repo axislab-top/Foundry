@@ -1,6 +1,18 @@
 import type { BaseCheckpointSaver } from '@langchain/langgraph';
 import type { CeoSupervisorState } from './ceo-state.js';
 
+/** Phase 3.5/3.6：Early-Exit 子图 / 注册表 handler 的结构化输出 */
+export type EarlyExitDecision = {
+  canEarlyExit: boolean;
+  confidence: number;
+  /** 命中 early exit 时面向用户的自然语言回复（可为空则上游回退） */
+  suggestedReply: string;
+  /** Phase 3.6：统一决策原因（日志 / 排障） */
+  reason?: string;
+  /** Phase 3.6：与 `foundry.ceo.early_exit.decision` 打标对齐 */
+  routeTag?: 'ceo_reply' | 'direct_agent' | 'autonomous_graph' | 'none';
+};
+
 /**
  * 由 Worker 注入：拉取 Dashboard + Memory +（可选）Budget/Org 摘要，写入 contextBundle。
  */

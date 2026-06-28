@@ -1,0 +1,21 @@
+# Example: restore a new PVC from a VolumeSnapshot (same namespace as Runner workspace PVCs).
+# Replace names, storageClassName, and snapshot reference to match your cluster.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-example-uuid-restored-001
+  namespace: foundry-runner
+  labels:
+    foundry.io/company-id: "00000000-0000-0000-0000-000000000001"
+    foundry.io/restored-from-snapshot: "true"
+spec:
+  dataSource:
+    name: ws-example-uuid-runid-pre
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: gp3

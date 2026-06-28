@@ -1,0 +1,4 @@
+# Platform executor (employee) role default skills
+skills:
+  - heartbeat
+  - employee-task-reporter

@@ -1,0 +1,7 @@
+# Platform director role default skills (GitOps SSOT reference)
+skills:
+  - director-task-delegator
+  - director-progress-reporter
+  - director-subordinate-reviewer
+  - department.knowledge.query
+  - director-team-performance-coach

@@ -12,7 +12,7 @@ import type {
   MessageContext,
 } from '../types/index.js';
 import type { BaseEvent } from '@contracts/events';
-import { createLogger, LogLevel } from '@service/logging';
+import { createLogger, formatUnknownError, LogLevel, stackFromUnknown } from '@service/logging';
 
 /**
  * RabbitMQ 适配器
@@ -57,7 +57,28 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
       const uri = this.options.uri || this.buildUri();
       this.logger.info('Connecting to RabbitMQ', { uri: this.sanitizeUri(uri) });
 
-      const conn = (await amqp.connect(uri)) as any;
+      const heartbeatSecondsRaw = (this.options as any)?.heartbeatSeconds;
+      const heartbeatSeconds =
+        typeof heartbeatSecondsRaw === 'number'
+          ? heartbeatSecondsRaw
+          : parseInt(String(heartbeatSecondsRaw ?? '60'), 10);
+      const keepAliveDelayMsRaw = (this.options as any)?.keepAliveDelayMs;
+      const keepAliveDelayMs =
+        typeof keepAliveDelayMsRaw === 'number'
+          ? keepAliveDelayMsRaw
+          : parseInt(String(keepAliveDelayMsRaw ?? '10000'), 10);
+
+      const conn = (await amqp.connect(uri, {
+        heartbeat:
+          Number.isFinite(heartbeatSeconds) && heartbeatSeconds > 0
+            ? heartbeatSeconds
+            : 60,
+        keepAlive: true,
+        keepAliveDelay:
+          Number.isFinite(keepAliveDelayMs) && keepAliveDelayMs >= 0
+            ? keepAliveDelayMs
+            : 10_000,
+      } as any)) as any;
       this.connection = conn;
       this.channel = await conn.createChannel();
 
@@ -69,7 +90,10 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
 
       // 监听连接错误
       this.connection.on('error', (error: any) => {
-        this.logger.error('RabbitMQ connection error', { error: error.message });
+        this.logger.error('RabbitMQ connection error', {
+          error: formatUnknownError(error, 2000),
+          stack: stackFromUnknown(error),
+        });
       });
 
       this.connection.on('close', () => {
@@ -82,8 +106,8 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
       this.logger.info('Connected to RabbitMQ successfully');
     } catch (error: any) {
       this.logger.error('Failed to connect to RabbitMQ', {
-        error: error.message,
-        stack: error.stack,
+        error: formatUnknownError(error, 2000),
+        stack: stackFromUnknown(error),
       });
       throw error;
     }
@@ -164,16 +188,54 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
           exchange,
         });
       } else {
-        this.logger.warn('Message buffer full, waiting for drain', {
-          eventType: event.eventType,
-        });
-        await new Promise<void>((resolve) => {
-          if (this.channel) {
-            this.channel.once('drain', () => resolve());
-          } else {
-            resolve();
+        const timeoutMsRaw = (this.options as any)?.publishDrainTimeoutMs;
+        const timeoutMs =
+          typeof timeoutMsRaw === 'number'
+            ? timeoutMsRaw
+            : parseInt(String(timeoutMsRaw ?? '5000'), 10);
+
+        let timedOut = false;
+
+        if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+          this.logger.warn('Message buffer full, waiting for drain (bounded)', {
+            eventType: event.eventType,
+            timeoutMs,
+          });
+
+          await new Promise<void>((resolve) => {
+            let done = false;
+            const timer = setTimeout(() => {
+              timedOut = true;
+              done = true;
+              resolve();
+            }, timeoutMs);
+
+            const onDrain = () => {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              resolve();
+            };
+
+            if (this.channel) {
+              this.channel.once('drain', onDrain);
+            } else {
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+
+          if (timedOut) {
+            this.logger.warn('Message buffer full: drain timeout, continuing', {
+              eventType: event.eventType,
+              timeoutMs,
+            });
           }
-        });
+        } else {
+          this.logger.warn('Message buffer full: drain wait disabled, continuing', {
+            eventType: event.eventType,
+          });
+        }
       }
 
       return published;
@@ -290,11 +352,12 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
             if (!options.noAck && this.channel) {
               this.channel.ack(msg);
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
+            const errorText = formatUnknownError(error, 2000);
             this.logger.error('Error processing message', {
-              error: error.message,
+              error: errorText,
               eventType,
-              stack: error.stack,
+              stack: stackFromUnknown(error),
             });
 
             if (this.channel && !(options.noAck ?? false) && retryEnabled) {
@@ -313,7 +376,7 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
                   ...headers,
                   'x-retry-count': nextAttempt,
                   'x-original-queue': queue,
-                  'x-error': (error?.message || 'unknown').slice(0, 500),
+                  'x-error': formatUnknownError(error, 500),
                 };
 
                 this.channel.sendToQueue(
@@ -340,7 +403,7 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
                 ...headers,
                 'x-retry-count': nextAttempt,
                 'x-original-queue': queue,
-                'x-final-error': (error?.message || 'unknown').slice(0, 500),
+                'x-final-error': formatUnknownError(error, 500),
               };
 
               this.channel.sendToQueue(
@@ -359,13 +422,12 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
               return;
             }
 
-            // 未启用 retry：保持现有行为（nack + requeue）
+            // 未启用 retry：nack + requeue；勿再 throw，否则 amqplib 不会接住 async 回调的拒绝，会触发 UnhandledPromiseRejection
             if (this.channel) {
               const requeue = !(options.noAck ?? false);
               this.channel.nack(msg, false, requeue);
             }
-
-            throw error;
+            return;
           }
         },
         {
@@ -379,10 +441,11 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
         queue,
         routingKey: Array.isArray(routingKey) ? routingKey : [routingKey],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('Failed to subscribe to event', {
-        error: error.message,
+        error: formatUnknownError(error, 2000),
         eventType,
+        stack: stackFromUnknown(error),
       });
       throw error;
     }
@@ -454,8 +517,9 @@ export class RabbitMQAdapter implements MessageQueueAdapter {
     const {
       host = 'localhost',
       port = 5672,
-      username = 'guest',
-      password = 'guest',
+      /** 与 docker-compose / .env.shared 默认一致；避免遗漏 env 时误用 guest 触发 broker 拒绝 */
+      username = 'admin',
+      password = 'admin123',
       vhost = '/',
     } = this.options;
 

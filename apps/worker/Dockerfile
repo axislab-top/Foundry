@@ -4,57 +4,86 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 复制工作区和源码（不包含 node_modules），确保所有 workspace 包可用
+# 先复制依赖解析所需文件，最大化缓存命中
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# 安装 pnpm；支持自定义 npm registry，并在网络抖动时自动重试
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN npm config set registry ${NPM_REGISTRY} \
+  && npm config set fetch-retries 10 \
+  && npm config set fetch-retry-factor 2 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000 \
+  && retry=0; until [ "$retry" -ge 3 ]; do \
+       npm install -g pnpm@10.27.0 && break; \
+       retry=$((retry + 1)); \
+       echo "pnpm install failed, retry ${retry}/3"; \
+       sleep 5; \
+     done \
+  && [ "$retry" -lt 3 ] \
+  && pnpm config set fetch-retries 10 \
+  && pnpm config set fetch-retry-mintimeout 20000 \
+  && pnpm config set fetch-retry-maxtimeout 120000 \
+  && pnpm config set store-dir /app/.pnpm-store
+
+# 先预抓取依赖（仅依赖 lockfile，便于后续构建复用缓存）
+RUN pnpm fetch --frozen-lockfile
+
+# 再复制完整源码
 COPY apps ./apps
 COPY packages ./packages
 COPY infrastructure ./infrastructure
 COPY contracts ./contracts
-COPY tooling ./tooling
 
-# 安装 pnpm
-RUN npm install -g pnpm@10.27.0
+# 离线安装并构建（... 含全部 workspace 上游依赖，避免热重载后 Dockerfile 漏列新包）
+RUN pnpm install --frozen-lockfile --offline --reporter=append-only \
+    && pnpm --filter @service/worker... build
 
-# 安装依赖并构建（先构建依赖模块，再构建 Worker）
-# @service/ai、@service/tenant 为 workspace 源码包，必须在镜像内 tsc，否则 dist 缺失会导致 runtime require 无导出
-RUN pnpm install --frozen-lockfile \
-    && pnpm --filter @contracts/events build \
-    && pnpm --filter @service/config build \
-    && pnpm --filter @service/logging build \
-    && pnpm --filter @service/monitoring build \
-    && pnpm --filter @service/messaging build \
-    && pnpm --filter @service/ai build \
-    && pnpm --filter @service/tenant build \
-    && pnpm --filter @service/worker build
-
-# 生产镜像
-FROM node:20-alpine
+# 生产镜像（Debian/glibc：Temporal core-bridge 不兼容 Alpine/musl）
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-# 复制 workspace 结构，使 pnpm 能将内部包作为 workspace 解析
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends wget \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps ./apps
+COPY apps/worker ./apps/worker
 COPY packages ./packages
-COPY infrastructure ./infrastructure
+COPY infrastructure/ai ./infrastructure/ai
+COPY infrastructure/config ./infrastructure/config
+COPY infrastructure/logging ./infrastructure/logging
+COPY infrastructure/messaging ./infrastructure/messaging
+COPY infrastructure/monitoring ./infrastructure/monitoring
+COPY infrastructure/tenant ./infrastructure/tenant
 COPY contracts ./contracts
-COPY tooling ./tooling
 
-# 安装 pnpm
-RUN npm install -g pnpm@10.27.0
+# 安装 pnpm，与构建阶段共用同一 store 路径（同样增加 registry 可配置和重试）
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN npm config set registry ${NPM_REGISTRY} \
+  && npm config set fetch-retries 10 \
+  && npm config set fetch-retry-factor 2 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000 \
+  && retry=0; until [ "$retry" -ge 3 ]; do \
+       npm install -g pnpm@10.27.0 && break; \
+       retry=$((retry + 1)); \
+       echo "pnpm install failed, retry ${retry}/3"; \
+       sleep 5; \
+     done \
+  && [ "$retry" -lt 3 ] \
+  && pnpm config set store-dir /app/.pnpm-store
 
-# 只安装生产依赖
-RUN pnpm install --frozen-lockfile --prod
+# 从构建阶段复制 pnpm store，离线安装生产依赖（不再访问 registry，避免 DNS 类错误）
+COPY --from=builder /app/.pnpm-store ./.pnpm-store
+RUN pnpm install --frozen-lockfile --prod --offline
 
 # 从构建阶段复制应用和依赖库的构建产物（覆盖可能存在的旧 dist）
 COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
-COPY --from=builder /app/contracts/events/dist ./contracts/events/dist
-COPY --from=builder /app/infrastructure/config/dist ./infrastructure/config/dist
-COPY --from=builder /app/infrastructure/logging/dist ./infrastructure/logging/dist
-COPY --from=builder /app/infrastructure/monitoring/dist ./infrastructure/monitoring/dist
-COPY --from=builder /app/infrastructure/messaging/dist ./infrastructure/messaging/dist
-COPY --from=builder /app/infrastructure/ai/dist ./infrastructure/ai/dist
-COPY --from=builder /app/infrastructure/tenant/dist ./infrastructure/tenant/dist
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/contracts ./contracts
+COPY --from=builder /app/infrastructure ./infrastructure
 
 WORKDIR /app/apps/worker
 

@@ -1,0 +1,42 @@
+# Sprint 3：Warm pool idle Job 示例（与 apps/runner WarmPoolManager 行为一致）。
+# RWO PVC：每公司仅 1 个 idle；执行前由 Runner drain。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foundry-warm-example
+  namespace: foundry-runner
+  labels:
+    foundry.io/warm-pool: "true"
+    foundry.io/company-id: "00000000-0000-0000-0000-000000000001"
+    # P19：gvisor | firecracker；与租户/集群默认不一致的 idle Job 会被 reconcile 删除
+    foundry.io/runtime-kind: "gvisor"
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 0
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        foundry.io/warm-pool: "true"
+        foundry.io/company-id: "00000000-0000-0000-0000-000000000001"
+        foundry.io/runtime-kind: "gvisor"
+    spec:
+      runtimeClassName: gvisor
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: idle
+          image: busybox:1.36
+          command: ["/bin/sh", "-c", "sleep 86400"]
+          workingDir: /workspace
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "echo warm-pool-preStop"]
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: workspace-00000000-0000-0000-0000-000000000001

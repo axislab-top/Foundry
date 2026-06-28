@@ -1,0 +1,18 @@
+# Sprint 4.2：ServiceMonitor 样例 — 在 Runner Pod 暴露 /metrics（如 prom-client）后启用。
+# 当前 Runner HTTP 端口默认 RUNNER_HTTP_PORT=3010，健康检查见 /health。
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: foundry-runner
+  namespace: foundry-runner
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: foundry-runner
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

@@ -9,18 +9,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // 尝试从多个可能的位置加载 .env 文件
-// turbo 运行时 process.cwd() = 包目录 (apps/gateway)，不是项目根
-// __dirname = 编译输出目录 (apps/gateway/dist)
-// 项目根 = __dirname/../../../
+// 1. 当前目录 (dist)
+// 2. 上一级目录 (apps/gateway)
+// 3. 项目根目录
 const possibleEnvPaths = [
-  resolve(__dirname, '../../../.env.shared'),
-  resolve(__dirname, '../../../.env'),
-  resolve(__dirname, '../../.env.shared'),
-  resolve(__dirname, '../../.env'),
-  resolve(__dirname, '../.env.shared'),
-  resolve(__dirname, '../.env'),
-  resolve(__dirname, '.env.shared'),
   resolve(__dirname, '.env'),
+  resolve(__dirname, '.env.shared'),
+  resolve(__dirname, '../.env'),
+  resolve(__dirname, '../.env.shared'),
+  resolve(__dirname, '../../.env'),
+  resolve(__dirname, '../../.env.shared'),
 ];
 
 let envLoaded = false;
@@ -65,7 +63,7 @@ for (const envPath of possibleEnvPaths) {
 }
 
 if (!envLoaded) {
-  console.warn('Warning: Could not find .env file, using system environment variables only');
+  console.warn('Warning: Could not find .env/.env.shared file, using system environment variables only');
 }
 
 import { NestFactory } from '@nestjs/core';
@@ -73,7 +71,8 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
-import { createLogger, LogLevel } from '@service/logging';
+import { createLogger, LogLevel, getNestBootstrapLoggerLevels, resolveLogLevelFromEnv } from '@service/logging';
+import { startEventLoopLagMonitor } from '@service/monitoring';
 import { ConfigService } from './common/config/config.service.js';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
@@ -83,9 +82,6 @@ import { MetricsInterceptor } from './common/monitoring/interceptors/metrics.int
 import { AuditInterceptor } from './modules/audit/interceptors/audit.interceptor.js';
 import { CircuitBreakerInterceptor } from './common/resilience/interceptors/circuit-breaker.interceptor.js';
 import { createSwaggerConfig } from './common/swagger/swagger.config.js';
-import { HttpExceptionFilter } from './common/exceptions/filters/http-exception.filter.js';
-import { AllExceptionsFilter } from './common/exceptions/filters/all-exceptions.filter.js';
-import { GatewayExceptionFilter } from './common/exceptions/filters/gateway-exception.filter.js';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard.js';
 import { RedisIoAdapter } from './common/websocket/redis-io.adapter.js';
 
@@ -143,7 +139,7 @@ async function configureWebSocketAdapter(
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    logger: getNestBootstrapLoggerLevels(),
     // 开启 rawBody，供签名中间件构造签名字符串（避免 JSON 序列化差异）
     rawBody: true,
   });
@@ -156,10 +152,7 @@ async function bootstrap() {
   await configureWebSocketAdapter(app, configService);
 
   // 从环境变量读取日志级别，默认为 INFO
-  const logLevelEnv = (process.env.LOG_LEVEL?.toLowerCase() || 'info') as LogLevel;
-  const logLevel = Object.values(LogLevel).includes(logLevelEnv) 
-    ? logLevelEnv 
-    : LogLevel.INFO;
+  const logLevel = resolveLogLevelFromEnv();
   
   // 创建应用日志器（需要在早期创建，以便后续使用）
   const logger = createLogger({
@@ -167,6 +160,7 @@ async function bootstrap() {
     environment: appConfig.nodeEnv,
     level: logLevel,
   });
+  startEventLoopLagMonitor(logger);
 
   const corsConfig = configService.getCorsConfig();
 
@@ -226,38 +220,7 @@ async function bootstrap() {
     });
   }
 
-  // 异常过滤器已通过 ExceptionsModule 的 APP_FILTER 注册，但为了确保它们被正确调用，
-  // 我们也在这里显式注册全局异常过滤器
-  // 注意：这样会注册两次，但 NestJS 会正确处理，只会调用一次
-  try {
-    const gatewayExceptionFilter = app.get(GatewayExceptionFilter);
-    const httpExceptionFilter = app.get(HttpExceptionFilter);
-    const allExceptionsFilter = app.get(AllExceptionsFilter);
-    
-    // 显式注册全局异常过滤器（确保它们被调用）
-    // 顺序：GatewayException -> HttpException -> AllExceptions
-    app.useGlobalFilters(
-      gatewayExceptionFilter,
-      httpExceptionFilter,
-      allExceptionsFilter,
-    );
-    
-    console.log('[Main] 异常过滤器已显式注册为全局过滤器:', {
-      gatewayExceptionFilter: !!gatewayExceptionFilter,
-      httpExceptionFilter: !!httpExceptionFilter,
-      allExceptionsFilter: !!allExceptionsFilter,
-      gatewayExceptionFilterType: gatewayExceptionFilter?.constructor?.name,
-      httpExceptionFilterType: httpExceptionFilter?.constructor?.name,
-      allExceptionsFilterType: allExceptionsFilter?.constructor?.name,
-    });
-    process.stderr.write('[Main] 异常过滤器已显式注册为全局过滤器\n');
-    process.stderr.write(`[Main] GatewayExceptionFilter 实例: ${!!gatewayExceptionFilter}\n`);
-    process.stderr.write(`[Main] HttpExceptionFilter 实例: ${!!httpExceptionFilter}\n`);
-    process.stderr.write(`[Main] AllExceptionsFilter 实例: ${!!allExceptionsFilter}\n`);
-  } catch (error) {
-    console.error('[Main] 注册异常过滤器失败:', error);
-    process.stderr.write(`[Main] 注册异常过滤器失败: ${error instanceof Error ? error.message : String(error)}\n`);
-  }
+  // 异常过滤器由 ExceptionsModule 通过 APP_FILTER 全局注册
 
   // 全局前缀
   app.setGlobalPrefix('api');

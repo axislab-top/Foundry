@@ -12,6 +12,9 @@ const AGENT_EVENT_TYPES = [
   'agent.deleted',
   'agent.status_changed',
   'agent.skills.changed',
+  // Runtime refresh hardening: ensure config-change invalidations are consumed.
+  'skill.config.changed',
+  'mcp.tool.config.changed',
   'agent.approved',
   'agent.need_approval',
 ] as const;
@@ -34,7 +37,7 @@ export class AgentEventsListener implements OnModuleInit {
     for (const eventType of AGENT_EVENT_TYPES) {
       this.messagingService.subscribeWithBackoff<BaseEvent>(
         eventType,
-        (event) => this.handle(eventType, event),
+        (event) => this.handle(eventType, event as BaseEvent & { data?: Record<string, unknown> }),
         {
           queue: `worker-${eventType.replace(/\./g, '-')}-queue`,
           durable: true,

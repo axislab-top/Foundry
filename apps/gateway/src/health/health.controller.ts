@@ -19,6 +19,28 @@ interface HealthCheckResponse {
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
+  @Get('live')
+  @Public()
+  async checkLive(): Promise<{ status: string; timestamp: string; service: string }> {
+    return this.healthService.checkLive();
+  }
+
+  @Get('ready')
+  @Public()
+  async checkReady(): Promise<{
+    status: string;
+    gateway: { status: string; timestamp: string };
+    cache: { status: string; latency?: number };
+    tenantMembership: { status: string };
+    services: {
+      api: { status: string; latency?: number };
+      webhooks: { status: string; latency?: number };
+      worker: { status: string; latency?: number };
+    };
+  }> {
+    return this.healthService.checkReady();
+  }
+
   @Get()
   @Public()
   async check(): Promise<HealthCheckResponse> {
@@ -35,6 +57,9 @@ export class HealthController {
         },
         cache: {
           status: result.cache.status as 'ok' | 'error' | 'degraded',
+        },
+        tenantMembership: {
+          status: result.tenantMembership.status as 'ok' | 'error' | 'degraded',
         },
         api: {
           status: result.services.api.status as 'ok' | 'error' | 'degraded',

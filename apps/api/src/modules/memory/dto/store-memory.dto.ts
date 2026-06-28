@@ -15,6 +15,19 @@ export class StoreMemoryDto {
   @MaxLength(320)
   namespace!: string;
 
+  /**
+   * Optional agent context for isolation enforcement.
+   * When provided and the agent is project-scoped temporary, API will enforce project isolation.
+   */
+  @IsOptional()
+  @IsUUID()
+  agentId?: string;
+
+  /** Optional projectId (tasks root id). Required for temporary agents. */
+  @IsOptional()
+  @IsUUID()
+  projectId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(512)
@@ -45,4 +58,8 @@ export class StoreMemoryDto {
   @IsOptional()
   @IsBoolean()
   isSensitive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  executionTokenId?: string;
 }

@@ -1,16 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { MessagingService } from '@service/messaging';
 import type {
   CollaborationMemoryConsolidateRequestedEvent,
   MemorySessionBackfillRequestedEvent,
 } from '@contracts/events';
+import { CollaborationRealtimePublisher } from '../../collaboration/services/collaboration-realtime-publisher.service.js';
+import { MemoryMetricsService } from './memory-metrics.service.js';
 
 @Injectable()
 export class MemoryConsolidationService {
   private readonly logger = new Logger(MemoryConsolidationService.name);
 
-  constructor(private readonly messaging: MessagingService) {}
+  constructor(
+    private readonly messaging: MessagingService,
+    private readonly metrics: MemoryMetricsService,
+    @Optional() private readonly realtime?: CollaborationRealtimePublisher,
+  ) {}
 
   async requestConsolidation(params: {
     companyId: string;
@@ -43,6 +49,17 @@ export class MemoryConsolidationService {
       companyId: params.companyId,
       roomId: params.roomId,
       eventId: event.eventId,
+    });
+    this.metrics.incConsolidation('accepted');
+    await this.realtime?.publishEnvelope({
+      companyId: params.companyId,
+      roomId: params.roomId,
+      event: 'memory:consolidated',
+      payload: {
+        roomId: params.roomId,
+        trigger: params.trigger ?? 'manual',
+        eventId: event.eventId,
+      },
     });
     return { accepted: true, eventId: event.eventId };
   }

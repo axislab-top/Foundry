@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -85,6 +85,79 @@ export class RoomMemberService {
       }
     }
     return saved;
+  }
+
+  /**
+   * Add members and return insertion stats.
+   * - inserted: newly created rows + re-joined (leftAt cleared)
+   * - skipped: already-active members that required no change
+   */
+  async addMembersWithStats(
+    companyId: string,
+    roomId: string,
+    members: Array<{ memberType: RoomMemberType; memberId: string }>,
+  ): Promise<{ inserted: number; skipped: number }> {
+    let inserted = 0;
+    let skipped = 0;
+    for (const m of members) {
+      const existing = await this.membersRepo.findOne({
+        where: {
+          companyId,
+          roomId,
+          memberType: m.memberType,
+          memberId: m.memberId,
+        },
+      });
+      if (existing) {
+        if (existing.leftAt) {
+          existing.leftAt = null;
+          await this.membersRepo.save(existing);
+          inserted += 1;
+          await this.publishJoined(companyId, roomId, m.memberType, m.memberId);
+        } else {
+          skipped += 1;
+        }
+      } else {
+        await this.membersRepo.save(
+          this.membersRepo.create({
+            companyId,
+            roomId,
+            memberType: m.memberType,
+            memberId: m.memberId,
+          }),
+        );
+        inserted += 1;
+        await this.publishJoined(companyId, roomId, m.memberType, m.memberId);
+      }
+    }
+    return { inserted, skipped };
+  }
+
+  /**
+   * 将当前用户在该房间的已读游标更新为房间的 message_seq（清除未读）。
+   */
+  async markHumanRoomRead(
+    companyId: string,
+    roomId: string,
+    userId: string,
+    messageSeq: string,
+  ): Promise<void> {
+    const res = await this.membersRepo.update(
+      {
+        companyId,
+        roomId,
+        memberType: 'human',
+        memberId: userId,
+        leftAt: IsNull(),
+      },
+      { lastReadSeq: messageSeq },
+    );
+    if ((res.affected ?? 0) === 0) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: '不在该协作房间或无法更新已读状态',
+      });
+    }
   }
 
   async removeMember(

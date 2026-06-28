@@ -14,6 +14,8 @@ export type AgentStatus = 'active' | 'inactive' | 'suspended';
 @Index(['companyId', 'role'])
 @Index(['companyId', 'status'])
 @Index(['organizationNodeId'])
+@Index(['companyId', 'reportsToAgentId'])
+@Index(['companyId', 'hierarchyVersion'])
 @Index(['companyId', 'llmKeyId'])
 export class Agent {
   @PrimaryGeneratedColumn('uuid')
@@ -24,6 +26,12 @@ export class Agent {
 
   @Column({ name: 'organization_node_id', type: 'uuid', nullable: true })
   organizationNodeId: string | null;
+
+  @Column({ name: 'reports_to_agent_id', type: 'uuid', nullable: true })
+  reportsToAgentId: string | null;
+
+  @Column({ name: 'hierarchy_version', type: 'integer', default: 1 })
+  hierarchyVersion: number;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;

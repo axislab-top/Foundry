@@ -13,7 +13,8 @@ export type ExternalHttpSkillHandlerConfig = {
   headers?: Record<string, string>;
 };
 
-function normalizeUrl(cfg: ExternalHttpSkillHandlerConfig): string {
+/** Exported for Runner 沙箱路径（Sprint 3.2）与 Worker HTTP 路径共享 URL 解析。 */
+export function normalizeExternalSkillUrl(cfg: ExternalHttpSkillHandlerConfig): string {
   const direct = (cfg.url ?? '').trim();
   if (direct) return direct;
   const base = (cfg.baseUrl ?? '').trim();
@@ -58,7 +59,7 @@ export class ExternalHttpSkillRunnerService {
       throw new Error(`Skill "${snap.name}" external handlerConfig.kind must be "http"`);
     }
 
-    const urlStr = normalizeUrl(handlerConfig);
+    const urlStr = normalizeExternalSkillUrl(handlerConfig);
     const url = new URL(urlStr);
     this.assertAllowed(url);
 

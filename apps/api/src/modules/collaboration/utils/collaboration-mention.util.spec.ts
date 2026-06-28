@@ -1,4 +1,8 @@
-import { extractMentionedAgentIds, hasCeoAliasMention } from './collaboration-mention.util.js';
+import {
+  extractMentionedAgentIds,
+  extractNaturalMentionLabels,
+  hasCeoAliasMention,
+} from './collaboration-mention.util.js';
 
 describe('extractMentionedAgentIds', () => {
   it('extracts UUIDs after @', () => {
@@ -16,5 +20,16 @@ describe('extractMentionedAgentIds', () => {
     expect(hasCeoAliasMention('请 @ceo 看一下这个问题')).toBe(true);
     expect(hasCeoAliasMention('请＠CEO看一下')).toBe(true);
     expect(hasCeoAliasMention('hello world')).toBe(false);
+  });
+
+  it('extracts natural language mention labels', () => {
+    expect(extractNaturalMentionLabels('@Finance Director please check')).toEqual([
+      'Finance Director',
+    ]);
+    expect(extractNaturalMentionLabels('请 @营销总监 看下预算')).toEqual(['营销总监']);
+    expect(extractNaturalMentionLabels('hi @Engineering Director, @CEO')).toEqual([
+      'Engineering Director',
+    ]);
+    expect(extractNaturalMentionLabels('no mention')).toEqual([]);
   });
 });

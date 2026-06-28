@@ -13,6 +13,8 @@ export interface Route {
   rpcClientName?: 'api' | 'webhooks'; // rpc client 名称
   rpcPattern?: string; // rpc message pattern
   rpcTimeoutMs?: number; // rpc 超时（毫秒）
+  /** HTTP 代理专用：axios responseType，下载/二进制端点使用 'arraybuffer' */
+  proxyResponseType?: 'json' | 'arraybuffer' | 'blob' | 'text' | 'stream';
 }
 
 /**
@@ -23,6 +25,8 @@ export interface ProxyOptions {
   timeout?: number; // 超时时间
   headers?: Record<string, string>; // 额外请求头
   rewrite?: (path: string) => string; // 路径重写函数
+  /** axios responseType，下载/二进制端点使用 'arraybuffer' */
+  responseType?: 'json' | 'arraybuffer' | 'blob' | 'text' | 'stream';
 }
 
 

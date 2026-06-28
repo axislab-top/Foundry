@@ -17,7 +17,11 @@ describe('CollaborationRpcController - ceoApprovalResolve HITL guard', () => {
     messages: {},
     members: {},
     dynamics: {},
+    collaborationBootstrap: {},
     summary: {},
+    mentionAliases: {},
+    memoryRetriever: {},
+    heavyTemporalClient: {},
     messaging: {
       publish: jest.fn().mockResolvedValue(true),
     },
@@ -43,10 +47,15 @@ describe('CollaborationRpcController - ceoApprovalResolve HITL guard', () => {
       baseDeps.messages as any,
       baseDeps.members as any,
       baseDeps.dynamics as any,
+      baseDeps.collaborationBootstrap as any,
       baseDeps.summary as any,
+      baseDeps.mentionAliases as any,
+      baseDeps.memoryRetriever as any,
+      baseDeps.heavyTemporalClient as any,
       baseDeps.messaging as any,
       membershipsRepo as any,
       tasksRepo as any,
+      { findOne: jest.fn().mockResolvedValue(null) } as any,
     );
 
     const payload: any = {
@@ -91,10 +100,15 @@ describe('CollaborationRpcController - ceoApprovalResolve HITL guard', () => {
       baseDeps.messages as any,
       baseDeps.members as any,
       baseDeps.dynamics as any,
+      baseDeps.collaborationBootstrap as any,
       baseDeps.summary as any,
+      baseDeps.mentionAliases as any,
+      baseDeps.memoryRetriever as any,
+      baseDeps.heavyTemporalClient as any,
       baseDeps.messaging as any,
       membershipsRepo as any,
       tasksRepo as any,
+      { findOne: jest.fn().mockResolvedValue(null) } as any,
     );
 
     const payload: any = {

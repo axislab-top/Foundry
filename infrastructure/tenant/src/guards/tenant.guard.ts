@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -17,6 +18,8 @@ import { TenantService } from '../services/tenant.service.js';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
+  private readonly logger = new Logger(TenantGuard.name);
+
   constructor(
     private readonly cls: ClsService,
     private readonly tenantService: TenantService,
@@ -25,7 +28,11 @@ export class TenantGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (context.getType() !== 'http') {
+    const contextType = context.getType<'http' | 'rpc' | 'ws'>();
+    if (contextType === 'rpc') {
+      return this.handleRpcContext(context);
+    }
+    if (contextType !== 'http') {
       return true;
     }
 
@@ -95,6 +102,35 @@ export class TenantGuard implements CanActivate {
     return true;
   }
 
+  private async handleRpcContext(context: ExecutionContext): Promise<boolean> {
+    const data = context.switchToRpc().getData() as
+      | { actor?: { id?: string }; companyId?: string }
+      | undefined;
+    const companyId =
+      typeof data?.companyId === 'string' ? data.companyId.trim() : '';
+    const actorId =
+      typeof data?.actor?.id === 'string' ? data.actor.id.trim() : '';
+
+    if (!companyId) {
+      throw new BadRequestException('Company ID is required');
+    }
+    if (!actorId) {
+      throw new UnauthorizedException('User context is required for tenant access');
+    }
+
+    const hasAccess = await this.tenantService.userBelongsToCompany(
+      actorId,
+      companyId,
+    );
+    if (!hasAccess) {
+      this.logger.warn('RPC tenant access denied', { actorId, companyId });
+      throw new UnauthorizedException('You do not have access to this company');
+    }
+
+    this.cls.set(TENANT_CLS_COMPANY_ID, companyId);
+    return true;
+  }
+
   private isCompanyBootstrapCreateRequest(request: any): boolean {
     const method = String(request?.method || '').toUpperCase();
     const path = String(request?.path || request?.url || '');
@@ -115,11 +151,14 @@ export class TenantGuard implements CanActivate {
     const method = String(request?.method || '').toUpperCase();
     const path = String(request?.path || request?.url || '');
     if (method !== 'POST') return false;
-    return (
-      path === '/v1/companies/setup-recommendation' ||
-      path.endsWith('/v1/companies/setup-recommendation') ||
-      path === '/companies/setup-recommendation' ||
-      path.endsWith('/companies/setup-recommendation')
-    );
+    const wizardPaths = [
+      '/v1/companies/setup-recommendation',
+      '/companies/setup-recommendation',
+      '/v1/companies/wizard/template-recommendations',
+      '/companies/wizard/template-recommendations',
+      '/v1/companies/wizard/patch-organization-draft',
+      '/companies/wizard/patch-organization-draft',
+    ];
+    return wizardPaths.some((p) => path === p || path.endsWith(p));
   }
 }

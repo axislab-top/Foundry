@@ -137,4 +137,35 @@ describe('AgentsService', () => {
       expect.objectContaining({ routingKey: 'agent.created', persistent: true }),
     );
   });
+
+  it('listDirectSubordinates returns direct child agents only', async () => {
+    const supervisorAgentId = 'a-director';
+    const subordinateId = 'a-exec';
+    const agentsRepo: any = {
+      findOne: jest.fn(async ({ where }: any) => {
+        if (where.id === supervisorAgentId) {
+          return { id: supervisorAgentId, companyId, organizationNodeId: 'n-director' };
+        }
+        return null;
+      }),
+      find: jest.fn(async () => [{ id: subordinateId, companyId }]),
+    };
+    const nodesRepo: any = {
+      find: jest.fn(async () => [{ id: 'n-exec', parentId: 'n-director', agentId: subordinateId }]),
+    };
+    const service = new AgentsService(
+      {} as any,
+      agentsRepo,
+      {} as any,
+      nodesRepo,
+      { getCompanyId: () => companyId } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const rows = await service.listDirectSubordinates(supervisorAgentId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(subordinateId);
+  });
 });

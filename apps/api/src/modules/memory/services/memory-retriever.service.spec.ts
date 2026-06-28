@@ -19,9 +19,11 @@ describe('MemoryRetrieverService', () => {
       ]),
     } as any;
     const embedding = {
-      embedText: jest.fn().mockResolvedValue(new Array(1536).fill(0.01)),
+      embedText: jest.fn().mockResolvedValue({ embedding: new Array(1536).fill(0.01), provenance: null }),
     } as any;
     const config = {
+      get: jest.fn().mockReturnValue(false),
+      isMemoryGraphV2Enabled: jest.fn().mockReturnValue(false),
       getMemoryConfig: () => ({
         hybridVectorWeight: 0.72,
         hybridFullTextSearch: true,
@@ -33,17 +35,33 @@ describe('MemoryRetrieverService', () => {
     const roomMembersRepo = {
       find: jest.fn().mockResolvedValue([]),
     } as any;
+    const orgNodesRepo = { findOne: jest.fn().mockResolvedValue(null) } as any;
     const messaging: Pick<MessagingService, 'publish'> = {
       publish: jest.fn().mockResolvedValue(undefined),
+    } as any;
+    const metrics = {
+      observeRetrieval: jest.fn(),
+    } as any;
+    const graphRollout = {
+      isMemoryGraphV2Effective: jest.fn().mockResolvedValue(false),
+    } as any;
+    const graph = {
+      getLineage: jest.fn().mockResolvedValue(null),
+      getSummarizesTree: jest.fn().mockResolvedValue([]),
+      getCausalInboundCounts: jest.fn().mockResolvedValue(new Map()),
     } as any;
 
     const retriever = new MemoryRetrieverService(
       dataSource,
+      orgNodesRepo,
       roomMembersRepo,
       embedding,
       config,
       access,
       messaging as MessagingService,
+      metrics,
+      graphRollout,
+      graph,
     );
 
     const hits = await retriever.search('q', {
@@ -60,9 +78,11 @@ describe('MemoryRetrieverService', () => {
       query: jest.fn().mockResolvedValue([]),
     } as any;
     const embedding = {
-      embedText: jest.fn().mockResolvedValue(new Array(1536).fill(0.01)),
+      embedText: jest.fn().mockResolvedValue({ embedding: new Array(1536).fill(0.01), provenance: null }),
     } as any;
     const config = {
+      get: jest.fn().mockReturnValue(false),
+      isMemoryGraphV2Enabled: jest.fn().mockReturnValue(false),
       getMemoryConfig: () => ({
         hybridVectorWeight: 0.72,
         hybridFullTextSearch: true,
@@ -74,16 +94,32 @@ describe('MemoryRetrieverService', () => {
     const roomMembersRepo = {
       find: jest.fn().mockResolvedValue([{ roomId: 'room-1' }]),
     } as any;
+    const orgNodesRepo = { findOne: jest.fn().mockResolvedValue(null) } as any;
     const messaging: Pick<MessagingService, 'publish'> = {
       publish: jest.fn().mockResolvedValue(undefined),
     } as any;
+    const metrics = {
+      observeRetrieval: jest.fn(),
+    } as any;
+    const graphRollout = {
+      isMemoryGraphV2Effective: jest.fn().mockResolvedValue(false),
+    } as any;
+    const graph = {
+      getLineage: jest.fn().mockResolvedValue(null),
+      getSummarizesTree: jest.fn().mockResolvedValue([]),
+      getCausalInboundCounts: jest.fn().mockResolvedValue(new Map()),
+    } as any;
     const retriever = new MemoryRetrieverService(
       dataSource,
+      orgNodesRepo,
       roomMembersRepo,
       embedding,
       config,
       access,
       messaging as MessagingService,
+      metrics,
+      graphRollout,
+      graph,
     );
     await expect(
       retriever.search('q', {
@@ -99,9 +135,11 @@ describe('MemoryRetrieverService', () => {
       query: jest.fn().mockResolvedValue([]),
     } as any;
     const embedding = {
-      embedText: jest.fn().mockResolvedValue(new Array(1536).fill(0.01)),
+      embedText: jest.fn().mockResolvedValue({ embedding: new Array(1536).fill(0.01), provenance: null }),
     } as any;
     const config = {
+      get: jest.fn().mockReturnValue(false),
+      isMemoryGraphV2Enabled: jest.fn().mockReturnValue(false),
       getMemoryConfig: () => ({
         hybridVectorWeight: 0.72,
         hybridFullTextSearch: true,
@@ -113,16 +151,32 @@ describe('MemoryRetrieverService', () => {
     const roomMembersRepo = {
       find: jest.fn().mockResolvedValue([]),
     } as any;
+    const orgNodesRepo = { findOne: jest.fn().mockResolvedValue(null) } as any;
     const messaging: Pick<MessagingService, 'publish'> = {
       publish: jest.fn().mockResolvedValue(undefined),
     } as any;
+    const metrics = {
+      observeRetrieval: jest.fn(),
+    } as any;
+    const graphRollout = {
+      isMemoryGraphV2Effective: jest.fn().mockResolvedValue(false),
+    } as any;
+    const graph = {
+      getLineage: jest.fn().mockResolvedValue(null),
+      getSummarizesTree: jest.fn().mockResolvedValue([]),
+      getCausalInboundCounts: jest.fn().mockResolvedValue(new Map()),
+    } as any;
     const retriever = new MemoryRetrieverService(
       dataSource,
+      orgNodesRepo,
       roomMembersRepo,
       embedding,
       config,
       access,
       messaging as MessagingService,
+      metrics,
+      graphRollout,
+      graph,
     );
     await expect(
       retriever.search('q', {

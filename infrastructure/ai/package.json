@@ -6,24 +6,28 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-prompts.mjs",
     "dev": "tsc --watch",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "test": "node --import tsx --test src/**/*.spec.ts"
   },
   "license": "ISC",
   "packageManager": "pnpm@10.27.0",
   "dependencies": {
     "@contracts/events": "workspace:*",
+    "@contracts/types": "workspace:*",
     "@foundry/contracts": "workspace:*",
     "@langchain/core": "^1.1.36",
     "@langchain/langgraph": "^1.2.6"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.3.3"
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "scripts"
   ]
 }

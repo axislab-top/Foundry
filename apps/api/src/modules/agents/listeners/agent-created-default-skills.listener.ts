@@ -2,9 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { MessagingService } from '@service/messaging';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
 import type { AgentCreatedEvent } from '@contracts/events';
-import { getDefaultGlobalSkillNamesForRole } from '../../skills/default-skills.js';
-import { SkillsService } from '../../skills/services/skills.service.js';
-import { AgentSkillService } from '../services/agent-skill.service.js';
+import { BootstrapSkillCatalogService } from '../services/bootstrap-skill-catalog.service.js';
 
 @Injectable()
 export class AgentCreatedDefaultSkillsListener implements OnModuleInit {
@@ -13,8 +11,7 @@ export class AgentCreatedDefaultSkillsListener implements OnModuleInit {
   constructor(
     private readonly messagingService: MessagingService,
     private readonly tenantContext: TenantContextService,
-    private readonly skillsService: SkillsService,
-    private readonly agentSkillService: AgentSkillService,
+    private readonly bootstrapSkillCatalog: BootstrapSkillCatalogService,
   ) {}
 
   onModuleInit() {
@@ -35,23 +32,26 @@ export class AgentCreatedDefaultSkillsListener implements OnModuleInit {
     if (!companyId || !agentId) {
       return;
     }
-    const names = getDefaultGlobalSkillNamesForRole(role);
     await this.tenantContext.runWithCompanyId(companyId, async () => {
       try {
-        const skillIds = await this.skillsService.findGlobalSkillIdsByNames(names);
-        await this.agentSkillService.bindDefaultSkillsForAgent(agentId, companyId, skillIds);
+        const { resolvedSkillIds } = await this.bootstrapSkillCatalog.ensureCompanyCatalogThenBindToAgent(
+          companyId,
+          agentId,
+          role,
+        );
         this.logger.log('Default skills bound for new agent', {
           agentId,
           companyId,
           role,
-          count: skillIds.length,
+          count: resolvedSkillIds.length,
         });
       } catch (err: any) {
-        this.logger.warn('Default skills bind failed', {
+        this.logger.error('Default skills bind failed', {
           agentId,
           companyId,
           error: err?.message,
         });
+        throw err;
       }
     });
   }

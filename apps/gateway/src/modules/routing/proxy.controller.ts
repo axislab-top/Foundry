@@ -5,21 +5,17 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from '../../common/types/express.types.js';
+import { PROXY_HTTP_MOUNT_PATTERNS } from './config/edge-routing.constants.js';
 import { RoutingService } from './routing.service.js';
 
 /**
- * 代理控制器
- * 负责代理所有请求到相应的后端服务
+ * 下游业务 HTTP 代理（不含 /auth — 认证面由 AuthController 独占，见 edge-routing.constants.ts）
  */
 @Controller()
 export class ProxyController {
   constructor(private readonly routingService: RoutingService) {}
 
-  /**
-   * 代理所有 HTTP 请求
-   * 最佳实践：只代理“网关需要转发的业务前缀”，避免拦截 admin/health/metrics 等本地控制器路由
-   */
-  @All(['/v1/*', '/auth/*', '/webhooks/*', '/worker/*'])
+  @All([...PROXY_HTTP_MOUNT_PATTERNS])
   async proxy(@Req() req: Request, @Res() res: Response) {
     try {
       // 获取请求方法和路径
@@ -65,8 +61,29 @@ export class ProxyController {
         });
       }
 
-      // 转发响应体
-      res.json(response.data);
+      // 转发响应体：下载/二进制必须用 res.send()，否则 res.json() 会把 ArrayBuffer 变成 "{}" 或损坏内容。
+      const ct = String(response.headers?.['content-type'] ?? '').toLowerCase();
+      const cd = String(response.headers?.['content-disposition'] ?? '').toLowerCase();
+      const data = response.data;
+      const isRawBody =
+        cd.includes('attachment') ||
+        Buffer.isBuffer(data) ||
+        data instanceof ArrayBuffer ||
+        ArrayBuffer.isView(data) ||
+        ct.startsWith('text/') ||
+        ct.includes('application/octet-stream') ||
+        ct.includes('application/pdf') ||
+        ct.startsWith('image/') ||
+        ct.startsWith('audio/') ||
+        ct.startsWith('video/') ||
+        ct.includes('application/zip') ||
+        ct.includes('application/gzip');
+      if (isRawBody) {
+        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        res.send(buf);
+      } else {
+        res.json(data);
+      }
     } catch (error) {
       // 错误会被全局异常过滤器处理
       throw error;

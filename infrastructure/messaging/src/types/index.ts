@@ -48,6 +48,14 @@ export interface RabbitMQOptions extends MessageQueueOptions {
   routingKey?: string;
   durable?: boolean;
   autoDelete?: boolean;
+  /**
+   * AMQP heartbeat（秒）。未设置时由 broker/client 协商；但显式设置能避免某些环境默认值过小导致空闲误断。
+   */
+  heartbeatSeconds?: number;
+  /**
+   * TCP keepalive 延迟（毫秒）。默认 10s。
+   */
+  keepAliveDelayMs?: number;
 }
 
 /**

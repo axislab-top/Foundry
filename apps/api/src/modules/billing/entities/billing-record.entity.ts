@@ -6,11 +6,18 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-export type BillingRecordType = 'llm' | 'skill' | 'embedding' | 'summary' | 'other';
+export type BillingRecordType =
+  | 'llm'
+  | 'skill'
+  | 'embedding'
+  | 'summary'
+  | 'agent_day'
+  | 'other';
 
 @Entity('billing_records')
 @Index(['companyId', 'occurredAt'])
 @Index(['companyId', 'agentId', 'occurredAt'])
+@Index(['companyId', 'agentId', 'usageDate'])
 export class BillingRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -57,8 +64,30 @@ export class BillingRecord {
   @Column({ name: 'idempotency_key', type: 'varchar', length: 128, nullable: true })
   idempotencyKey: string | null;
 
+  /**
+   * 日账单聚合维度（UTC 日期）；同公司+Agent+日期按调用增量累计。
+   */
+  @Column({ name: 'usage_date', type: 'date', nullable: true })
+  usageDate: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
+
+  /** 入账时刻定价快照（JSON）；与事后 model_pricing 变更解耦 */
+  @Column({ name: 'pricing_snapshot_json', type: 'jsonb', nullable: true })
+  pricingSnapshotJson: Record<string, unknown> | null;
+
+  /**
+   * snapshot = 请求携带的快照；
+   * model_pricing = 由 resolvePricing 解析并回填快照；
+   * explicit_cost = dto.cost 直填；
+   * nominal = 名义占位（cost 为 0，不占预算）
+   */
+  @Column({ name: 'pricing_source', type: 'varchar', length: 32, nullable: true })
+  pricingSource: string | null;
+
+  @Column({ name: 'is_nominal', type: 'boolean', default: false })
+  isNominal: boolean;
 
   @Column({ name: 'occurred_at', type: 'timestamp' })
   occurredAt: Date;

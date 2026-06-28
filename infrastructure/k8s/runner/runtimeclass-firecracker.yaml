@@ -1,0 +1,8 @@
+# P19：示例 Firecracker（或等效 microVM）RuntimeClass。handler 须与节点上实际运行时注册名一致。
+# 生产集群请与节点池标签 / taints 对齐 RUNNER_FIRECRACKER_NODE_SELECTOR_JSON、RUNNER_FIRECRACKER_TOLERATIONS_JSON。
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: firecracker
+handler: firecracker
+# 若 RuntimeClass 支持 scheduling：可在此声明与 nodeSelector 等价的 node 约束（视 K8s 版本与插件而定）。

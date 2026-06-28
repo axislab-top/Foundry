@@ -1,0 +1,8 @@
+# Replace driver and deletionPolicy with your CSI (e.g. AWS EBS, GCP PD, hostpath CSI).
+# gVisor RuntimeClass is configured on the Job Pod, not on the VolumeSnapshotClass.
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: foundry-workspace-snapclass
+driver: ebs.csi.aws.com
+deletionPolicy: Retain

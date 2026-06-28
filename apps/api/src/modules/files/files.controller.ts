@@ -12,6 +12,7 @@ import {
   DefaultValuePipe,
   BadRequestException,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,19 +27,34 @@ import type { Response, Request } from 'express';
 import { StorageService } from './storage/storage.service.js';
 import { UploadFileDto } from './dto/upload-file.dto.js';
 import { ListFilesDto } from './dto/list-files.dto.js';
-import { Permissions } from '../../common/decorators/permissions.decorator.js';
 import { FILES_PERMISSIONS } from './constants/permissions.constants.js';
 
-/** 单文件上传大小上限（默认 50MB，可通过环境变量 FILE_UPLOAD_MAX_SIZE 覆盖） */
-const MAX_FILE_SIZE = parseInt(process.env.FILE_UPLOAD_MAX_SIZE || '', 10) || 50 * 1024 * 1024;
+type RequestWithCompany = Request & {
+  companyId?: string;
+  user?: { roles?: string[]; permissions?: string[] };
+};
 
-type RequestWithCompany = Request & { companyId?: string };
+const PLATFORM_COMPANY_ID = '00000000-0000-0000-0000-000000000000';
 
 @ApiTags('files')
 @ApiBearerAuth('JWT-auth')
 @Controller('files')
 export class FilesController {
   constructor(private readonly storageService: StorageService) {}
+
+  private isMarketplaceIconPath(path: string): boolean {
+    const p = String(path || '').replace(/^\/+/, '');
+    const prefix = `companies/${PLATFORM_COMPANY_ID}/marketplace/icons/`;
+    return p.startsWith(prefix);
+  }
+
+  private authorize(req: RequestWithCompany, anyPermissions: string[]): void {
+    const roles = Array.isArray(req.user?.roles) ? req.user?.roles : [];
+    if (roles.includes('admin')) return;
+    const permissions = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
+    if (anyPermissions.some((p) => permissions.includes(p))) return;
+    throw new ForbiddenException('Insufficient permissions');
+  }
 
   private requireCompanyId(req: RequestWithCompany): string {
     const c = req.companyId?.trim();
@@ -51,8 +67,7 @@ export class FilesController {
   }
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
-  @Permissions(FILES_PERMISSIONS.CREATE, FILES_PERMISSIONS.WRITE)
+  @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: '上传文件', description: '上传文件到对象存储' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -75,6 +90,7 @@ export class FilesController {
     @Query() query: UploadFileDto,
     @Req() req: RequestWithCompany,
   ) {
+    this.authorize(req, [FILES_PERMISSIONS.CREATE, FILES_PERMISSIONS.WRITE]);
     if (!file) {
       throw new Error('No file uploaded');
     }
@@ -88,8 +104,8 @@ export class FilesController {
   }
 
   @Get()
-  @Permissions(FILES_PERMISSIONS.READ)
   async list(@Query() query: ListFilesDto, @Req() req: RequestWithCompany) {
+    this.authorize(req, [FILES_PERMISSIONS.READ]);
     const companyId = this.requireCompanyId(req);
     const files = await this.storageService.list(companyId, query.prefix, {
       maxKeys: query.maxKeys,
@@ -100,43 +116,58 @@ export class FilesController {
   }
 
   @Get(':path(*)/url')
-  @Permissions(FILES_PERMISSIONS.URL, FILES_PERMISSIONS.READ)
   async getUrl(
     @Param('path') path: string,
     @Query('expiresIn', new DefaultValuePipe(3600), ParseIntPipe) expiresIn: number,
     @Req() req: RequestWithCompany,
   ) {
+    this.authorize(req, [FILES_PERMISSIONS.URL, FILES_PERMISSIONS.READ]);
     const companyId = this.requireCompanyId(req);
     const url = await this.storageService.getUrl(companyId, path, expiresIn);
     return { success: true, data: { url, expiresIn } };
   }
 
   @Get(':path(*)/info')
-  @Permissions(FILES_PERMISSIONS.READ)
   async getFileInfo(@Param('path') path: string, @Req() req: RequestWithCompany) {
+    this.authorize(req, [FILES_PERMISSIONS.READ]);
     const companyId = this.requireCompanyId(req);
     const fileInfo = await this.storageService.getFileInfo(companyId, path);
     return { success: true, data: fileInfo };
   }
 
   @Get(':path(*)')
-  @Permissions(FILES_PERMISSIONS.READ)
   async download(
     @Param('path') path: string,
     @Res() res: Response,
     @Req() req: RequestWithCompany,
   ) {
-    const companyId = this.requireCompanyId(req);
+    const isMarketplaceIcon = this.isMarketplaceIconPath(path);
+    // 商城头像属于目录级公开资源（对已登录用户可读），不要求 files:read 细粒度权限。
+    if (!isMarketplaceIcon) {
+      this.authorize(req, [FILES_PERMISSIONS.READ]);
+    }
+    const companyId = isMarketplaceIcon
+      ? req.companyId?.trim() || PLATFORM_COMPANY_ID
+      : this.requireCompanyId(req);
     const buffer = await this.storageService.download(companyId, path);
     const fileInfo = await this.storageService.getFileInfo(companyId, path);
     res.setHeader('Content-Type', fileInfo.contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileInfo.name}"`);
+    const asciiFallback = fileInfo.name.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+    const encodedName = encodeURIComponent(fileInfo.name);
+    const dispositionType = isMarketplaceIcon ? 'inline' : 'attachment';
+    res.setHeader(
+      'Content-Disposition',
+      `${dispositionType}; filename="${asciiFallback || 'download'}"; filename*=UTF-8''${encodedName}`,
+    );
+    if (isMarketplaceIcon) {
+      res.setHeader('Cache-Control', 'private, max-age=300');
+    }
     res.send(buffer);
   }
 
   @Delete(':path(*)')
-  @Permissions(FILES_PERMISSIONS.DELETE, FILES_PERMISSIONS.WRITE)
   async delete(@Param('path') path: string, @Req() req: RequestWithCompany) {
+    this.authorize(req, [FILES_PERMISSIONS.DELETE, FILES_PERMISSIONS.WRITE]);
     const companyId = this.requireCompanyId(req);
     const deleted = await this.storageService.delete(companyId, path);
     return {

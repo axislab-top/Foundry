@@ -76,39 +76,12 @@ export interface CorsConfig {
 }
 
 /**
- * 检查并警告弱安全默认值（开发环境用，生产环境应设置环境变量）
- */
-export function warnWeakSecurityDefaults(): void {
-  const isProd = process.env.NODE_ENV === 'production';
-  const warnings: string[] = [];
-
-  if (!process.env.JWT_SECRET) {
-    if (isProd) throw new Error('[SECURITY] JWT_SECRET is required in production');
-    warnings.push('JWT_SECRET not set — using development default');
-  }
-  if (!process.env.CSRF_SECRET && !process.env.JWT_SECRET) {
-    if (isProd) throw new Error('[SECURITY] CSRF_SECRET or JWT_SECRET is required in production');
-    warnings.push('CSRF_SECRET not set — using development default');
-  }
-  if (!process.env.DEFAULT_ADMIN_PASSWORD) {
-    if (isProd) throw new Error('[SECURITY] DEFAULT_ADMIN_PASSWORD is required in production');
-    warnings.push('DEFAULT_ADMIN_PASSWORD not set — using development default "changeme"');
-  }
-
-  if (warnings.length > 0) {
-    console.warn('\n⚠️  [DEV MODE] Weak security defaults detected:');
-    warnings.forEach(w => console.warn(`   - ${w}`));
-    console.warn('   Set environment variables for production deployment.\n');
-  }
-}
-
-/**
  * 从环境变量创建安全配置
  */
 export function createSecurityConfigFromEnv(): SecurityConfig {
   return {
     jwt: {
-      secret: process.env.JWT_SECRET || 'dev-only-jwt-secret-change-me',
+      secret: process.env.JWT_SECRET || 'your-secret-key',
       refreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
       expiresIn: process.env.JWT_EXPIRES_IN || '15m',
       refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
@@ -152,7 +125,7 @@ export function createSecurityConfigFromEnv(): SecurityConfig {
     },
     csrf: {
       enabled: process.env.CSRF_ENABLED !== 'false',
-      secret: process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-only-csrf-secret-change-me',
+      secret: process.env.CSRF_SECRET || process.env.JWT_SECRET || 'csrf-secret',
       cookieName: process.env.CSRF_COOKIE_NAME || '_csrf',
       headerName: process.env.CSRF_HEADER_NAME || 'x-csrf-token',
       cookieOptions: {

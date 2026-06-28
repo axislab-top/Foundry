@@ -1,18 +1,25 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { CompanyHeartbeatContext } from '../dto/company-heartbeat-context.dto.js';
-import type { Plan } from './company-planner.service.js';
-
-export interface ExecutionResult {
-  runId: string;
-  dispatchedActions: string[];
-}
+import { Injectable } from '@nestjs/common';
+import { CeoHeartbeatRunCoordinatorService } from '../../tasks/ceo-heartbeat-run-coordinator.service.js';
+import type {
+  CompanyExecutionResult,
+  CompanyHeartbeatContext,
+  CompanyPlan,
+} from '../dto/company-heartbeat-context.dto.js';
 
 @Injectable()
 export class CompanyActorService {
-  private readonly logger = new Logger(CompanyActorService.name);
+  constructor(private readonly heartbeatCoordinator: CeoHeartbeatRunCoordinatorService) {}
 
-  async executePlan(ctx: CompanyHeartbeatContext, plan: Plan): Promise<ExecutionResult> {
-    this.logger.debug('CompanyActorService.executePlan called', { companyId: ctx.companyId });
-    return { runId: `run-${Date.now()}`, dispatchedActions: [] };
+  async executePlan(ctx: CompanyHeartbeatContext, _plan: CompanyPlan): Promise<CompanyExecutionResult> {
+    const { runId, completedTaskIds } = await this.heartbeatCoordinator.runCycle(
+      ctx.companyId,
+      ctx.tickAt,
+      ctx.triggerSource,
+      ctx.options ?? {},
+    );
+    return {
+      runId,
+      dispatchedActions: completedTaskIds,
+    };
   }
 }

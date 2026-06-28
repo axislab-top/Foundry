@@ -4,6 +4,8 @@ import {
   ConflictException,
   BadRequestException,
   ServiceUnavailableException,
+  HttpException,
+  HttpStatus,
   Logger,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
@@ -84,6 +86,7 @@ export class AuthService {
       const jwtPayload: JwtPayload = {
         sub: user.id,
         tokenId,
+        authType: 'user',
         email: user.email,
         username: user.username,
         roles: user.roles || [],
@@ -195,26 +198,141 @@ export class AuthService {
   }
 
   /**
-   * 管理员登录（仅允许 admin/superadmin 角色账号登录）。
-   * 该入口用于 admin-system，不影响通用用户登录（/auth/login）。
+   * 管理员登录（独立管理员认证入口）。
    */
   async adminLogin(loginDto: LoginDto): Promise<AuthResult> {
-    const result = await this.login(loginDto);
-    const userRoles = Array.isArray(result.user?.roles) ? result.user.roles : [];
+    const servicesConfig = this.configService.getServicesConfig();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(`${servicesConfig.apiServiceUrl}/api/auth/admin/validate`, {
+          email: loginDto.email,
+          password: loginDto.password
+        })
+      );
 
-    const allowedAdminRoles = ['admin', 'superadmin'];
-    const hasAllowedRole = allowedAdminRoles.some((r) =>
-      userRoles.includes(r),
+      const adminUser = response.data?.data || response.data;
+      if (!adminUser || !adminUser.id) {
+        throw new UnauthorizedException({
+          code: ErrorCode.AUTH_LOGIN_FAILED,
+          message: 'Invalid credentials',
+        });
+      }
+
+      const tokenId = randomUUID();
+      const jwtPayload: JwtPayload = {
+        sub: adminUser.id,
+        tokenId,
+        authType: 'admin',
+        email: adminUser.email,
+        username: adminUser.username,
+        roles: adminUser.roles || [],
+        permissions: adminUser.permissions || []
+      };
+
+      const tokenPair = await this.tokenService.generateTokenPair(jwtPayload, tokenId);
+      const userInfo: UserInfo = {
+        id: adminUser.id,
+        email: adminUser.email,
+        username: adminUser.username,
+        roles: adminUser.roles || [],
+        permissions: adminUser.permissions || []
+      };
+
+      await Promise.all([
+        this.authCacheService.cacheUser(adminUser.id, userInfo),
+        this.authCacheService.cacheToken(tokenId, adminUser.id),
+        this.authCacheService.cacheRefreshToken(tokenId, adminUser.id, tokenId)
+      ]);
+
+      return {
+        user: userInfo,
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        expiresIn: tokenPair.expiresIn
+      };
+    } catch (error: any) {
+      const errorResponse = error?.response;
+      const errorData = errorResponse?.data;
+      const errorStatus = errorResponse?.status ?? error?.status;
+
+      let errorMessage = 'Invalid credentials';
+      if (errorData) {
+        if (typeof errorData === 'object') {
+          if (
+            errorData.error &&
+            typeof errorData.error === 'object' &&
+            errorData.error.message
+          ) {
+            errorMessage = errorData.error.message;
+          } else if (errorData.message) {
+            errorMessage =
+              typeof errorData.message === 'string'
+                ? errorData.message
+                : 'Invalid credentials';
+          }
+        } else if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        }
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      if (errorResponse?.status === 401 || errorStatus === 401) {
+        throw new UnauthorizedException({
+          code: ErrorCode.AUTH_LOGIN_FAILED,
+          message: errorMessage,
+        });
+      }
+
+      if (
+        error?.code === 'ECONNREFUSED' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ENOTFOUND' ||
+        error?.code === 'ECONNABORTED'
+      ) {
+        throw new ServiceUnavailableException({
+          code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+          message: 'Service temporarily unavailable',
+        });
+      }
+
+      if (
+        errorResponse?.status &&
+        typeof errorResponse.status === 'number' &&
+        errorResponse.status >= 400 &&
+        errorResponse.status < 500
+      ) {
+        throw new UnauthorizedException({
+          code: ErrorCode.AUTH_LOGIN_FAILED,
+          message: errorMessage,
+        });
+      }
+
+      if (
+        (typeof errorResponse?.status === 'number' && errorResponse.status >= 500) ||
+        !errorResponse
+      ) {
+        throw new ServiceUnavailableException({
+          code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+          message: errorMessage || 'Service temporarily unavailable',
+        });
+      }
+
+      throw error;
+    }
+  }
+
+  async adminRegister(registerDto: RegisterDto): Promise<AuthResult> {
+    const servicesConfig = this.configService.getServicesConfig();
+    await firstValueFrom(
+      this.httpService.post(`${servicesConfig.apiServiceUrl}/api/auth/admin/register`, {
+        username: registerDto.username,
+        email: registerDto.email,
+        password: registerDto.password
+      })
     );
 
-    if (!hasAllowedRole) {
-      throw new UnauthorizedException({
-        code: ErrorCode.AUTH_INSUFFICIENT_PERMISSIONS,
-        message: 'Only admin accounts can login',
-      });
-    }
-
-    return result;
+    return this.adminLogin({ email: registerDto.email, password: registerDto.password });
   }
 
   /**
@@ -233,6 +351,7 @@ export class AuthService {
             username: registerDto.username,
             email: registerDto.email,
             password: registerDto.password,
+            verificationCode: registerDto.verificationCode,
           },
         ),
       );
@@ -253,6 +372,7 @@ export class AuthService {
       const jwtPayload: JwtPayload = {
         sub: user.id,
         tokenId,
+        authType: 'user',
         email: user.email,
         username: user.username,
         roles: user.roles || [],
@@ -290,44 +410,7 @@ export class AuthService {
         expiresIn: tokenPair.expiresIn,
       };
     } catch (error: any) {
-      const status = error?.response?.status;
-      const errorData = error?.response?.data;
-      const message =
-        errorData?.error?.message ||
-        errorData?.message ||
-        error?.message ||
-        'Registration failed';
-
-      // 下游 API 返回业务冲突（邮箱/用户名重复）
-      if (status === 409) {
-        throw new ConflictException({
-          code: ErrorCode.RECORD_ALREADY_EXISTS,
-          message,
-        });
-      }
-
-      // 参数校验错误
-      if (status === 400) {
-        throw new BadRequestException({
-          code: ErrorCode.BAD_REQUEST,
-          message,
-          ...(errorData?.error?.details ? { details: errorData.error.details } : {}),
-        });
-      }
-
-      // 下游服务不可达/超时
-      if (
-        error?.code === 'ECONNREFUSED' ||
-        error?.code === 'ETIMEDOUT' ||
-        error?.code === 'ENOTFOUND'
-      ) {
-        throw new ServiceUnavailableException({
-          code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
-          message: 'Registration service temporarily unavailable',
-        });
-      }
-
-      throw error;
+      this.throwMappedDownstreamError(error, 'Registration failed');
     }
   }
 
@@ -341,16 +424,26 @@ export class AuthService {
         refreshTokenDto.refreshToken,
       );
 
-      // 从缓存获取刷新令牌信息
-      const refreshTokenInfo = await this.authCacheService.getRefreshToken(
+      const graceResult = await this.authCacheService.getRefreshRotationGrace(
+        payload.tokenId,
+      );
+      if (graceResult) {
+        return graceResult;
+      }
+
+      // 从缓存获取刷新令牌信息（缓存丢失时可从有效 JWT 重建，避免 Gateway/Redis 重启误踢用户）
+      let refreshTokenInfo = await this.authCacheService.getRefreshToken(
         payload.tokenId,
       );
 
       if (!refreshTokenInfo) {
-        throw new UnauthorizedException({
-          code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
-          message: 'Invalid refresh token',
-        });
+        refreshTokenInfo = await this.rehydrateRefreshSession(payload);
+        if (!refreshTokenInfo) {
+          throw new UnauthorizedException({
+            code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+            message: 'Invalid refresh token',
+          });
+        }
       }
 
       // 如果旧访问令牌已被撤销，拒绝继续刷新（会话已失效）
@@ -365,9 +458,17 @@ export class AuthService {
       }
 
       // 获取用户信息
-      const userInfo = await this.authCacheService.getUser(
+      let userInfo = await this.authCacheService.getUser(
         refreshTokenInfo.userId,
       );
+
+      // 用户缓存可能早于 refresh token 过期，缓存未命中时回源 API 兜底拉取用户信息。
+      if (!userInfo) {
+        userInfo = await this.fetchUserInfoForRefresh(refreshTokenInfo.userId);
+        if (userInfo) {
+          await this.authCacheService.cacheUser(userInfo.id, userInfo);
+        }
+      }
 
       if (!userInfo) {
         throw new UnauthorizedException({
@@ -381,6 +482,7 @@ export class AuthService {
       const jwtPayload: JwtPayload = {
         sub: userInfo.id,
         tokenId: newTokenId,
+        authType: Array.isArray(userInfo.roles) && userInfo.roles.includes('admin') ? 'admin' : 'user',
         email: userInfo.email,
         username: userInfo.username,
         roles: userInfo.roles || [],
@@ -392,7 +494,14 @@ export class AuthService {
         newTokenId,
       );
 
-      // 更新缓存
+      const result: AuthResult = {
+        user: userInfo,
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        expiresIn: tokenPair.expiresIn,
+      };
+
+      // 更新缓存：先写入新会话与轮换宽限期，再吊销旧 refresh（并发标签页可幂等重试）
       await Promise.all([
         this.authCacheService.cacheToken(newTokenId, userInfo.id),
         this.authCacheService.cacheRefreshToken(
@@ -400,16 +509,15 @@ export class AuthService {
           userInfo.id,
           newTokenId,
         ),
-        // 删除旧的刷新令牌
+        this.authCacheService.setRefreshRotationGrace(payload.tokenId, result),
+        this.authCacheService.blacklistToken(
+          payload.tokenId,
+          this.authCacheService.refreshTokenBlacklistTtlSeconds(),
+        ),
         this.authCacheService.deleteRefreshToken(payload.tokenId),
       ]);
 
-      return {
-        user: userInfo,
-        accessToken: tokenPair.accessToken,
-        refreshToken: tokenPair.refreshToken,
-        expiresIn: tokenPair.expiresIn,
-      };
+      return result;
     } catch (error: any) {
       if (error.name === 'TokenExpiredError') {
         throw new UnauthorizedException({
@@ -417,8 +525,87 @@ export class AuthService {
           message: 'Refresh token expired',
         });
       }
+      if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+        throw new UnauthorizedException({
+          code: ErrorCode.AUTH_REFRESH_TOKEN_INVALID,
+          message: 'Invalid refresh token',
+        });
+      }
       throw error;
     }
+  }
+
+  /**
+   * 缓存未命中但 JWT 仍有效：重建 refresh 会话（Gateway/Redis 重启场景）。
+   * 已轮换或已登出的 tokenId 会在黑名单中，不会重建。
+   */
+  private async rehydrateRefreshSession(
+    payload: { sub: string; tokenId: string },
+  ): Promise<{ userId: string; tokenId: string } | null> {
+    if (await this.authCacheService.isTokenBlacklisted(payload.tokenId)) {
+      return null;
+    }
+
+    let userInfo = await this.authCacheService.getUser(payload.sub);
+    if (!userInfo) {
+      userInfo = await this.fetchUserInfoForRefresh(payload.sub);
+      if (userInfo) {
+        await this.authCacheService.cacheUser(userInfo.id, userInfo);
+      }
+    }
+    if (!userInfo) {
+      return null;
+    }
+
+    await Promise.all([
+      this.authCacheService.cacheToken(payload.tokenId, payload.sub),
+      this.authCacheService.cacheRefreshToken(
+        payload.tokenId,
+        payload.sub,
+        payload.tokenId,
+      ),
+    ]);
+
+    this.logger.log('Refresh session rehydrated after cache miss', {
+      userId: payload.sub,
+      tokenId: payload.tokenId,
+    });
+
+    return { userId: payload.sub, tokenId: payload.tokenId };
+  }
+
+  private async fetchUserInfoForRefresh(
+    userId: string,
+    authType?: 'user' | 'admin',
+  ): Promise<UserInfo | null> {
+    const servicesConfig = this.configService.getServicesConfig();
+    const candidateUrls =
+      authType === 'admin'
+        ? [`${servicesConfig.apiServiceUrl}/api/auth/admin/users/${userId}`]
+        : [
+            `${servicesConfig.apiServiceUrl}/api/auth/users/${userId}`,
+            `${servicesConfig.apiServiceUrl}/api/auth/admin/users/${userId}`,
+          ];
+
+    for (const url of candidateUrls) {
+      try {
+        const response = await firstValueFrom(this.httpService.get(url));
+        const upstreamUser = response.data?.data || response.data;
+        if (upstreamUser && upstreamUser.id) {
+          return {
+            id: upstreamUser.id,
+            email: upstreamUser.email,
+            username: upstreamUser.username,
+            roles: upstreamUser.roles || [],
+            permissions: upstreamUser.permissions || [],
+          };
+        }
+      } catch {
+        // try next candidate endpoint
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -507,6 +694,7 @@ export class AuthService {
       const jwtPayload: JwtPayload = {
         sub: user.id,
         tokenId,
+        authType: 'user',
         email: user.email,
         username: user.username,
         roles: user.roles || [],
@@ -562,35 +750,195 @@ export class AuthService {
   }
 
   /**
-   * 验证用户
+   * 发送注册邮箱验证码 — 代理至 API 服务
    */
-  async validateUser(userId: string): Promise<UserInfo | null> {
-    // 先从缓存获取
-    let userInfo = await this.authCacheService.getUser(userId);
+  async sendRegistrationVerificationCode(dto: { email: string }): Promise<{ message: string }> {
+    const servicesConfig = this.configService.getServicesConfig();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${servicesConfig.apiServiceUrl}/api/users/register/send-verification-code`,
+          { email: dto.email },
+        ),
+      );
+      return response.data?.data ?? response.data;
+    } catch (error: any) {
+      this.handlePasswordResetProxyError(error);
+    }
+  }
 
-    if (!userInfo) {
-      // 如果缓存中没有，从 API 服务获取
-      const servicesConfig = this.configService.getServicesConfig();
-      try {
-        const response = await firstValueFrom(
-          this.httpService.get(
-            `${servicesConfig.apiServiceUrl}/api/users/${userId}`,
-          ),
-        );
-        userInfo = {
-          id: response.data.id,
-          email: response.data.email,
-          username: response.data.username,
-          roles: response.data.roles || [],
-          permissions: response.data.permissions || [],
-        };
-        // 缓存用户信息
-        await this.authCacheService.cacheUser(userId, userInfo);
-      } catch (error) {
-        return null;
-      }
+  /**
+   * 忘记密码 — 代理至 API 服务
+   */
+  async forgotPassword(dto: { email: string }): Promise<{ message: string }> {
+    const servicesConfig = this.configService.getServicesConfig();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${servicesConfig.apiServiceUrl}/api/users/forgot-password`,
+          { email: dto.email },
+        ),
+      );
+      return response.data?.data ?? response.data;
+    } catch (error: any) {
+      this.handlePasswordResetProxyError(error);
+    }
+  }
+
+  /**
+   * 发送重置密码验证码 — 代理至 API 服务
+   */
+  async sendResetPasswordCode(dto: { email: string }): Promise<{ message: string }> {
+    const servicesConfig = this.configService.getServicesConfig();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${servicesConfig.apiServiceUrl}/api/users/forgot-password/send-code`,
+          { email: dto.email },
+        ),
+      );
+      return response.data?.data ?? response.data;
+    } catch (error: any) {
+      this.handlePasswordResetProxyError(error);
+    }
+  }
+
+  /**
+   * 使用验证码重置密码 — 代理至 API 服务
+   */
+  async resetPasswordWithCode(dto: { email: string; code: string; newPassword: string }): Promise<{ message: string }> {
+    const servicesConfig = this.configService.getServicesConfig();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${servicesConfig.apiServiceUrl}/api/users/reset-password-with-code`,
+          dto,
+        ),
+      );
+      return response.data?.data ?? response.data;
+    } catch (error: any) {
+      this.handlePasswordResetProxyError(error);
+    }
+  }
+
+  /**
+   * 重置密码 — 代理至 API 服务
+   */
+  async resetPassword(dto: { token: string; password: string }): Promise<{ message: string }> {
+    const servicesConfig = this.configService.getServicesConfig();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${servicesConfig.apiServiceUrl}/api/users/reset-password`,
+          dto,
+        ),
+      );
+      return response.data?.data ?? response.data;
+    } catch (error: any) {
+      this.handlePasswordResetProxyError(error);
+    }
+  }
+
+  private extractDownstreamErrorMessage(error: any, fallback = 'Request failed'): string {
+    const errorData = error?.response?.data;
+    const nested = errorData?.error?.message;
+    if (typeof nested === 'string' && nested.trim()) {
+      return nested.trim();
+    }
+    if (typeof errorData?.message === 'string' && errorData.message.trim()) {
+      return errorData.message.trim();
+    }
+    if (typeof error?.message === 'string' && error.message.trim()) {
+      return error.message.trim();
+    }
+    return fallback;
+  }
+
+  /**
+   * 将下游 API / Axios 错误映射为 Nest 异常，避免把含循环引用的原始 Axios 错误抛到拦截器链。
+   */
+  private throwMappedDownstreamError(error: any, fallback = 'Request failed'): never {
+    const errorResponse = error?.response;
+    const status = errorResponse?.status;
+    const errorData = errorResponse?.data;
+    const message = this.extractDownstreamErrorMessage(error, fallback);
+
+    if (status === 409) {
+      throw new ConflictException({
+        code: ErrorCode.RECORD_ALREADY_EXISTS,
+        message,
+      });
     }
 
+    if (status === 400) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message,
+        ...(errorData?.error?.details ? { details: errorData.error.details } : {}),
+      });
+    }
+
+    if (status === 429) {
+      throw new HttpException(
+        {
+          code: ErrorCode.BAD_REQUEST,
+          message,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (
+      error?.code === 'ECONNREFUSED' ||
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ENOTFOUND' ||
+      error?.code === 'ECONNABORTED'
+    ) {
+      throw new ServiceUnavailableException({
+        code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+        message: 'Service temporarily unavailable',
+      });
+    }
+
+    if (typeof status === 'number' && status >= 500) {
+      throw new ServiceUnavailableException({
+        code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+        message: message || 'Service temporarily unavailable',
+      });
+    }
+
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      throw new BadRequestException({
+        code: ErrorCode.BAD_REQUEST,
+        message,
+      });
+    }
+
+    throw new ServiceUnavailableException({
+      code: ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+      message: message || fallback,
+    });
+  }
+
+  private handlePasswordResetProxyError(error: any): never {
+    this.throwMappedDownstreamError(error, 'Request failed');
+  }
+
+  /**
+   * 验证用户
+   */
+  async validateUser(userId: string, authType?: 'user' | 'admin'): Promise<UserInfo | null> {
+    const cached = await this.authCacheService.getUser(userId);
+    if (cached) {
+      return cached;
+    }
+
+    const userInfo = await this.fetchUserInfoForRefresh(userId, authType);
+    if (!userInfo) {
+      return null;
+    }
+
+    await this.authCacheService.cacheUser(userId, userInfo);
     return userInfo;
   }
 }

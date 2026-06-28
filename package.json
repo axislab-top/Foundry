@@ -5,16 +5,14 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo run build",
-    "preflight:env": "node -e \"const fs=require('fs');if(!fs.existsSync('.env.shared')&&fs.existsSync('env.shared.example')){fs.copyFileSync('env.shared.example','.env.shared');console.log('✅ Created .env.shared from env.shared.example');}\"",
-    "dev": "pnpm preflight:env && turbo run dev --concurrency=24 --continue",
-    "dev:minimal": "pnpm preflight:env && turbo run dev --filter=@service/api --filter=@service/gateway --filter=foundry-client --filter=foundry-admin --continue",
+    "dev": "turbo run dev --concurrency=16",
     "start": "turbo run start",
     "test": "turbo run test",
+    "test:critical-path": "pnpm --filter @service/worker run test:critical-path",
     "test:pact": "pnpm --filter @service/api run test:pact",
     "ci:local": "node scripts/ci-local.mjs",
     "lint": "turbo run lint",
     "infra:start": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml up -d",
-    "infra:start:core": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml up -d --force-recreate postgres redis rabbitmq loki promtail grafana clickhouse",
     "infra:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml down",
     "infra:restart": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml restart",
     "infra:status": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.dev.yml ps",
@@ -25,55 +23,63 @@
     "infra:test:stop": "docker-compose -f deployment/docker/docker-compose.yml -f deployment/docker/docker-compose.test.yml down",
     "start:all": "pnpm infra:start",
     "start:dev": "pnpm infra:start",
-    "setup:dev": "pnpm preflight:env && pnpm install && pnpm build:packages && pnpm infra:start:core && pnpm infra:wait-db && pnpm infra:create-dbs && pnpm migrate:run && pnpm dev:minimal",
-    "infra:create-dbs": "node scripts/create-dbs.js",
-    "infra:wait-db": "node scripts/wait-db.js",
-"build:packages": "turbo run build --continue",
-    "start:dev:local": "pnpm preflight:env && pnpm infra:start && pnpm infra:wait-db && pnpm dev",
+    "start:dev:local": "pnpm infra:start && timeout /t 10 /nobreak >nul && pnpm dev",
     "start:prod": "pnpm infra:prod:start && pnpm build && pnpm start",
     "stop:all": "pnpm infra:stop",
-    "stop:dev:local": "pnpm infra:stop",
+    "stop:dev:local": "taskkill /F /IM node.exe /FI \"WINDOWTITLE eq *turbo*\" 2>nul || exit 0",
     "clean": "turbo run clean",
     "clean:all": "pnpm clean && docker-compose -f deployment/docker/docker-compose.yml down -v",
     "migrate:show": "cd infrastructure/migrations && pnpm run migrate:show",
     "migrate:run": "cd infrastructure/migrations && pnpm run migrate:run",
     "migrate:revert": "cd infrastructure/migrations && pnpm run migrate:revert",
     "migrate:generate": "typeorm migration:generate",
+    "e2e:company-wizard": "node scripts/e2e-company-wizard.mjs",
+    "e2e:main-journey": "node scripts/e2e-main-journey.mjs",
+    "e2e:main-room-chain": "node scripts/e2e-main-room-full-chain-probe.mjs",
+    "e2e:phase3-department-chain": "node scripts/e2e-phase3-department-chain-probe.mjs",
+    "e2e:phase4-output-experience": "node scripts/e2e-phase4-output-experience-probe.mjs",
     "diagnose:user-path": "node scripts/diagnose-foundry-user-path.mjs",
     "benchmark:ceo-llm": "node scripts/benchmark-ceo-breakdown-llm.mjs",
+    "llm:smoke-db": "pnpm --filter @service/api run llm:smoke-db",
     "e2e:collaboration": "node scripts/e2e-collaboration-login-flow.mjs",
     "e2e:collaboration:journey": "node scripts/e2e-collaboration-user-journey.mjs",
+    "docs:collab-llm-io-report": "node scripts/collab-llm-io-jsonl-to-md.mjs",
+    "e2e:acp": "pnpm exec tsx scripts/test-acp-end-to-end.ts",
     "import:agency-agents": "pnpm --filter @service/api run import:agency-agents",
-    "sync:agency-names-zh": "pnpm --filter @service/api run sync:agency-names-zh"
+    "sync:agency-names-zh": "pnpm --filter @service/api run sync:agency-names-zh",
+    "red-team:sandbox": "node scripts/red-team-sandbox-scenarios.mjs",
+    "red-team:sandbox:real": "node scripts/red-team-sandbox-scenarios.mjs --real",
+    "generate:departments": "pnpm exec tsx scripts/generate-departments.ts",
+    "test:phase1-e2e": "pnpm --filter @service/worker exec npx jest -c ../../jest.config.js --testPathPattern=phase1-predictive-graph-autonomous",
+    "test:w9-director-e2e": "pnpm --filter @service/worker exec npx jest -c ../../jest.config.js --testPathPattern=director-autonomous",
+    "test:w10-employee-e2e": "pnpm --filter @service/worker exec npx jest -c ../../jest.config.js --testPathPattern=employee-autonomous",
+    "test:phase2-e2e": "pnpm --filter @service/worker exec npx jest -c ../../jest.config.js --runTestsByPath ../../test/e2e/cross-department.e2e-spec.ts ../../test/e2e/phase2-full-autonomous.e2e-spec.ts",
+    "test:phase3-rollout-e2e": "pnpm --filter @service/worker exec npx jest -c ../../jest.config.js --runTestsByPath ../../test/e2e/phase3-full-rollout.e2e-spec.ts",
+    "test:main-room-staging-walkthrough": "pnpm --filter @service/worker exec npx jest -c ../../jest.config.js --runTestsByPath ../../test/e2e/main-room-staging-walkthrough.e2e-spec.ts ../../test/e2e/main-room-governance-loop.e2e-spec.ts",
+    "checklist:phase3-rollout": "bash scripts/phase3-rollout-checklist.sh"
   },
   "keywords": [
     "nestjs",
     "microservices"
   ],
   "author": "",
-  "license": "GPL-3.0-only",
+  "license": "ISC",
   "packageManager": "pnpm@10.28.0",
+  "pnpm": {
+    "overrides": {
+      "@types/react": "^19.2.2",
+      "@types/react-dom": "^19.2.2"
+    }
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.27",
-    "pg": "^8.11.3",
     "rimraf": "^6.1.2",
+    "tsx": "^4.19.2",
     "turbo": "^2.7.3",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "axios": "^1.13.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@nestjs/core",
-      "@swc/core",
-      "argon2",
-      "bcrypt",
-      "esbuild",
-      "protobufjs",
-      "snappy",
-      "unix-dgram"
-    ]
   }
 }

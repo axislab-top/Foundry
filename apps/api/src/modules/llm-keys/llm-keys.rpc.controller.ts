@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { isAuthorized } from '../../common/authz/authorization.js';
 import { validateRpcDto } from '../../common/rpc/rpc-validation.js';
-import type { LlmKeysAcquireResult, LlmKeyInfo } from './interfaces/llm-key.interface.js';
+import type { LlmKeysAcquireResult, LlmKeyInfo, LlmKeyPoolGroup } from './interfaces/llm-key.interface.js';
 import { LlmKeysService } from './llm-keys.service.js';
 import { AcquireLlmKeyRpcDto } from './dto/acquire-llm-key.dto.js';
 import { AcquireLlmKeyByIdRpcDto } from './dto/acquire-llm-key-by-id.dto.js';
@@ -20,6 +20,7 @@ import { QueryLlmKeysDto } from './dto/query-llm-keys.dto.js';
 import { RotateLlmKeyRpcDto } from './dto/rotate-llm-key.dto.js';
 import { UpdateLlmKeyRpcDto } from './dto/update-llm-key.dto.js';
 import { ImportLlmKeysDataDto } from './dto/import-llm-keys.dto.js';
+import { TestLlmKeyRpcDto } from './dto/test-llm-key.dto.js';
 
 class ActorDto {
   @IsUUID()
@@ -46,6 +47,16 @@ function assertAdmin(actor: ActorDto | undefined): void {
 }
 
 class AdminListKeysRpcDto {
+  @ValidateNested()
+  @Type(() => ActorDto)
+  actor: ActorDto;
+
+  @ValidateNested()
+  @Type(() => QueryLlmKeysDto)
+  query: QueryLlmKeysDto;
+}
+
+class AdminListKeysGroupedRpcDto {
   @ValidateNested()
   @Type(() => ActorDto)
   actor: ActorDto;
@@ -108,6 +119,16 @@ class AdminImportKeysRpcDto {
   data: ImportLlmKeysDataDto;
 }
 
+class AdminTestKeyRpcDto {
+  @ValidateNested()
+  @Type(() => ActorDto)
+  actor: ActorDto;
+
+  @ValidateNested()
+  @Type(() => TestLlmKeyRpcDto)
+  data: TestLlmKeyRpcDto;
+}
+
 @Controller()
 export class LlmKeysRpcController {
   private readonly logger = new Logger(LlmKeysRpcController.name);
@@ -143,12 +164,31 @@ export class LlmKeysRpcController {
     }
   }
 
+  @MessagePattern('llmKeys.admin.listGrouped')
+  async adminListGrouped(payload: unknown): Promise<{ groups: LlmKeyPoolGroup[]; totalKeys: number }> {
+    try {
+      const dto = validateRpcDto(AdminListKeysGroupedRpcDto, payload);
+      assertAdmin(dto.actor);
+      return await this.llmKeys.listKeysGrouped({
+        provider: dto.query.provider,
+        modelName: dto.query.modelName,
+        modelType: dto.query.modelType,
+        isActive: dto.query.isActive,
+        bindableOnly: dto.query.bindableOnly,
+        bindableForAgentId: dto.query.bindableForAgentId,
+      });
+    } catch (e: unknown) {
+      throw this.toRpcError(e);
+    }
+  }
+
   @MessagePattern('llmKeys.admin.create')
   async adminCreate(payload: unknown): Promise<LlmKeyInfo> {
     try {
       const dto = validateRpcDto(AdminCreateKeyRpcDto, payload);
       assertAdmin(dto.actor);
       return await this.llmKeys.createKey({
+        llmModelId: dto.data.llmModelId,
         provider: dto.data.provider,
         modelName: dto.data.modelName,
         keyAlias: dto.data.keyAlias,
@@ -194,6 +234,44 @@ export class LlmKeysRpcController {
     }
   }
 
+  @MessagePattern('llmKeys.admin.test')
+  async adminTest(payload: unknown): Promise<{
+    ok: boolean;
+    provider: string;
+    modelName: string;
+    requestUrl: string;
+    endpoint: string;
+    httpStatus?: number;
+    message: string;
+  }> {
+    try {
+      const dto = validateRpcDto(AdminTestKeyRpcDto, payload);
+      assertAdmin(dto.actor);
+      return await this.llmKeys.testKeyConnection(dto.data);
+    } catch (e: unknown) {
+      throw this.toRpcError(e);
+    }
+  }
+
+  @MessagePattern('llmKeys.admin.testById')
+  async adminTestById(payload: unknown): Promise<{
+    ok: boolean;
+    provider: string;
+    modelName: string;
+    requestUrl: string;
+    endpoint: string;
+    httpStatus?: number;
+    message: string;
+  }> {
+    try {
+      const dto = validateRpcDto(AdminIdRpcDto, payload);
+      assertAdmin(dto.actor);
+      return await this.llmKeys.testKeyConnectionById(dto.data.id);
+    } catch (e: unknown) {
+      throw this.toRpcError(e);
+    }
+  }
+
   @MessagePattern('llmKeys.admin.disable')
   async adminDisable(payload: unknown): Promise<LlmKeyInfo> {
     try {
@@ -217,11 +295,12 @@ export class LlmKeysRpcController {
   }
 
   @MessagePattern('llmKeys.admin.remove')
-  async adminRemove(payload: unknown): Promise<void> {
+  async adminRemove(payload: unknown): Promise<{ ok: true }> {
     try {
       const dto = validateRpcDto(AdminIdRpcDto, payload);
       assertAdmin(dto.actor);
       await this.llmKeys.removeKey(dto.data.id);
+      return { ok: true };
     } catch (e: unknown) {
       throw this.toRpcError(e);
     }

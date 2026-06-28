@@ -87,7 +87,6 @@ services:
       - ELASTICSEARCH_PASSWORD=${KIBANA_ELASTICSEARCH_PASSWORD:-}
       - SERVER_NAME=kibana
       - SERVER_HOST=0.0.0.0
-      - KIBANA_ENCRYPTION_KEY=${KIBANA_ENCRYPTION_KEY:-}
     volumes:
       - kibana-data:/usr/share/kibana/data
       - ./config/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro

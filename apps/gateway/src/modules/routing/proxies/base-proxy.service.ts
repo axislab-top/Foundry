@@ -117,6 +117,7 @@ export class BaseProxyService {
       headers,
       ...bodyPart,
       params: originalRequest?.query,
+      responseType: options.responseType ?? 'json',
     };
 
     this.logger.log('Axios config prepared', {
@@ -241,6 +242,20 @@ export class BaseProxyService {
           || (error?.response && typeof error.response === 'object');
         
         if (isAxiosError) {
+          if (
+            error?.code === 'ECONNREFUSED' ||
+            error?.code === 'ENOTFOUND' ||
+            error?.code === 'ECONNRESET' ||
+            error?.code === 'EHOSTUNREACH' ||
+            error?.code === 'EAI_AGAIN' ||
+            !error?.response
+          ) {
+            throw new GatewayException(
+              ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+              `Service unavailable: ${serviceName} at ${targetUrl}`,
+              503,
+            );
+          }
 
           if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
             throw new GatewayException(
@@ -386,6 +401,21 @@ export class BaseProxyService {
         || (error?.response && typeof error.response === 'object');
       
       if (isAxiosError) {
+        if (
+          error?.code === 'ECONNREFUSED' ||
+          error?.code === 'ENOTFOUND' ||
+          error?.code === 'ECONNRESET' ||
+          error?.code === 'EHOSTUNREACH' ||
+          error?.code === 'EAI_AGAIN' ||
+          !error?.response
+        ) {
+          throw new GatewayException(
+            ErrorCode.ROUTING_SERVICE_UNAVAILABLE,
+            `Service unavailable: ${serviceName} at ${targetUrl}`,
+            503,
+          );
+        }
+
         const statusCode = error.response?.status || 500;
         const errorMessage = error.response?.data?.message || error.message || `Service error: ${statusCode} from ${serviceName} at ${targetUrl}`;
         

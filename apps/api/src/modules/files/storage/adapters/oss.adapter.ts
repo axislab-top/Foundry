@@ -7,6 +7,7 @@ import {
   UploadOptions,
   ListOptions,
 } from '../../interfaces/storage.interface.js';
+import { buildAttachmentContentDisposition } from '../content-disposition.util.js';
 
 /**
  * 阿里云 OSS 存储适配器
@@ -86,12 +87,18 @@ export class OSSStorageAdapter extends BaseStorageAdapter implements IStorageAda
     return result.content as Buffer;
   }
 
-  async getUrl(path: string, expiresIn: number = 3600): Promise<string> {
+  async getUrl(
+    path: string,
+    expiresIn: number = 3600,
+    downloadFileName?: string,
+  ): Promise<string> {
     this.assertTenantObjectKey(path);
     try {
-      // 生成签名 URL
       const url = this.client.signatureUrl(path, {
         expires: expiresIn,
+        ...(downloadFileName
+          ? { response: { 'content-disposition': buildAttachmentContentDisposition(downloadFileName) } }
+          : {}),
       });
       return url;
     } catch (error) {

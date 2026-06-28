@@ -1,26 +1,37 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { COMPANY_INDUSTRY_PRESETS, resolveDefaultDepartmentsZh } from '@contracts/types';
+import { COMPANY_INDUSTRY_PRESETS } from '@contracts/types';
 import { ConfigService } from '../../../common/config/config.service.js';
 import { LlmKeysService } from '../../llm-keys/llm-keys.service.js';
 import { MarketplaceAgent } from '../../templates/entities/marketplace-agent.entity.js';
-import { CompanyMarketplaceAgentKeyAssignment } from '../../templates/entities/company-marketplace-agent-key-assignment.entity.js';
 import { MarketplaceAgentKeyBinding } from '../../templates/entities/marketplace-agent-key-binding.entity.js';
+import { CompanyMarketplaceAgentKeyAssignment } from '../../templates/entities/company-marketplace-agent-key-assignment.entity.js';
 import type { RecommendCompanySetupDto } from '../dto/recommend-company-setup.dto.js';
+import {
+  PlatformDepartmentCatalogService,
+  type PlatformDepartmentWithDirector,
+} from './platform-department-catalog.service.js';
+import {
+  MarketplaceMemberAssignmentService,
+  MEMBERS_PER_DEPT_BY_SCALE,
+} from './marketplace-member-assignment.service.js';
 
 /** 单个部门下的商城 Agent 分配（主管 + 成员，均来自已上架 Agent） */
 export interface RecommendedDepartmentPlacement {
-  /** 部门中文名（与 allowed 列表一致） */
+  /** 部门中文名（与平台部门 display_name 一致） */
   name: string;
   /** 部门主管对应商城 slug；无合适 Agent 时为 null */
-  headAgentSlug: string | null;
+  headAgentSlug?: string | null;
   /** 部门内其他 Agent（不含主管） */
-  memberAgentSlugs: string[];
+  memberAgentSlugs?: string[];
+  /** 平台部门 slug */
+  platformDepartmentSlug?: string;
 }
 
 type LlmRecommendOutput = {
   departmentPlacements?: Array<{
+    platformDepartmentSlug?: string;
     departmentName?: string;
     headAgentSlug?: string | null;
     memberAgentSlugs?: string[];
@@ -29,73 +40,22 @@ type LlmRecommendOutput = {
 };
 
 export interface CompanySetupRecommendationResult {
-  source: 'llm' | 'fallback';
+  source: 'llm' | 'catalog';
   modelName?: string;
-  /** 树形：部门 → 主管 + 成员；兜底时部门仍在，Agent 可为空 */
   departmentPlacements: RecommendedDepartmentPlacement[];
-  /** 兼容旧字段：部门名称列表 */
   departments: string[];
-  /** 兼容旧字段：本次推荐用到的全部商城 slug（去重） */
   marketplaceAgentSlugs: string[];
   agentCountHint: number;
-  confidence: number; // 0-1
+  confidence: number;
   fallbackReason?: string;
 }
 
 const SCALE_AGENT_ESTIMATE: Record<string, number> = { small: 5, medium: 12, large: 25 };
-// Keep slightly below gateway/api 30s timeout to prefer controlled fallback over upstream 408.
 const LLM_RECOMMEND_TIMEOUT_MS = 25_000;
 const RECOMMEND_TOTAL_BUDGET_BUFFER_MS = 2_000;
 const RECOMMEND_PER_ATTEMPT_MIN_MS = 1_500;
 const MAX_ALLOWED_AGENTS_FOR_PROMPT = 80;
-/** Marketplace slug for the company-level CEO agent — never assign as a department head/member */
 const RESERVED_DEPARTMENT_SLUGS = new Set(['ceo']);
-const DEFAULT_DEPARTMENT_ZH_MAP: Record<string, string> = {
-  engineering: '工程部',
-  product: '产品部',
-  marketing: '市场部',
-  sales: '销售部',
-  finance: '财务部',
-  operations: '运营部',
-  operation: '运营部',
-  support: '支持部',
-  customer_success: '客户成功部',
-  customer: '客户服务部',
-  hr: '人力资源部',
-  people: '人力资源部',
-  legal: '法务部',
-  compliance: '合规部',
-  data: '数据部',
-  analytics: '数据分析部',
-  research: '研究部',
-  rd: '研发部',
-  'r&d': '研发部',
-  growth: '增长部',
-  content: '内容部',
-  design: '设计部',
-  qa: '质量保障部',
-  devops: '平台运维部',
-  editorial: '编辑部',
-  video: '视频部',
-  distribution: '发行部',
-  merchandising: '商品部',
-  supply_chain: '供应链部',
-  customer_service: '客服部',
-  client_services: '客户部',
-  delivery: '交付部',
-  business_development: '商务拓展部',
-  curriculum: '教研部',
-  instruction: '教学部',
-  student_success: '学员成功部',
-  clinical: '临床部',
-  patient_services: '患者服务部',
-  advisory: '顾问部',
-  risk: '风控部',
-  strategy: '策略部',
-  creative: '创意部',
-  performance: '效果部',
-  brand: '品牌部',
-};
 
 @Injectable()
 export class CompanySetupRecommendationService {
@@ -104,12 +64,14 @@ export class CompanySetupRecommendationService {
   constructor(
     private readonly llmKeys: LlmKeysService,
     private readonly config: ConfigService,
+    private readonly catalog: PlatformDepartmentCatalogService,
+    private readonly memberAssignment: MarketplaceMemberAssignmentService,
     @InjectRepository(MarketplaceAgent)
     private readonly marketplaceRepo: Repository<MarketplaceAgent>,
-    @InjectRepository(CompanyMarketplaceAgentKeyAssignment)
-    private readonly keyAssignmentsRepo: Repository<CompanyMarketplaceAgentKeyAssignment>,
     @InjectRepository(MarketplaceAgentKeyBinding)
     private readonly keyBindingsRepo: Repository<MarketplaceAgentKeyBinding>,
+    @InjectRepository(CompanyMarketplaceAgentKeyAssignment)
+    private readonly keyAssignmentsRepo: Repository<CompanyMarketplaceAgentKeyAssignment>,
   ) {}
 
   async recommend(dto: RecommendCompanySetupDto, companyId?: string): Promise<CompanySetupRecommendationResult> {
@@ -120,80 +82,63 @@ export class CompanySetupRecommendationService {
     const industryLabel = preset?.labelZh ?? '通用';
     const agentCountHint = SCALE_AGENT_ESTIMATE[dto.scale] ?? 12;
 
-    // Pull marketplace agents from DB; these are the only allowed agents to recommend.
+    const catalog = await this.catalog.loadDepartmentsWithDirectors();
+    if (!catalog.length) {
+      return {
+        source: 'catalog',
+        departmentPlacements: [],
+        departments: [],
+        marketplaceAgentSlugs: [],
+        agentCountHint,
+        confidence: 0,
+        fallbackReason: 'no_platform_departments_with_director',
+      };
+    }
+
+    const catalogSubset = this.catalog.selectForScale(catalog, dto.scale);
+    const baselinePlacements = this.catalog.toPlacements(catalogSubset);
+    const employees = await this.memberAssignment.loadPublishedEmployees();
+    const employeePool = this.memberAssignment.buildEmployeePoolByDepartment(employees, catalogSubset);
+    const employeesForPrompt = this.buildEmployeesForPrompt(catalogSubset, employeePool, employees);
+
     const marketplaceAgents = await this.marketplaceRepo.find({
       where: { isPublished: true },
       order: { usageCount: 'DESC', name: 'ASC' } as any,
       take: 200,
     });
-    const allowed = marketplaceAgents.slice(0, MAX_ALLOWED_AGENTS_FOR_PROMPT).map((a) => ({
-      slug: a.slug,
-      name: a.name,
-    }));
+    const allowed = employees
+      .slice(0, MAX_ALLOWED_AGENTS_FOR_PROMPT)
+      .map((a) => ({
+        slug: a.slug,
+        name: a.name,
+      }));
 
-    // Derive allowed departments from marketplace agent metadata.
-    // Convention:
-    // - metadata.department: string
-    // - metadata.departments: string[]
-    const deptZhMap = await this.getDeptZhMap();
-    const fromMetadata = this.extractAllowedDepartments(marketplaceAgents, deptZhMap);
-    const industryZh = resolveDefaultDepartmentsZh(dto.industryCode, industryLabel).slice(0, 12);
-    // 有商城元数据时以元数据为准；否则用行业默认全中文部门列表
-    const effectiveAllowedDepartments = fromMetadata.length
-      ? [...new Set(fromMetadata)].slice(0, 12)
-      : industryZh;
-
-    const ceoMarketplace = await this.marketplaceRepo.findOne({ where: { slug: 'ceo', isPublished: true } });
-    if (!ceoMarketplace) {
-      const empty = this.emptyPlacements(effectiveAllowedDepartments.slice(0, 8));
-      return {
-        source: 'fallback',
-        departmentPlacements: empty,
-        departments: empty.map((p) => p.name),
-        marketplaceAgentSlugs: [],
-        agentCountHint,
-        confidence: 0.45,
-        fallbackReason: 'missing_ceo_marketplace_agent',
-      };
-    }
-
-    // Key selection:
-    // - 已存在公司：优先使用该公司对 CEO marketplace agent 的 key assignment。
-    // - 向导草稿阶段：公司还没建立 key assignment 时，自动退回使用 CEO marketplace 的默认 key binding，
-    //   避免直接进入规则兜底。
     let keyIdToUse: string | undefined;
-    if (companyId) {
+    const ceoTemplate = marketplaceAgents.find((a) => a.slug === 'ceo');
+    if (ceoTemplate && companyId) {
       const assigned = await this.keyAssignmentsRepo.findOne({
-        where: { companyId, marketplaceAgentId: ceoMarketplace.id },
+        where: { companyId, marketplaceAgentId: ceoTemplate.id },
       });
-      keyIdToUse = assigned?.assignedLlmKeyId;
-
-      if (!keyIdToUse) {
-        const bindings = await this.keyBindingsRepo.find({
-          where: { marketplaceAgentId: ceoMarketplace.id },
-          order: { sortOrder: 'ASC' },
-        });
-        keyIdToUse = bindings[0]?.llmKeyId;
-      }
-    } else {
-      // Pre-create wizard preview: use CEO marketplace default key (first binding).
-      const bindings = await this.keyBindingsRepo.find({
-        where: { marketplaceAgentId: ceoMarketplace.id },
+      keyIdToUse = assigned?.preferredLlmKeyId ?? assigned?.assignedLlmKeyId ?? undefined;
+    }
+    if (ceoTemplate && !keyIdToUse) {
+      const firstBinding = await this.keyBindingsRepo.findOne({
+        where: { marketplaceAgentId: ceoTemplate.id },
         order: { sortOrder: 'ASC' },
       });
-      keyIdToUse = bindings[0]?.llmKeyId;
+      keyIdToUse = firstBinding?.llmKeyId ?? undefined;
     }
 
     if (!keyIdToUse) {
-      const empty = this.emptyPlacements(effectiveAllowedDepartments.slice(0, 8));
+      const finalized = await this.finalizePlacements(baselinePlacements, [], catalog, dto.scale);
       return {
-        source: 'fallback',
-        departmentPlacements: empty,
-        departments: empty.map((p) => p.name),
-        marketplaceAgentSlugs: [],
+        source: 'catalog',
+        departmentPlacements: finalized,
+        departments: finalized.map((p) => p.name),
+        marketplaceAgentSlugs: this.collectSlugs(finalized),
         agentCountHint,
-        confidence: 0.45,
-        fallbackReason: companyId ? 'missing_ceo_key_assignment_and_default_binding' : 'missing_ceo_default_key_binding',
+        confidence: 0.5,
+        fallbackReason: 'missing_marketplace_ceo_key_binding',
       };
     }
 
@@ -206,14 +151,26 @@ export class CompanySetupRecommendationService {
         this.recommendWithProvider(
           acquiredKey,
           {
+            companyName: dto.companyName ?? '',
             industryLabel,
             industryCode: dto.industryCode,
             scale: dto.scale,
             goal: dto.goal ?? '',
             description: dto.description ?? '',
+            initialBudget: dto.initialBudget ?? null,
             agentCountHint,
+            membersPerDepartment: MEMBERS_PER_DEPT_BY_SCALE[dto.scale],
             allowedAgents: allowed,
-            allowedDepartments: effectiveAllowedDepartments,
+            employeesByDepartment: employeesForPrompt,
+            platformDepartments: catalogSubset.map((d) => ({
+              platformDepartmentSlug: d.slug,
+              displayName: d.displayName,
+              headAgentSlug: d.headAgentSlug,
+              headAgentName: d.headAgentName,
+              isDefaultForNewCompany: d.isDefaultForNewCompany,
+              responsibilitySummary: d.responsibilitySummary,
+              taskTypeTags: d.taskTypeTags,
+            })),
           },
           attemptTimeoutMs,
         ),
@@ -221,20 +178,21 @@ export class CompanySetupRecommendationService {
         'llm_recommend_timeout',
       );
 
-      const placements = this.normalizePlacementsFromLlm(out, effectiveAllowedDepartments, allowedSet, deptZhMap);
-      const safePlacements =
-        placements.length > 0 ? placements : this.emptyPlacements(effectiveAllowedDepartments.slice(0, 8));
-      const flatSlugs = this.collectSlugs(safePlacements);
+      const llmOverlay = this.normalizePlacementsFromLlm(out, catalogSubset, allowedSet);
+      const finalized = await this.finalizePlacements(baselinePlacements, llmOverlay, catalog, dto.scale);
+      const usedLlm = llmOverlay.some((p) => (p.memberAgentSlugs?.length ?? 0) > 0);
 
       return {
-        source: 'llm',
+        source: usedLlm ? 'llm' : 'catalog',
         modelName: acquiredKey.modelName,
-        departmentPlacements: safePlacements,
-        departments: safePlacements.map((p) => p.name),
-        marketplaceAgentSlugs: flatSlugs,
+        departmentPlacements: finalized,
+        departments: finalized.map((p) => p.name),
+        marketplaceAgentSlugs: this.collectSlugs(finalized),
         agentCountHint,
-        confidence: Math.max(0.6, Math.min(0.95, Number(out.confidence ?? 0.75))),
-        fallbackReason: placements.length ? undefined : 'llm_empty_placements',
+        confidence: usedLlm
+          ? Math.max(0.55, Math.min(0.95, Number(out.confidence ?? 0.75)))
+          : 0.5,
+        fallbackReason: usedLlm ? undefined : 'llm_empty_member_assignments',
       };
     } catch (e: any) {
       this.logger.warn('LLM recommend failed', {
@@ -243,13 +201,13 @@ export class CompanySetupRecommendationService {
         keyIdToUse,
         totalDurationMs: Date.now() - startedAt,
       });
-      const empty = this.emptyPlacements(effectiveAllowedDepartments.slice(0, 8));
+      const finalized = await this.finalizePlacements(baselinePlacements, [], catalog, dto.scale);
       return {
-        source: 'fallback',
+        source: 'catalog',
         modelName: undefined,
-        departmentPlacements: empty,
-        departments: empty.map((p) => p.name),
-        marketplaceAgentSlugs: [],
+        departmentPlacements: finalized,
+        departments: finalized.map((p) => p.name),
+        marketplaceAgentSlugs: this.collectSlugs(finalized),
         agentCountHint,
         confidence: 0.5,
         fallbackReason: `llm_error:${String(e?.message ?? 'unknown')}`,
@@ -257,11 +215,49 @@ export class CompanySetupRecommendationService {
     }
   }
 
-  private emptyPlacements(departmentNames: string[]): RecommendedDepartmentPlacement[] {
-    return departmentNames.map((name) => ({
-      name,
-      headAgentSlug: null,
-      memberAgentSlugs: [],
+  private async finalizePlacements(
+    baseline: RecommendedDepartmentPlacement[],
+    overlay: RecommendedDepartmentPlacement[],
+    catalog: PlatformDepartmentWithDirector[],
+    scale: 'small' | 'medium' | 'large',
+  ): Promise<RecommendedDepartmentPlacement[]> {
+    const employees = await this.memberAssignment.loadPublishedEmployees();
+    const pool = this.memberAssignment.buildEmployeePoolByDepartment(employees, catalog);
+    const merged = this.memberAssignment.mergeOntoBaseline(
+      baseline.map((p) => ({
+        name: p.name,
+        headAgentSlug: p.headAgentSlug,
+        memberAgentSlugs: p.memberAgentSlugs ?? [],
+        platformDepartmentSlug: p.platformDepartmentSlug,
+      })),
+      overlay.map((p) => ({
+        name: p.name,
+        headAgentSlug: p.headAgentSlug,
+        memberAgentSlugs: p.memberAgentSlugs ?? [],
+        platformDepartmentSlug: p.platformDepartmentSlug,
+      })),
+    );
+    const filled = this.memberAssignment.fillMissingMembers(merged, pool, scale);
+    return filled.map((p) => ({
+      name: p.name,
+      headAgentSlug: p.headAgentSlug ?? null,
+      memberAgentSlugs: p.memberAgentSlugs ?? [],
+      platformDepartmentSlug: p.platformDepartmentSlug,
+    }));
+  }
+
+  private buildEmployeesForPrompt(
+    catalogSubset: PlatformDepartmentWithDirector[],
+    pool: Map<string, string[]>,
+    employees: MarketplaceAgent[],
+  ): Array<{ platformDepartmentSlug: string; candidates: Array<{ slug: string; name: string }> }> {
+    const bySlug = new Map(employees.map((e) => [e.slug, e]));
+    return catalogSubset.map((dept) => ({
+      platformDepartmentSlug: dept.slug,
+      candidates: (pool.get(dept.slug) ?? []).slice(0, 12).map((slug) => ({
+        slug,
+        name: bySlug.get(slug)?.name ?? slug,
+      })),
     }));
   }
 
@@ -285,37 +281,39 @@ export class CompanySetupRecommendationService {
 
   private normalizePlacementsFromLlm(
     out: LlmRecommendOutput,
-    allowedDepartments: string[],
-    allowedSet: Set<string>,
-    deptZhMap: Record<string, string>,
+    catalogSubset: PlatformDepartmentWithDirector[],
+    allowedMemberSet: Set<string>,
   ): RecommendedDepartmentPlacement[] {
     const rows = Array.isArray(out.departmentPlacements) ? out.departmentPlacements : [];
-    const seenDept = new Set<string>();
     const raw: RecommendedDepartmentPlacement[] = [];
+
     for (const row of rows) {
-      const matched = this.matchAllowedDepartment(String(row.departmentName ?? ''), allowedDepartments, deptZhMap);
-      if (!matched || seenDept.has(matched)) continue;
-      seenDept.add(matched);
-      const headRaw = row.headAgentSlug;
-      const headCandidate = headRaw != null ? String(headRaw) : null;
-      const head =
-        headCandidate != null &&
-        allowedSet.has(headCandidate) &&
-        !RESERVED_DEPARTMENT_SLUGS.has(headCandidate)
-          ? headCandidate
-          : null;
+      const matched = this.catalog.findBySlugOrName(catalogSubset, {
+        slug: row.platformDepartmentSlug,
+        name: row.departmentName,
+      });
+      if (!matched) continue;
+
+      const head = matched.headAgentSlug;
       const members = Array.isArray(row.memberAgentSlugs)
         ? row.memberAgentSlugs
-            .map((s) => String(s))
+            .map((s) => String(s).trim())
             .filter(
               (s) =>
-                allowedSet.has(s) &&
+                allowedMemberSet.has(s) &&
                 !RESERVED_DEPARTMENT_SLUGS.has(s) &&
-                (!head || s !== head),
+                s !== head,
             )
         : [];
-      raw.push({ name: matched, headAgentSlug: head, memberAgentSlugs: members });
+
+      raw.push({
+        name: matched.displayName,
+        headAgentSlug: head,
+        memberAgentSlugs: members,
+        platformDepartmentSlug: matched.slug,
+      });
     }
+
     return this.dedupeAgentSlugsAcrossDepartments(raw);
   }
 
@@ -331,95 +329,83 @@ export class CompanySetupRecommendationService {
         used.add(s);
         members.push(s);
       }
-      return { name: p.name, headAgentSlug: head, memberAgentSlugs: members };
+      return {
+        name: p.name,
+        headAgentSlug: head,
+        memberAgentSlugs: members,
+        platformDepartmentSlug: p.platformDepartmentSlug,
+      };
     });
   }
 
-  private matchAllowedDepartment(
-    raw: string,
-    allowedDepartments: string[],
-    deptZhMap: Record<string, string>,
-  ): string | null {
-    const s = this.toChineseDepartment(String(raw || '').trim(), deptZhMap);
-    if (!s) return null;
-    if (allowedDepartments.includes(s)) return s;
-    const lower = s.toLowerCase();
-    const hit = allowedDepartments.find((a) => a.toLowerCase() === lower);
-    return hit ?? null;
-  }
-
-  private extractAllowedDepartments(agents: MarketplaceAgent[], deptZhMap: Record<string, string>): string[] {
-    const out = new Set<string>();
-    for (const a of agents) {
-      const md = a.metadata;
-      if (!md || typeof md !== 'object') continue;
-      const rec = md as Record<string, unknown>;
-      const dep = rec.department;
-      if (typeof dep === 'string' && dep.trim()) out.add(this.toChineseDepartment(dep.trim(), deptZhMap));
-      const deps = rec.departments;
-      if (Array.isArray(deps)) {
-        for (const d of deps) {
-          if (typeof d === 'string' && d.trim()) out.add(this.toChineseDepartment(d.trim(), deptZhMap));
-        }
-      }
-    }
-    return [...out];
-  }
-
-  private async getDeptZhMap(): Promise<Record<string, string>> {
-    try {
-      const cfg = await this.config.getDepartmentZhMap();
-      return { ...DEFAULT_DEPARTMENT_ZH_MAP, ...(cfg ?? {}) };
-    } catch {
-      return DEFAULT_DEPARTMENT_ZH_MAP;
-    }
-  }
-
-  private toChineseDepartment(input: string, zhMap: Record<string, string>): string {
-    const s = input.trim();
-    if (!s) return s;
-    const key = s.toLowerCase().replace(/\s+/g, '_');
-    return zhMap[key] ?? s;
-  }
-
   private async recommendWithProvider(
-    acquired: { apiKey: string; requestUrl: string; providerKind: string; modelName: string },
+    acquired: {
+      apiKey: string;
+      requestUrl: string;
+      requestPathSuffix?: string | null;
+      providerKind: string;
+      modelName: string;
+    },
     input: {
+      companyName: string;
       industryLabel: string;
       industryCode: string;
       scale: string;
       goal: string;
       description: string;
+      initialBudget: number | null;
       agentCountHint: number;
+      membersPerDepartment: number;
       allowedAgents: Array<{ slug: string; name: string }>;
-      allowedDepartments: string[];
+      employeesByDepartment: Array<{
+        platformDepartmentSlug: string;
+        candidates: Array<{ slug: string; name: string }>;
+      }>;
+      platformDepartments: Array<{
+        platformDepartmentSlug: string;
+        displayName: string;
+        headAgentSlug: string;
+        headAgentName: string;
+        isDefaultForNewCompany: boolean;
+        responsibilitySummary: string | null;
+        taskTypeTags: string[];
+      }>;
     },
     timeoutMs: number,
   ): Promise<LlmRecommendOutput> {
-    const system = `You are the company CEO agent planning initial org structure from the marketplace catalog.
+    const system = `You assign execution employees to a FIXED platform org chart. Departments are already decided.
 Return ONLY one minified JSON object and nothing else.
 Do NOT output markdown fences.
 Do NOT output explanation, analysis, or reasoning.
-departmentName MUST be EXACTLY one string from allowedDepartments (Chinese names; copy verbatim).
-headAgentSlug and memberAgentSlugs MUST use only slug values from allowedMarketplaceAgents.
-Never put slug "ceo" in headAgentSlug or memberAgentSlugs — that agent is company-level only, not a department role.
-Use null for headAgentSlug when no suitable agent; memberAgentSlugs may be [].
-Each slug appears at most once across all departments (prefer assigning head first).
+You MUST return one entry in departmentPlacements for EVERY item in platformDepartments (same platformDepartmentSlug).
+headAgentSlug MUST be copied exactly from platformDepartments; do not change heads.
+memberAgentSlugs MUST use only slugs listed under employeesByDepartment for that department (or allowedMarketplaceAgents).
+Assign about membersPerDepartment execution employees per department when candidates exist.
+Never put slug "ceo" in memberAgentSlugs.
+Each employee slug appears at most once across all departments.
 JSON schema:
-{"departmentPlacements":[{"departmentName":string,"headAgentSlug":string|null,"memberAgentSlugs":string[]}],"confidence":number}`;
+{"departmentPlacements":[{"platformDepartmentSlug":string,"departmentName":string,"headAgentSlug":string,"memberAgentSlugs":string[]}],"confidence":number}`;
 
     const user = {
+      companyName: input.companyName,
       industryLabel: input.industryLabel,
       industryCode: input.industryCode,
       scale: input.scale,
       goal: input.goal,
       description: input.description,
+      initialBudgetUsd: input.initialBudget,
       agentCountHint: input.agentCountHint,
+      membersPerDepartment: input.membersPerDepartment,
       allowedMarketplaceAgents: input.allowedAgents,
-      allowedDepartments: input.allowedDepartments,
+      employeesByDepartment: input.employeesByDepartment,
+      platformDepartments: input.platformDepartments,
     };
 
-    const urlCandidates = this.resolveProviderRequestUrlCandidates(acquired.requestUrl, acquired.providerKind);
+    const urlCandidates = this.resolveProviderRequestUrlCandidates(
+      acquired.requestUrl,
+      acquired.providerKind,
+      acquired.requestPathSuffix ?? null,
+    );
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
     const perUrlTimeoutMs = Math.max(4_000, Math.floor(timeoutMs / Math.max(1, urlCandidates.length)));
@@ -451,7 +437,6 @@ JSON schema:
           }
           const body = await this.readResponseBody(res);
           lastErr = `anthropic non-OK ${res.status} url=${url}${body ? `: ${body}` : ''}`;
-          // 4xx generally means request mismatch; try next URL candidate once.
         }
         throw new Error(lastErr || 'anthropic non-OK unknown');
       }
@@ -473,7 +458,6 @@ JSON schema:
           return this.parseLooseJsonObject(firstAttempt.content);
         }
         const firstFail = firstAttempt as { ok: false; status: number; errorBody: string };
-        // Some openai-compatible providers may reject response_format and/or thinking config.
         if (firstFail.status === 400) {
           const secondAttempt = await this.callOpenAiCompatible({
             url,
@@ -489,47 +473,6 @@ JSON schema:
           if (secondAttempt.ok) {
             return this.parseLooseJsonObject(secondAttempt.content);
           }
-          const secondFail = secondAttempt as { ok: false; status: number; errorBody: string };
-          if (secondFail.status === 400) {
-            const thirdAttempt = await this.callOpenAiCompatible({
-              url,
-              apiKey: acquired.apiKey,
-              modelName: acquired.modelName,
-              system,
-              user,
-              signal: AbortSignal.any([controller.signal, AbortSignal.timeout(perUrlTimeoutMs)]),
-              includeResponseFormat: true,
-              includeThinkingDisabled: false,
-              maxTokens: 1200,
-            });
-            if (thirdAttempt.ok) {
-              return this.parseLooseJsonObject(thirdAttempt.content);
-            }
-            const thirdFail = thirdAttempt as { ok: false; status: number; errorBody: string };
-            if (thirdFail.status === 400) {
-              const fourthAttempt = await this.callOpenAiCompatible({
-                url,
-                apiKey: acquired.apiKey,
-                modelName: acquired.modelName,
-                system,
-                user,
-                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(perUrlTimeoutMs)]),
-                includeResponseFormat: false,
-                includeThinkingDisabled: false,
-                maxTokens: 1200,
-              });
-              if (fourthAttempt.ok) {
-                return this.parseLooseJsonObject(fourthAttempt.content);
-              }
-              const fourthFail = fourthAttempt as { ok: false; status: number; errorBody: string };
-              lastErr = `openai-compatible non-OK ${fourthFail.status} url=${url}${fourthFail.errorBody ? `: ${fourthFail.errorBody}` : ''}`;
-              continue;
-            }
-            lastErr = `openai-compatible non-OK ${thirdFail.status} url=${url}${thirdFail.errorBody ? `: ${thirdFail.errorBody}` : ''}`;
-            continue;
-          }
-          lastErr = `openai-compatible non-OK ${secondFail.status} url=${url}${secondFail.errorBody ? `: ${secondFail.errorBody}` : ''}`;
-          continue;
         }
         lastErr = `openai-compatible non-OK ${firstFail.status} url=${url}${firstFail.errorBody ? `: ${firstFail.errorBody}` : ''}`;
       }
@@ -553,13 +496,12 @@ JSON schema:
     const payload: Record<string, unknown> = {
       model: params.modelName,
       temperature: 0.2,
-      max_tokens: params.maxTokens ?? 180,
+      max_tokens: params.maxTokens ?? 1200,
       messages: [
         { role: 'system', content: params.system },
         { role: 'user', content: JSON.stringify(params.user) },
       ],
     };
-    // Fast-path for all compatible models: request non-thinking mode.
     if (params.includeThinkingDisabled) {
       payload.thinking = { type: 'disabled' };
     }
@@ -591,8 +533,13 @@ JSON schema:
     }
   }
 
-  private resolveProviderRequestUrlCandidates(requestUrl: string, providerKind: string): string[] {
+  private resolveProviderRequestUrlCandidates(
+    requestUrl: string,
+    providerKind: string,
+    requestPathSuffix?: string | null,
+  ): string[] {
     const raw = String(requestUrl || '').trim();
+    const suffix = String(requestPathSuffix || '').trim();
     if (!raw) {
       return providerKind === 'anthropic'
         ? ['https://api.anthropic.com/v1/messages']
@@ -603,7 +550,10 @@ JSON schema:
     if (/\/(chat\/completions|v1\/messages|responses)(\?|$)/i.test(normalized)) {
       return [normalized];
     }
-    // For base URLs, call only the canonical endpoint for the provider.
+    if (suffix) {
+      const normalizedSuffix = suffix.startsWith('/') ? suffix : `/${suffix}`;
+      return [`${normalized}${normalizedSuffix}`];
+    }
     return [providerKind === 'anthropic' ? `${normalized}/v1/messages` : `${normalized}/chat/completions`];
   }
 
@@ -611,19 +561,18 @@ JSON schema:
     const text = raw.trim();
     if (!text) throw new Error('empty_llm_response');
 
-    // Some models wrap JSON with markdown fences or prepend explanation text.
     const withoutFence = text
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
 
     try {
-      return JSON.parse(withoutFence) as any;
+      return JSON.parse(withoutFence) as LlmRecommendOutput;
     } catch {
       const firstBrace = withoutFence.indexOf('{');
       const lastBrace = withoutFence.lastIndexOf('}');
       if (firstBrace >= 0 && lastBrace > firstBrace) {
-        return JSON.parse(withoutFence.slice(firstBrace, lastBrace + 1)) as any;
+        return JSON.parse(withoutFence.slice(firstBrace, lastBrace + 1)) as LlmRecommendOutput;
       }
       throw new Error('invalid_llm_json');
     }
@@ -643,4 +592,3 @@ JSON schema:
     }
   }
 }
-

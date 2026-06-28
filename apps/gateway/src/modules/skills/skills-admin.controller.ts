@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { firstValueFrom, timeout } from 'rxjs';
 import type { ClientProxy } from '@nestjs/microservices';
 import { API_RPC_CLIENT } from '../../common/rpc/rpc.constants.js';
+import { throwGatewayFromApiRpcError } from '../../common/rpc/handle-api-rpc-error.js';
 import { ErrorCode } from '../../common/exceptions/error-codes.js';
 import { GatewayException } from '../../common/exceptions/filters/gateway-exception.filter.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -26,7 +27,11 @@ export class SkillsAdminController {
   constructor(@Inject(API_RPC_CLIENT) private readonly api: ClientProxy) {}
 
   private async rpc<T>(pattern: string, payload: Record<string, unknown>): Promise<T> {
-    return await firstValueFrom(this.api.send<T>(pattern, payload).pipe(timeout(RPC_TIMEOUT_MS)));
+    try {
+      return await firstValueFrom(this.api.send<T>(pattern, payload).pipe(timeout(RPC_TIMEOUT_MS)));
+    } catch (error: unknown) {
+      throwGatewayFromApiRpcError(error, pattern);
+    }
   }
 
   @Get()
@@ -35,119 +40,70 @@ export class SkillsAdminController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('search') search?: string,
-    @Query('category') category?: string,
+    @Query('companyScope') companyScope?: string,
+    @Query('isEnabled') isEnabled?: string,
+    @Query('approvalStatus') approvalStatus?: string,
   ) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.findAll', {
+    const parsedIsEnabled =
+      isEnabled === 'true' ? true : isEnabled === 'false' ? false : undefined;
+    return await this.rpc('admin.skills.list', {
       actor,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
       search,
-      category,
+      companyScope,
+      isEnabled: parsedIsEnabled,
+      approvalStatus: approvalStatus || undefined,
     });
   }
 
   @Get(':id')
   async findOne(@Req() req: Request, @Param('id') id: string) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.findOne', { actor, id });
+    return await this.rpc('admin.skills.findOne', { actor, id });
+  }
+
+  @Post('parse-md')
+  async parseMd(@Req() req: Request, @Body() body: { skillMd: string }) {
+    const actor = actorFromRequest(req);
+    return await this.rpc('admin.skills.parseMd', { actor, skillMd: body.skillMd });
   }
 
   @Post()
   async create(@Req() req: Request, @Body() body: any) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.create', { actor, data: body });
+    return await this.rpc('admin.skills.create', { actor, ...body });
   }
 
   @Patch(':id')
   async update(@Req() req: Request, @Param('id') id: string, @Body() body: any) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.update', { actor, id, data: body });
+    return await this.rpc('admin.skills.update', { actor, id, ...body });
   }
 
   @Delete(':id')
   async remove(@Req() req: Request, @Param('id') id: string) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.remove', { actor, id });
+    return await this.rpc('admin.skills.remove', { actor, id });
   }
 
-  @Get('usage')
-  async usage(
-    @Req() req: Request,
-    @Query('skillId') skillId?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
-  ) {
+  @Get(':id/versions')
+  async versions(@Req() req: Request, @Param('id') id: string) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.usageStats', {
-      actor,
-      skillId,
-      startDate,
-      endDate,
-      page: page ? Number(page) : undefined,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-    });
+    return await this.rpc('admin.skills.versions', { actor, id });
   }
 
-  @Get('audit-logs')
-  async auditLogs(
-    @Req() req: Request,
-    @Query('skillId') skillId?: string,
-    @Query('actionType') actionType?: string,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
-  ) {
+  @Put(':id/tool-bindings')
+  async replaceToolBindings(@Req() req: Request, @Param('id') id: string, @Body() body: { bindings: any[]; changeReason: string }) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.auditLogs', {
-      actor,
-      skillId,
-      actionType,
-      page: page ? Number(page) : undefined,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-    });
+    return await this.rpc('admin.skills.replaceToolBindings', { actor, id, ...body });
   }
 
-  @Get(':id/revisions')
-  async revisions(@Req() req: Request, @Param('id') id: string) {
+  @Put(':id/mcp-tool-bindings')
+  async replaceMcpToolBindings(@Req() req: Request, @Param('id') id: string, @Body() body: { bindings: any[]; changeReason: string }) {
     const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.revisions.list', { actor, id });
-  }
-
-  @Post(':id/revisions/import-from-artifact')
-  async importFromArtifact(@Req() req: Request, @Param('id') id: string) {
-    const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.revisions.importFromArtifact', { actor, id });
-  }
-
-  @Post(':id/revisions/:revisionId/publish')
-  async publishRevision(@Req() req: Request, @Param('id') id: string, @Param('revisionId') revisionId: string) {
-    const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.revisions.publish', { actor, id, revisionId });
-  }
-
-  @Post(':id/revisions/:revisionId/review')
-  async reviewRevision(
-    @Req() req: Request,
-    @Param('id') id: string,
-    @Param('revisionId') revisionId: string,
-    @Body() body: { action: 'approve' | 'reject'; comment?: string },
-  ) {
-    const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.revisions.review', { actor, id, revisionId, ...body });
-  }
-
-  @Post(':id/revisions/:revisionId/revoke')
-  async revokeRevision(@Req() req: Request, @Param('id') id: string, @Param('revisionId') revisionId: string) {
-    const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.revisions.revoke', { actor, id, revisionId });
-  }
-
-  @Post(':id/revisions/:revisionId/rollback')
-  async rollbackRevision(@Req() req: Request, @Param('id') id: string, @Param('revisionId') revisionId: string) {
-    const actor = actorFromRequest(req);
-    return await this.rpc('skills.admin.global.revisions.rollback', { actor, id, revisionId });
+    return await this.rpc('admin.skills.replaceMcpToolBindings', { actor, id, ...body });
   }
 }
 

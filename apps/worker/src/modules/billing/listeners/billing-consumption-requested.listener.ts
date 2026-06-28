@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
+import { formatUnknownError, stackFromUnknown } from '@service/logging';
 import { MessagingService } from '@service/messaging';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
 import type { BillingConsumptionRequestedEvent } from '@contracts/events';
@@ -28,6 +29,13 @@ export class BillingConsumptionRequestedListener implements OnModuleInit {
         queue: 'worker-billing-consumption',
         durable: true,
         prefetchCount: 20,
+        retry: {
+          enabled: true,
+          maxAttempts: 5,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 60_000,
+        },
       },
     );
   }
@@ -56,6 +64,7 @@ export class BillingConsumptionRequestedListener implements OnModuleInit {
                 taskId: d.taskId,
                 skillId: d.skillId,
                 modelName: d.modelName,
+                llmModelId: d.llmModelId,
                 llmKeyId: d.llmKeyId,
                 inputTokens: d.inputTokens,
                 outputTokens: d.outputTokens,
@@ -63,16 +72,18 @@ export class BillingConsumptionRequestedListener implements OnModuleInit {
                 idempotencyKey: d.idempotencyKey,
                 metadata: d.metadata,
                 occurredAt: d.occurredAt ? new Date(d.occurredAt) : undefined,
+                pricingSnapshotJson: d.pricingSnapshotJson,
+                pricingSource: d.pricingSource,
+                isNominal: d.isNominal,
               },
             })
-            .pipe(timeout(this.config.getApiRpcTimeoutMs())),
+            .pipe(timeout(this.config.getBillingAppendTimeoutMs())),
         );
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        this.logger.error('billing.record.append RPC failed', {
-          companyId,
-          message,
-        });
+        this.logger.error(
+          `billing.record.append RPC failed companyId=${companyId}: ${formatUnknownError(e)}`,
+          stackFromUnknown(e),
+        );
         throw e;
       }
     });

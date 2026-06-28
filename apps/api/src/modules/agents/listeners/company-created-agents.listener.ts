@@ -37,6 +37,7 @@ export class CompanyCreatedAgentsListener implements OnModuleInit {
     await this.tenantContext.runWithCompanyId(companyId, async () => {
       try {
         await this.agentsBootstrap.ensureDefaultAgentsForCompany(companyId);
+        await this.agentsBootstrap.atomicInitializeCeoLayers(companyId, 'bestEffort');
         this.logger.log('Agents bootstrap after company.created', {
           companyId,
           eventId: event.eventId,

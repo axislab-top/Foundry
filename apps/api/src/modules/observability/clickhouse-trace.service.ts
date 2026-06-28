@@ -12,6 +12,10 @@ export interface ExecutionLogMirrorInput {
   outputSnapshot: Record<string, unknown> | null;
   durationMs: number | null;
   billingUnits: string | null;
+  /** Optional: allow caller to keep a stable step graph */
+  spanId?: string | null;
+  parentSpanId?: string | null;
+  eventType?: string | null;
 }
 
 export interface TraceEventRow {
@@ -113,9 +117,9 @@ export class ClickhouseTraceService implements OnModuleInit {
             agent_id: input.agentId,
             request_id: '',
             trace_id: input.traceId ?? '',
-            span_id: '',
-            parent_span_id: '',
-            event_type: 'execution_log',
+            span_id: input.spanId ?? '',
+            parent_span_id: input.parentSpanId ?? '',
+            event_type: input.eventType ?? 'execution_log',
             source_service: sourceService,
             payload_json: JSON.stringify(payload),
           },

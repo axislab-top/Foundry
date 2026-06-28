@@ -1,0 +1,28 @@
+# Sample: HPA for Runner Deployment。自定义指标需 Prometheus Adapter / KEDA 等提供
+# 例如 metric: runner_execution_concurrency（本仓库仅作占位，指标管道在 Sprint 4 PR-B 对齐）。
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: foundry-runner
+  namespace: foundry-runner
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: foundry-runner
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  # - type: Pods
+  #   pods:
+  #     metric:
+  #       name: runner_execution_concurrency
+  #     target:
+  #       type: AverageValue
+  #       averageValue: "5"

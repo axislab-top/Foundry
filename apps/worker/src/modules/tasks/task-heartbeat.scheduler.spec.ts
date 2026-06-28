@@ -24,6 +24,7 @@ describe('TaskHeartbeatScheduler (heartbeat)', () => {
     const config = {
       getTaskHeartbeatIntervalMs: () => 10_000,
       getTaskHeartbeatMaxCompaniesPerTick: () => 20,
+      getTaskHeartbeatSource: () => 'nest_timer',
     };
 
     const scheduler = new TaskHeartbeatScheduler(messaging, config as any);
@@ -55,6 +56,7 @@ describe('TaskHeartbeatScheduler (heartbeat)', () => {
     };
     const config = { getTaskHeartbeatIntervalMs: () => 5000 };
     (config as any).getTaskHeartbeatMaxCompaniesPerTick = () => 20;
+    (config as any).getTaskHeartbeatSource = () => 'nest_timer';
     const scheduler = new TaskHeartbeatScheduler(messaging, config as any);
     scheduler.onModuleInit();
     jest.advanceTimersByTime(5000);

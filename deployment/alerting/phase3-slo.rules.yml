@@ -1,0 +1,58 @@
+# Foundry 2026 Phase 3 — Prometheus 告警规则（示例；按实际指标名 / label 调整 job 与 histogram）
+# 成功指标：P95 < 3s、Director 自主率 > 80%、Memory Graph hit rate > 60%、成本节省 > 15%
+groups:
+  - name: foundry_phase3_slo
+    rules:
+      - alert: FoundryPhase3LatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum(rate(foundry_router_latency_bucket[5m])) by (le)) > 3
+        for: 10m
+        labels:
+          severity: warning
+          foundry_phase: "3"
+        annotations:
+          summary: "Foundry Phase3：路由/协作链路 P95 超过 3s"
+          description: "检查 Worker 负载、Temporal 与外部 LLM；可临时调低灰度或关闭 `PHASE3_ROLLOUT_ENABLED`。"
+
+      - alert: FoundryPhase3BudgetCriticalAutonomous
+        expr: |
+          (
+            max_over_time((billing_budget_utilization > 0.95)[15m:1m])
+          )
+          * on() group_left()
+          (
+            absent(director_autonomous_disabled) or vector(1)
+          )
+        for: 5m
+        labels:
+          severity: critical
+          foundry_phase: "3"
+        annotations:
+          summary: "预算临界且高自主负载风险"
+          description: "与 API `phase3.budget_critical.autonomous_active` 告警互补；请核对 `DIRECTOR_AUTONOMOUS_ENABLED` 与预算。"
+
+      - alert: FoundryPhase3MemoryGraphHitRateLow
+        expr: |
+          (
+            sum(rate(memory_retrieval_total{result="hit"}[30m]))
+            /
+            clamp_min(sum(rate(memory_retrieval_total[30m])), 0.001)
+          ) < 0.6
+        for: 30m
+        labels:
+          severity: warning
+          foundry_phase: "3"
+        annotations:
+          summary: "Memory Graph / 检索命中率低于 60% 目标"
+          description: "检查 `MEMORY_GRAPH_V2_*` rollout、heartbeat metadata 与 hybrid 路径；可调用 AlertsService.createPhase3MemoryGraphDegradationAlert 做二次落库。"
+
+      - alert: FoundryPhase3CostSavingsBelowTarget
+        expr: |
+          sum(rate(foundry_cost_aware_savings[24h])) < 0.15
+        for: 6h
+        labels:
+          severity: info
+          foundry_phase: "3"
+        annotations:
+          summary: "成本节省未达 15% 目标（启发式 / OTEL）"
+          description: "核对 `COST_AWARE_ROUTING_ENABLED` 与预算阈值；参考仪表盘 `costAwareMetrics.tokenSavingsRateApprox` 与 OTEL counter。"

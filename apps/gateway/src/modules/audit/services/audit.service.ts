@@ -189,23 +189,29 @@ export class AuditService {
   }
 
   /**
-   * 递归脱敏对象
+   * 递归脱敏对象（跳过循环引用）
    */
-  private maskObject(obj: any): any {
+  private maskObject(obj: any, visited?: WeakSet<object>): any {
     if (obj === null || obj === undefined) return obj;
 
     if (Array.isArray(obj)) {
-      return obj.map((item) => this.maskObject(item));
+      return obj.map((item) => this.maskObject(item, visited));
     }
 
     if (typeof obj === 'object') {
+      const seen = visited ?? new WeakSet<object>();
+      if (seen.has(obj)) {
+        return '[Circular]';
+      }
+      seen.add(obj);
+
       const masked: any = {};
       for (const [key, value] of Object.entries(obj)) {
         const lowerKey = key.toLowerCase();
         if (this.isSensitiveField(lowerKey)) {
           masked[key] = '***MASKED***';
         } else if (typeof value === 'object') {
-          masked[key] = this.maskObject(value);
+          masked[key] = this.maskObject(value, seen);
         } else {
           masked[key] = value;
         }

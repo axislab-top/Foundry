@@ -2,8 +2,6 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RateLimitingService } from '../rate-limiting.service.js';
@@ -35,6 +33,10 @@ export class RateLimitGuard implements CanActivate {
 
     if (!rateLimitOptions) {
       return true; // 没有限流配置，允许通过
+    }
+
+    if (this.shouldBypassRateLimitForE2EAutomation(request)) {
+      return true;
     }
 
     const ip = request.ip || request.connection.remoteAddress;
@@ -101,6 +103,20 @@ export class RateLimitGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * 当且仅当配置了 `GATEWAY_E2E_TOKEN` 且请求携带匹配的 `x-e2e-token` 头时，跳过登录类端点的 IP/API 限流。
+   * 生产环境不设该变量则行为与默认一致。
+   */
+  private shouldBypassRateLimitForE2EAutomation(request: { path?: string; headers?: Record<string, unknown> }): boolean {
+    const expected = String(process.env.GATEWAY_E2E_TOKEN ?? '').trim();
+    if (!expected) return false;
+    const p = String(request?.path ?? '');
+    if (!p.includes('/auth/login')) return false;
+    const raw = request?.headers?.['x-e2e-token'] ?? request?.headers?.['X-E2E-Token'];
+    const headerVal = Array.isArray(raw) ? raw[0] : raw;
+    return typeof headerVal === 'string' && headerVal === expected;
   }
 }
 

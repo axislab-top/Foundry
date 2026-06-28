@@ -1,11 +1,14 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -63,6 +66,39 @@ export class LlmProvidersController {
     return await this.rpc('llmProviders.admin.create', {
       actor,
       data: body,
+    });
+  }
+
+  @Put(':code')
+  async update(
+    @Req() req: Request,
+    @Param('code') code: string,
+    @Body() body: { displayName?: string; kind?: 'openai' | 'anthropic'; requestUrl?: string },
+  ) {
+    const actor = actorFromRequest(req);
+    return await this.rpc('llmProviders.admin.update', {
+      actor,
+      code,
+      data: body,
+    });
+  }
+
+  @Post(':code/test')
+  async testConnection(@Req() req: Request, @Param('code') code: string) {
+    const actor = actorFromRequest(req);
+    return await this.rpc('llmProviders.admin.testConnection', {
+      actor,
+      code,
+    });
+  }
+
+  @Delete(':code')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Req() req: Request, @Param('code') code: string) {
+    const actor = actorFromRequest(req);
+    await this.rpc('llmProviders.admin.remove', {
+      actor,
+      code,
     });
   }
 }

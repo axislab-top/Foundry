@@ -7,6 +7,8 @@ import type { ModelRoutedEvent } from '@contracts/events';
 import type { AgentRole } from '../../agents/entities/agent.entity.js';
 import { BillingSettings, RoutingPolicyJson } from '../entities/billing-settings.entity.js';
 import { BudgetService } from './budget.service.js';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service.js';
+import { AgentUsageService } from './agent-usage.service.js';
 
 const DEFAULT_TIER: Record<AgentRole, string> = {
   ceo: 'gpt-4o',
@@ -29,6 +31,8 @@ export class ModelRouterService {
     private readonly settingsRepo: Repository<BillingSettings>,
     private readonly budgetService: BudgetService,
     private readonly messaging: MessagingService,
+    private readonly platformSettings: PlatformSettingsService,
+    private readonly agentUsageService: AgentUsageService,
   ) {}
 
   async resolveModel(params: {
@@ -91,7 +95,8 @@ export class ModelRouterService {
       : { ...DEFAULT_TIER, ...(policy.tierByRole ?? {}) };
 
     const modelName = tierMap[params.agentRole] ?? DEFAULT_TIER.executor;
-    const fallback = settings?.fallbackModel?.trim();
+    const platformFallback = await this.platformSettings.getFallbackModel();
+    const fallback = settings?.fallbackModel?.trim() || platformFallback;
 
     const resolved = {
       modelName: fallback && degraded ? fallback : modelName,
@@ -145,6 +150,9 @@ export class ModelRouterService {
       routingPolicy?: RoutingPolicyJson;
       degradeThresholdPct?: number;
       fallbackModel?: string | null;
+      ceoDecisionModel?: string | null;
+      ceoDecisionLlmKeyId?: string | null;
+      agentUsageAggregateIntervalMinutes?: number;
     },
   ): Promise<BillingSettings> {
     let row = await this.settingsRepo.findOne({ where: { companyId } });
@@ -154,6 +162,9 @@ export class ModelRouterService {
         routingPolicy: patch.routingPolicy ?? {},
         degradeThresholdPct: patch.degradeThresholdPct ?? 80,
         fallbackModel: patch.fallbackModel ?? null,
+        ceoDecisionModel: patch.ceoDecisionModel ?? null,
+        ceoDecisionLlmKeyId: patch.ceoDecisionLlmKeyId ?? null,
+        agentUsageAggregateIntervalMinutes: patch.agentUsageAggregateIntervalMinutes ?? null,
       });
     } else {
       if (patch.routingPolicy !== undefined) {
@@ -165,8 +176,23 @@ export class ModelRouterService {
       if (patch.fallbackModel !== undefined) {
         row.fallbackModel = patch.fallbackModel;
       }
+      if (patch.ceoDecisionModel !== undefined) {
+        row.ceoDecisionModel = patch.ceoDecisionModel;
+      }
+      if (patch.ceoDecisionLlmKeyId !== undefined) {
+        row.ceoDecisionLlmKeyId = patch.ceoDecisionLlmKeyId;
+      }
+      if (patch.agentUsageAggregateIntervalMinutes !== undefined) {
+        row.agentUsageAggregateIntervalMinutes = patch.agentUsageAggregateIntervalMinutes;
+      }
     }
-    return this.settingsRepo.save(row);
+    const saved = await this.settingsRepo.save(row);
+    if (patch.agentUsageAggregateIntervalMinutes !== undefined) {
+      await this.agentUsageService.reloadAggregationSchedule(
+        patch.agentUsageAggregateIntervalMinutes ?? undefined,
+      );
+    }
+    return saved;
   }
 
   async ensureDefaultSettings(companyId: string): Promise<BillingSettings> {

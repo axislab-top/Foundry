@@ -155,6 +155,32 @@ describe('RoutingService', () => {
       expect(call[1]).not.toHaveProperty('companyId');
     });
 
+    it('should forward organizationNodeId for marketplace agent purchase', async () => {
+      const agentId = '550e8400-e29b-41d4-a716-446655440000';
+      const orgNodeId = '660e8400-e29b-41d4-a716-446655440001';
+      const companyId = '361723a5-26d7-4d86-80ee-567b5d0ca882';
+
+      dynamicRoutesService.findRoute.mockReturnValue(null as any);
+      apiRpcProxyService.send.mockResolvedValue({ ok: true });
+
+      await service.route('POST', `/v1/marketplace/agents/${agentId}/purchase`, {
+        user: { id: 'admin-1', roles: ['admin'], permissions: [] },
+        query: { companyId, organizationNodeId: orgNodeId },
+        headers: { 'x-company-id': companyId },
+        body: {},
+      });
+
+      const call = apiRpcProxyService.send.mock.calls[0];
+      expect(call[0]).toBe('marketplace.agents.purchase');
+      expect(call[1]).toEqual(
+        expect.objectContaining({
+          id: agentId,
+          companyId,
+          organizationNodeId: orgNodeId,
+        }),
+      );
+    });
+
     it('should include companyId in rpc payload when header is present', async () => {
       const method = 'GET';
       const path = '/v1/users';
@@ -214,6 +240,90 @@ describe('RoutingService', () => {
       dynamicRoutesService.findRoute.mockReturnValue(null);
 
       await expect(service.route(method, path)).rejects.toThrow();
+    });
+  });
+
+  describe('buildRpcPayload (organization department from platform)', () => {
+    it('wraps HTTP body under data for organization.department.addFromPlatform', () => {
+      const companyId = '11111111-2222-4333-8444-555555555555';
+      const userId = '22222222-3333-4444-8555-666666666666';
+      const payload = (service as any).buildRpcPayload({
+        method: 'POST',
+        rpcPattern: 'organization.department.addFromPlatform',
+        originalRequest: {
+          body: { platformDepartmentSlug: 'engineering' },
+          query: {},
+        },
+        routeParams: {},
+        actor: { id: userId, roles: ['admin'] },
+        companyId,
+      });
+      expect(payload).toEqual({
+        actor: { id: userId, roles: ['admin'] },
+        companyId,
+        data: { platformDepartmentSlug: 'engineering' },
+      });
+    });
+  });
+
+  /** PATCH 协作模式：与 `routes.config` 中 `collaboration.rooms.updateCollaborationMode` 契约一致 */
+  describe('buildRpcPayload (tasks.create)', () => {
+    it('wraps HTTP body under data for tasks.create', () => {
+      const companyId = '11111111-2222-4333-8444-555555555555';
+      const userId = '22222222-3333-4444-8555-666666666666';
+      const payload = (service as any).buildRpcPayload({
+        method: 'POST',
+        rpcPattern: 'tasks.create',
+        originalRequest: {
+          body: {
+            title: '子目标任务',
+            assigneeType: 'agent',
+            assigneeId: '33333333-4444-4555-8666-777777777777',
+            metadata: { goalLevel: 'sub' },
+          },
+          query: {},
+        },
+        routeParams: {},
+        actor: { id: userId, roles: ['admin'] },
+        companyId,
+      });
+      expect(payload).toEqual({
+        actor: { id: userId, roles: ['admin'] },
+        companyId,
+        data: {
+          title: '子目标任务',
+          assigneeType: 'agent',
+          assigneeId: '33333333-4444-4555-8666-777777777777',
+          metadata: { goalLevel: 'sub' },
+        },
+      });
+    });
+  });
+
+  describe('buildRpcPayload (collaboration mode PATCH)', () => {
+    it('merges body.collaborationMode with route roomId, actor, companyId', () => {
+      const roomId = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
+      const companyId = '11111111-2222-4333-8444-555555555555';
+      const userId = '22222222-3333-4444-8555-666666666666';
+      const payload = (service as any).buildRpcPayload({
+        method: 'PATCH',
+        rpcPattern: 'collaboration.rooms.updateCollaborationMode',
+        originalRequest: {
+          body: { collaborationMode: 'execution' },
+          query: {},
+        },
+        routeParams: { roomId },
+        actor: { id: userId, roles: ['member'] },
+        companyId,
+      });
+      expect(payload).toEqual(
+        expect.objectContaining({
+          companyId,
+          roomId,
+          collaborationMode: 'execution',
+          actor: expect.objectContaining({ id: userId }),
+        }),
+      );
     });
   });
 });

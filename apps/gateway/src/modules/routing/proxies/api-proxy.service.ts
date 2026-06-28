@@ -36,11 +36,13 @@ export class ApiProxyService extends BaseProxyService {
 
   /**
    * 代理到 API 服务
+   * @param extraOptions - 路由级覆盖（timeout / responseType），来自 routes.config.ts
    */
   async proxyToApi(
     method: string,
     path: string,
     originalRequest?: any,
+    extraOptions?: { timeout?: number; responseType?: ProxyOptions['responseType'] },
   ): Promise<AxiosResponse> {
     const normalizedPath = this.normalizeHttpPathForApi(path);
     this.logger.log('proxyToApi called', { method, path, normalizedPath });
@@ -73,7 +75,8 @@ export class ApiProxyService extends BaseProxyService {
 
     const options: ProxyOptions = {
       target: targetUrl,
-      timeout: 30000,
+      timeout: extraOptions?.timeout ?? 30000,
+      responseType: extraOptions?.responseType,
     };
 
     this.logger.log('Calling base proxy', {

@@ -23,6 +23,16 @@ export class QueryAgentsDto {
   @IsString()
   search?: string;
 
+  /**
+   * Project scope (temporary agents are project-scoped).
+   * - If omitted: temporary agents are hidden by default (company-wide view).
+   * - If provided: returns permanent agents plus temporary agents bound to this projectId.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  projectId?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @IsInt()
@@ -33,6 +43,7 @@ export class QueryAgentsDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(100)
+  /** 与 Worker `AgentsActiveDirectoryCacheService` 等批量拉取对齐；原 100 导致 pageSize=200 校验失败 */
+  @Max(500)
   pageSize?: number;
 }

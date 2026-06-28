@@ -1,6 +1,11 @@
+export type BudgetApprovalDecisionStatus = 'approved' | 'rejected' | 'expired';
+
 export interface BudgetApprovalStatusDecision {
   companyId: string;
-  requestId: string;
-  status: 'approved' | 'rejected';
-  [key: string]: unknown;
+  approvalRequestId: string;
+  actionType?: string | null;
+  status: BudgetApprovalDecisionStatus;
+  reason?: string;
+  resolvedBy?: string;
+  executionTokenId?: string | null;
 }

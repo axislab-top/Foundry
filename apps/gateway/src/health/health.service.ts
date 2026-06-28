@@ -3,6 +3,7 @@ import { CacheService } from '../common/cache/cache.service.js';
 import { ConfigService } from '../common/config/config.service.js';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { TenantService } from '@service/tenant';
 
 /**
  * 健康检查服务
@@ -13,6 +14,7 @@ export class HealthService {
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
+    private readonly tenantService: TenantService,
   ) {}
 
   /**
@@ -81,12 +83,21 @@ export class HealthService {
   }
 
   /**
-   * 综合健康检查
+   * Liveness：仅进程存活（不探测下游），供 k8s `livenessProbe` 使用。
    */
-  async checkAll(): Promise<{
+  async checkLive(): Promise<{ status: string; timestamp: string; service: string }> {
+    const g = await this.checkGateway();
+    return { status: g.status, timestamp: g.timestamp, service: 'gateway-service' };
+  }
+
+  /**
+   * Readiness：缓存、租户成员后端、API/Webhooks/Worker 可达性（供 `readinessProbe`）。
+   */
+  async checkReady(): Promise<{
     status: string;
     gateway: { status: string; timestamp: string };
     cache: { status: string; latency?: number };
+    tenantMembership: { status: string };
     services: {
       api: { status: string; latency?: number };
       webhooks: { status: string; latency?: number };
@@ -98,9 +109,50 @@ export class HealthService {
       this.checkCache(),
       this.checkServices(),
     ]);
+    const tenantMembership = {
+      status: this.tenantService.isMembershipBackendHealthy() ? 'ok' : 'error',
+    };
+    const allHealthy =
+      cache.status === 'ok' &&
+      tenantMembership.status === 'ok' &&
+      services.api.status === 'ok' &&
+      services.webhooks.status === 'ok' &&
+      services.worker.status === 'ok';
+    return {
+      status: allHealthy ? 'ok' : 'degraded',
+      gateway,
+      cache,
+      tenantMembership,
+      services,
+    };
+  }
+
+  /**
+   * 综合健康检查
+   */
+  async checkAll(): Promise<{
+    status: string;
+    gateway: { status: string; timestamp: string };
+    cache: { status: string; latency?: number };
+    tenantMembership: { status: string };
+    services: {
+      api: { status: string; latency?: number };
+      webhooks: { status: string; latency?: number };
+      worker: { status: string; latency?: number };
+    };
+  }> {
+    const [gateway, cache, services] = await Promise.all([
+      this.checkGateway(),
+      this.checkCache(),
+      this.checkServices(),
+    ]);
+    const tenantMembership = {
+      status: this.tenantService.isMembershipBackendHealthy() ? 'ok' : 'error',
+    };
 
     const allHealthy =
       cache.status === 'ok' &&
+      tenantMembership.status === 'ok' &&
       services.api.status === 'ok' &&
       services.webhooks.status === 'ok' &&
       services.worker.status === 'ok';
@@ -109,6 +161,7 @@ export class HealthService {
       status: allHealthy ? 'ok' : 'degraded',
       gateway,
       cache,
+      tenantMembership,
       services,
     };
   }

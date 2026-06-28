@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "pnpm run clean && tsc",
-    "dev": "tsc --watch",
+    "dev": "pnpm run clean && tsc --watch",
     "clean": "node -e \"const fs = require('fs'); ['dist', 'build', 'types'].forEach(d => { try { fs.rmSync(d, { recursive: true, force: true }); } catch(e) {} });\"",
     "test": "node -e \"process.exit(0)\""
   },

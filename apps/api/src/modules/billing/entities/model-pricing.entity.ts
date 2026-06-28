@@ -20,6 +20,10 @@ export class ModelPricing {
   @Column({ name: 'model_name', type: 'varchar', length: 120 })
   modelName: string;
 
+  /** 绑定 llm_models.id；非空时目录解析优先匹配此行 */
+  @Column({ name: 'llm_model_id', type: 'uuid', nullable: true })
+  llmModelId: string | null;
+
   @Column({
     name: 'input_price_per_million',
     type: 'numeric',

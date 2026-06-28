@@ -9,4 +9,10 @@ export class CreateDepartmentRoomDto {
   @MinLength(1)
   @MaxLength(255)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  departmentSlug?: string;
 }

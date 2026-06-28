@@ -29,7 +29,7 @@ export interface IStorageAdapter {
    * @param expiresIn 过期时间（秒，可选）
    * @returns 文件访问 URL
    */
-  getUrl(path: string, expiresIn?: number): Promise<string>;
+  getUrl(path: string, expiresIn?: number, downloadFileName?: string): Promise<string>;
 
   /**
    * 删除文件

@@ -14,6 +14,7 @@ describe('MemoryConsolidationListener', () => {
 
     const config = {
       isMemoryConsolidationEnabled: () => true,
+      isMemoryGraphV2Enabled: () => false,
       getWorkerActorUserId: () => 'worker-admin',
       getApiRpcTimeoutMs: () => 5000,
     } as any;
@@ -75,7 +76,11 @@ describe('MemoryConsolidationListener', () => {
       }),
     } as any;
 
-    const listener = new MemoryConsolidationListener(messaging, tenantContext, apiRpc, config);
+    const monitoring = {
+      incMemoryPermissionDenied: jest.fn(),
+      incMemoryFallbackToCompany: jest.fn(),
+    } as any;
+    const listener = new MemoryConsolidationListener(messaging, tenantContext, apiRpc, config, monitoring);
 
     const event: any = {
       eventId: 'evt1',

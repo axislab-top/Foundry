@@ -1,0 +1,9 @@
+# P14：VolumeSnapshotClass 示例（与 RUNNER_VOLUME_SNAPSHOT_CLASS 默认 foundry-workspace-snapclass 对齐）
+# 亦见同目录 volumesnapshotclass.yaml；本文件名带连字符便于按任务清单检索。
+# 请将 driver / deletionPolicy 替换为集群 CSI（EBS、GCE PD、Ceph 等）。
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: foundry-workspace-snapclass
+driver: ebs.csi.aws.com
+deletionPolicy: Retain

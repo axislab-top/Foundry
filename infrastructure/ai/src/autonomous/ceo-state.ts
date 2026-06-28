@@ -10,7 +10,7 @@ export const CeoSupervisorAnnotation = Annotation.Root({
   companyId: Annotation<string>,
   /** ISO 时间，Heartbeat 由调度器写入 */
   tickAt: Annotation<string>,
-  runKind: Annotation<'heartbeat' | 'breakdown'>,
+  runKind: Annotation<'heartbeat' | 'breakdown' | 'graph'>,
   /** breakdown 时由事件带入 */
   goal: Annotation<string>,
   rootTaskId: Annotation<string | undefined>,
@@ -79,6 +79,14 @@ export const CeoSupervisorAnnotation = Annotation.Root({
   }),
   /** 汇报草稿（后续可接群聊 RPC + Memory 写入） */
   reportDraft: Annotation<string>,
+  /**
+   * Phase 3.5：plan 后 Early-Exit 决策快照（JSON）。
+   * 含 earlyExit、layerStoppedAt、confidence 等，供 hierarchicalExpand/validatePersist/summarize 短路。
+   */
+  earlyExitJson: Annotation<string>({
+    reducer: strReplace,
+    default: () => '{}',
+  }),
 });
 
 export type CeoSupervisorState = typeof CeoSupervisorAnnotation.State;

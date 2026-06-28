@@ -12,7 +12,7 @@ class GatedDemoDto {
   companyId: string;
 
   @IsUUID()
-  executionToken: string;
+  executionTokenId: string;
 
   /** 可选覆盖默认 action，须与审批签发时 action 一致 */
   @IsOptional()

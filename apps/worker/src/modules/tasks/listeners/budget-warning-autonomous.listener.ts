@@ -2,8 +2,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { MessagingService } from '@service/messaging';
 import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant';
 import type { BudgetWarningEvent } from '@contracts/events';
-import { AutonomousOrchestratorService } from '../../autonomous/autonomous-orchestrator.service.js';
 import { AutonomousTriggerService } from '../../autonomous/autonomous-trigger.service.js';
+import { AutonomousRunCoordinatorService } from '../../autonomous/autonomous-run-coordinator.service.js';
 
 @Injectable()
 export class BudgetWarningAutonomousListener implements OnModuleInit {
@@ -12,8 +12,8 @@ export class BudgetWarningAutonomousListener implements OnModuleInit {
   constructor(
     private readonly messaging: MessagingService,
     private readonly tenantContext: TenantContextService,
-    private readonly autonomous: AutonomousOrchestratorService,
     private readonly triggers: AutonomousTriggerService,
+    private readonly runCoordinator: AutonomousRunCoordinatorService,
   ) {}
 
   onModuleInit() {
@@ -31,20 +31,15 @@ export class BudgetWarningAutonomousListener implements OnModuleInit {
   private async handle(event: BudgetWarningEvent): Promise<void> {
     const companyId = resolveCompanyIdFromEvent(event) ?? event.data?.companyId;
     if (!companyId) return;
-    if (!this.triggers.shouldRun(companyId, 'budget_warning')) {
+    if (!(await this.triggers.shouldRun(companyId, 'budget_warning'))) {
       this.logger.debug('budget.warning autonomous skipped (cooldown)', { companyId });
       return;
     }
-    await this.tenantContext.runWithCompanyId(companyId, async () => {
-      const tickAt = new Date().toISOString();
-      try {
-        await this.autonomous.runHeartbeat(companyId, tickAt, {
-          triggerSource: 'budget_warning',
-        });
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        this.logger.warn('runHeartbeat after budget.warning failed', { companyId, message });
-      }
+    const tickAt = new Date().toISOString();
+    await this.runCoordinator.runEventTriggeredCycle({
+      companyId,
+      tickAt,
+      triggerSource: 'budget_warning',
     });
   }
 }

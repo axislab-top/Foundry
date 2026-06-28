@@ -114,7 +114,18 @@ export function resolveTenantListPrefix(
   if (rawPrefix === undefined || rawPrefix === '') {
     return `${COMPANIES}${companyId}/`;
   }
-  return resolveTenantObjectKey(companyId, rawPrefix, 'read');
+  const normalizedInput = normalizeStorageKey(rawPrefix);
+  const normalizedPrefix = normalizedInput.replace(/\/+$/, '');
+  if (!normalizedPrefix) {
+    return `${COMPANIES}${companyId}/`;
+  }
+  if (normalizedPrefix === `memory/${companyId}`) {
+    return `memory/${companyId}/`;
+  }
+  if (normalizedPrefix === `${COMPANIES}${companyId}`) {
+    return `${COMPANIES}${companyId}/`;
+  }
+  return resolveTenantObjectKey(companyId, normalizedPrefix, 'read');
 }
 
 export function resolveTenantListPrefixRpc(

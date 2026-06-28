@@ -22,9 +22,8 @@ logging.appenders:
 i18n.locale: "zh-CN"
 
 # 安全设置（开发环境）
-# ⚠️ 必须通过环境变量 KIBANA_ENCRYPTION_KEY 设置加密密钥（openssl rand -hex 32）
 xpack.security.enabled: false
-xpack.encryptedSavedObjects.encryptionKey: "${KIBANA_ENCRYPTION_KEY}"
+xpack.encryptedSavedObjects.encryptionKey: "changeme-in-production"
 
 # 监控设置
 monitoring.ui.container.elasticsearch.enabled: true

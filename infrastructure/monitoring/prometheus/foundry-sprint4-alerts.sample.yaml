@@ -1,0 +1,64 @@
+# Sprint 4.2：Prometheus 告警规则样例（按集群实际情况调整 namespace、指标名）。
+# 接入方式：Prometheus Operator → PrometheusRule；或 prometheus.yml rule_files。
+#
+# 说明：
+# - Runner 当前以结构化日志输出 `runner_execution_scale_sample` / `quota_concurrent_jobs_exceeded`，
+#   生产需通过 OpenTelemetry / promtail Loki 或导出 RED 指标后再做等价告警。
+# - 下列规则混合 **Kubernetes 内置指标** 与 **占位 expr**，便于先跑通告警管线。
+
+groups:
+  - name: foundry-sprint4-noisy-neighbor
+    interval: 30s
+    rules:
+      - alert: FoundryNamespaceCPUHot
+        expr: |
+          sum by (namespace) (
+            rate(container_cpu_usage_seconds_total{namespace=~"foundry-.*",container!=""}[5m])
+          ) > 6
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Possible noisy neighbor (high CPU) in {{ $labels.namespace }}"
+          description: |
+            5m average CPU seconds rate summed by namespace exceeds threshold.
+            Correlate with Runner Job labels `foundry.io/company-id` via kube-state-metrics or logs.
+
+      - alert: FoundryResourceQuotaAlmostFull
+        expr: |
+          kube_resourcequota{namespace="foundry-runner", type="used"}
+            / ignoring(type) kube_resourcequota{namespace="foundry-runner", type="hard"}
+            > 0.85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ResourceQuota >85% used in foundry-runner"
+          description: "Quota {{ $labels.resource }} — plan expansion or tenant isolation."
+
+  - name: foundry-sprint4-runner-placeholders
+    interval: 30s
+    rules:
+      # 占位：当 Runner 暴露 counter runner_execute_total{status="429",reason="quota"} 时启用
+      - alert: FoundryRunnerQuotaRejections
+        expr: vector(0) > 0
+        for: 0s
+        labels:
+          severity: none
+        annotations:
+          summary: "DISABLED PLACEHOLDER — replace expr when quota metric exists"
+          description: |
+            Example desired expr:
+            rate(runner_execute_rejected_total{reason="quota"}[5m]) > 0.1
+
+      - alert: FoundryWarmPoolReconcileStale
+        expr: vector(0) > 0
+        for: 0s
+        labels:
+          severity: none
+        annotations:
+          summary: "DISABLED PLACEHOLDER"
+          description: |
+            When exporting warm_pool_last_reconcile_timestamp_seconds, alert if
+            time() - warm_pool_last_reconcile_timestamp_seconds > 600

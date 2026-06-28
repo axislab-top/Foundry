@@ -29,6 +29,7 @@ import { UpdateAgentStatusDto } from '../dto/update-agent-status.dto.js';
 import { AgentRecruiterService } from '../services/agent-recruiter.service.js';
 import { AgentSkillService } from '../services/agent-skill.service.js';
 import { AgentsService } from '../services/agents.service.js';
+import { AgentWorkspaceService } from '../services/agent-workspace.service.js';
 
 @ApiTags('agents')
 @ApiBearerAuth('JWT-auth')
@@ -40,6 +41,7 @@ export class AgentsController {
     private readonly agentSkillService: AgentSkillService,
     private readonly effectiveSkillsService: EffectiveSkillsService,
     private readonly tenantContext: TenantContextService,
+    private readonly agentWorkspaceService: AgentWorkspaceService,
   ) {}
 
   @Get()
@@ -54,6 +56,21 @@ export class AgentsController {
   @ApiOperation({ summary: 'Agent 审计日志' })
   async auditLogs(@Query() query: QueryAgentAuditLogsDto) {
     return this.agentsService.queryAuditLogs(query);
+  }
+
+  @Get(':id/workspace')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Agent 办公室工作台（当前任务 + 子步骤）' })
+  @ApiParam({ name: 'id', description: 'Agent ID' })
+  async workspace(@Param('id', ParseUUIDPipe) id: string) {
+    const companyId = this.tenantContext.getCompanyId();
+    if (!companyId) {
+      throw new BadRequestException({
+        code: ErrorCode.BAD_REQUEST,
+        message: 'Company ID is required',
+      });
+    }
+    return this.agentWorkspaceService.getWorkspace(companyId, id);
   }
 
   @Get(':id/effective-skills')

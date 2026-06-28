@@ -4,6 +4,7 @@ import { TenantContextService, resolveCompanyIdFromEvent } from '@service/tenant
 import type { CollaborationRoomSummaryGeneratedEvent } from '@contracts/events';
 import { MemoryService } from '../services/memory.service.js';
 import { companyNamespace } from '../utils/memory-namespace.js';
+import { ConfigService } from '../../../common/config/config.service.js';
 
 /** 群聊摘要生成后写入公司级长期记忆 */
 @Injectable()
@@ -14,6 +15,7 @@ export class CollaborationRoomSummaryMemoryListener implements OnModuleInit {
     private readonly messaging: MessagingService,
     private readonly tenantContext: TenantContextService,
     private readonly memory: MemoryService,
+    private readonly config: ConfigService,
   ) {}
 
   onModuleInit() {
@@ -38,12 +40,11 @@ export class CollaborationRoomSummaryMemoryListener implements OnModuleInit {
 
     await this.tenantContext.runWithCompanyId(companyId, async () => {
       try {
-        await this.memory.storeEntry({
+        const base = {
           companyId,
           namespace: companyNamespace(),
           collectionLabel: 'Room summaries',
           content: summary,
-          sourceType: 'summary',
           sourceRef: null,
           metadata: {
             roomId: event.data.roomId,
@@ -52,7 +53,12 @@ export class CollaborationRoomSummaryMemoryListener implements OnModuleInit {
             memoryKind: 'room_summary',
           },
           skipAccessCheck: true,
-        });
+        };
+        if (this.config.get<boolean>('MEMORY_GOVERNANCE_V2_ENABLED', false)) {
+          await this.memory.storeSummary(base);
+        } else {
+          await this.memory.storeEntry({ ...base, sourceType: 'summary' });
+        }
       } catch (e: any) {
         this.logger.warn('store room summary to memory failed', {
           message: e?.message,

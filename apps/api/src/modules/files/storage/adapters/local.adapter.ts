@@ -18,7 +18,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
   private readonly basePath: string;
   private readonly baseUrl: string;
 
-  constructor(basePath: string = './storage', baseUrl: string = '/api/files') {
+  constructor(basePath: string = './storage', baseUrl: string = '/api/v1/files') {
     super();
     this.basePath = basePath;
     this.baseUrl = baseUrl;
@@ -40,6 +40,17 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
    */
   private getFullPath(path: string): string {
     return join(this.basePath, path);
+  }
+
+  private detectContentType(path: string): string {
+    const lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.svg')) return 'image/svg+xml';
+    if (lower.endsWith('.ico')) return 'image/x-icon';
+    return 'application/octet-stream';
   }
 
   private assertTenantObjectKey(key: string): void {
@@ -92,7 +103,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
     return await fs.readFile(fullPath);
   }
 
-  async getUrl(path: string, expiresIn?: number): Promise<string> {
+  async getUrl(path: string, _expiresIn?: number, _downloadFileName?: string): Promise<string> {
     this.assertTenantObjectKey(path);
     return `${this.baseUrl}/${path}`;
   }
@@ -129,7 +140,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter implements IStorageA
       path,
       name: fileName,
       size: stats.size,
-      contentType: 'application/octet-stream', // 本地存储无法直接获取 MIME 类型
+      contentType: this.detectContentType(path),
       url: `${this.baseUrl}/${path}`,
       createdAt: stats.birthtime,
       updatedAt: stats.mtime,
