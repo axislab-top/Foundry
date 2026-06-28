@@ -8,7 +8,7 @@
     "setup:quick": "cp env.shared.example .env.shared && pnpm install && bash scripts/env-manager.sh && pnpm infra:start && bash scripts/bootstrap-db.sh",
     "bootstrap:db": "bash scripts/bootstrap-db.sh",
     "build": "turbo run build",
-    "dev": "turbo run dev --concurrency=16",
+    "dev": "turbo run dev --concurrency=32",
     "start": "turbo run start",
     "test": "turbo run test",
     "test:critical-path": "pnpm --filter @service/worker run test:critical-path",
