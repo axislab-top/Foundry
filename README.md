@@ -84,7 +84,7 @@ All infrastructure runs in Docker — **you don't need to install these separate
 
 ```bash
 git clone https://github.com/axislab-top/Foundry.git && cd Foundry
-pnpm setup:dev   # copy env → install → start → migrate
+pnpm setup:dev   # env → install → docker → db → start
 ```
 
 ### Or Step by Step
@@ -96,14 +96,20 @@ git clone https://github.com/axislab-top/Foundry.git && cd Foundry
 # 2. Install dependencies
 pnpm install
 
-# 3. Configure environment (optional — defaults work for local dev)
+# 3. Configure environment
 cp env.shared.example .env.shared
 
-# 4. Start all services (infrastructure + application)
-pnpm start:dev:local
+# 4. Generate service .env files
+bash scripts/env-manager.sh
 
-# 5. Initialize database (create tables & seed data)
-pnpm migrate:run
+# 5. Start infrastructure (PostgreSQL, Redis, RabbitMQ)
+pnpm infra:start
+
+# 6. Initialize database
+bash scripts/bootstrap-db.sh
+
+# 7. Start development server
+pnpm dev
 ```
 
 > ⏱️ **First launch takes 5-10 minutes** — Docker needs to download all images (~2 GB). Subsequent starts take ~30 seconds.
