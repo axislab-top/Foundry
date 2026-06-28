@@ -92,19 +92,48 @@ function Generate-ServiceEnvFile {
             $out += "PORT=$($localVars['GATEWAY_SERVICE_PORT'])"
             $out += ""
             if ($localVars.ContainsKey('GATEWAY_DB_DATABASE')) { $localVars['DB_DATABASE'] = $localVars['GATEWAY_DB_DATABASE'] }
+            if (-not $localVars.ContainsKey('DB_DATABASE')) { $localVars['DB_DATABASE'] = 'gateway_db' }
             if ($localVars.ContainsKey('REDIS_DB_GATEWAY')) { $localVars['REDIS_DB'] = $localVars['REDIS_DB_GATEWAY'] }
+            if (-not $localVars.ContainsKey('DB_SYNCHRONIZE')) { $localVars['DB_SYNCHRONIZE'] = 'false' }
+            if (-not $localVars.ContainsKey('API_SERVICE_URL')) { $localVars['API_SERVICE_URL'] = 'http://localhost:3000' }
+            if (-not $localVars.ContainsKey('TENANT_MEMBERSHIP_ENFORCED')) { $localVars['TENANT_MEMBERSHIP_ENFORCED'] = 'true' }
         }
         "api" {
             $out += "NODE_ENV=$($localVars['NODE_ENV'])"
             $out += "PORT=$($localVars['API_SERVICE_PORT'])"
             $out += ""
             if ($localVars.ContainsKey('API_DB_DATABASE')) { $localVars['DB_DATABASE'] = $localVars['API_DB_DATABASE'] }
+            if (-not $localVars.ContainsKey('DB_DATABASE')) { $localVars['DB_DATABASE'] = 'service_db' }
             if ($localVars.ContainsKey('REDIS_DB_API')) { $localVars['REDIS_DB'] = $localVars['REDIS_DB_API'] }
+            if (-not $localVars.ContainsKey('COLLAB_REDIS_URL') -or [string]::IsNullOrWhiteSpace([string]$localVars['COLLAB_REDIS_URL'])) {
+                $redisHost = if ($localVars.ContainsKey('REDIS_HOST') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_HOST'])) { [string]$localVars['REDIS_HOST'] } else { '127.0.0.1' }
+                $redisPort = if ($localVars.ContainsKey('REDIS_PORT') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_PORT'])) { [string]$localVars['REDIS_PORT'] } else { '6379' }
+                $collabDb = if ($localVars.ContainsKey('REDIS_DB_COLLAB') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_DB_COLLAB'])) { [string]$localVars['REDIS_DB_COLLAB'] } else { '0' }
+                $localVars['COLLAB_REDIS_URL'] = "redis://$redisHost`:$redisPort/$collabDb"
+            }
+            if (-not $localVars.ContainsKey('DB_SYNCHRONIZE')) { $localVars['DB_SYNCHRONIZE'] = 'false' }
+            if (-not $localVars.ContainsKey('TENANT_MEMBERSHIP_ENFORCED')) { $localVars['TENANT_MEMBERSHIP_ENFORCED'] = 'true' }
             if (-not $localVars.ContainsKey('ENABLE_SESSION_MEMORY')) { $localVars['ENABLE_SESSION_MEMORY'] = 'true' }
             if (-not $localVars.ContainsKey('ENABLE_MEMORY_CONSOLIDATION')) { $localVars['ENABLE_MEMORY_CONSOLIDATION'] = 'false' }
             if (-not $localVars.ContainsKey('MEMORY_CONSOLIDATION_WINDOW_MESSAGES')) { $localVars['MEMORY_CONSOLIDATION_WINDOW_MESSAGES'] = '50' }
             if (-not $localVars.ContainsKey('MEMORY_RAG_QUERY_TIMEOUT_MS')) { $localVars['MEMORY_RAG_QUERY_TIMEOUT_MS'] = '280' }
             if (-not $localVars.ContainsKey('MEMORY_HYBRID_VECTOR_WEIGHT')) { $localVars['MEMORY_HYBRID_VECTOR_WEIGHT'] = '0.72' }
+            if (-not $localVars.ContainsKey('MEMORY_EMBEDDING_DIMENSIONS')) { $localVars['MEMORY_EMBEDDING_DIMENSIONS'] = '2048' }
+            if (-not $localVars.ContainsKey('MEMORY_EMBEDDING_MODEL')) { $localVars['MEMORY_EMBEDDING_MODEL'] = 'text-embedding-3-large' }
+            if (-not $localVars.ContainsKey('EMBEDDING_PROJECTION_ENABLED')) { $localVars['EMBEDDING_PROJECTION_ENABLED'] = 'false' }
+            if (-not $localVars.ContainsKey('EMBEDDING_MODEL_DIM')) { $localVars['EMBEDDING_MODEL_DIM'] = '2048' }
+            if (-not $localVars.ContainsKey('EMBEDDING_TARGET_DIM')) { $localVars['EMBEDDING_TARGET_DIM'] = '1536' }
+            if (-not $localVars.ContainsKey('MEMORY_GRAPH_V2_ENABLED')) { $localVars['MEMORY_GRAPH_V2_ENABLED'] = 'true' }
+            if (-not $localVars.ContainsKey('MEMORY_GRAPH_V2_ROLLOUT_PERCENT')) { $localVars['MEMORY_GRAPH_V2_ROLLOUT_PERCENT'] = '100' }
+            if (-not $localVars.ContainsKey('MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS')) { $localVars['MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS'] = '' }
+            if (-not $localVars.ContainsKey('FACTS_AS_FALLBACK_ONLY')) { $localVars['FACTS_AS_FALLBACK_ONLY'] = 'true' }
+            if (-not $localVars.ContainsKey('FRONTEND_URL')) { $localVars['FRONTEND_URL'] = 'http://localhost:5173' }
+            if (-not $localVars.ContainsKey('MAIL_DEV_LOG_ONLY')) { $localVars['MAIL_DEV_LOG_ONLY'] = 'false' }
+            if (-not $localVars.ContainsKey('SMTP_PORT')) { $localVars['SMTP_PORT'] = '587' }
+            if (-not $localVars.ContainsKey('SMTP_SECURE')) { $localVars['SMTP_SECURE'] = 'false' }
+            if (-not $localVars.ContainsKey('SMTP_CONNECTION_TIMEOUT_MS')) { $localVars['SMTP_CONNECTION_TIMEOUT_MS'] = '10000' }
+            if (-not $localVars.ContainsKey('SMTP_GREETING_TIMEOUT_MS')) { $localVars['SMTP_GREETING_TIMEOUT_MS'] = '10000' }
+            if (-not $localVars.ContainsKey('SMTP_SOCKET_TIMEOUT_MS')) { $localVars['SMTP_SOCKET_TIMEOUT_MS'] = '10000' }
         }
         "webhooks" {
             $out += "NODE_ENV=$($localVars['NODE_ENV'])"
@@ -116,11 +145,28 @@ function Generate-ServiceEnvFile {
             $out += "NODE_ENV=$($localVars['NODE_ENV'])"
             $out += "PORT=$($localVars['WORKER_SERVICE_PORT'])"
             if ($localVars.ContainsKey('APP_VERSION')) { $out += "APP_VERSION=$($localVars['APP_VERSION'])" }
+            if (-not $localVars.ContainsKey('REDIS_URL') -or [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_URL'])) {
+                $redisHost = if ($localVars.ContainsKey('REDIS_HOST') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_HOST'])) { [string]$localVars['REDIS_HOST'] } else { '127.0.0.1' }
+                $redisPort = if ($localVars.ContainsKey('REDIS_PORT') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_PORT'])) { [string]$localVars['REDIS_PORT'] } else { '6379' }
+                $redisDb = if ($localVars.ContainsKey('REDIS_DB') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_DB'])) { [string]$localVars['REDIS_DB'] } else { '0' }
+                $localVars['REDIS_URL'] = "redis://$redisHost`:$redisPort/$redisDb"
+            }
+            if (-not $localVars.ContainsKey('COLLAB_REDIS_URL') -or [string]::IsNullOrWhiteSpace([string]$localVars['COLLAB_REDIS_URL'])) {
+                $redisHost = if ($localVars.ContainsKey('REDIS_HOST') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_HOST'])) { [string]$localVars['REDIS_HOST'] } else { '127.0.0.1' }
+                $redisPort = if ($localVars.ContainsKey('REDIS_PORT') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_PORT'])) { [string]$localVars['REDIS_PORT'] } else { '6379' }
+                $collabDb = if ($localVars.ContainsKey('REDIS_DB_COLLAB') -and -not [string]::IsNullOrWhiteSpace([string]$localVars['REDIS_DB_COLLAB'])) { [string]$localVars['REDIS_DB_COLLAB'] } else { '0' }
+                $localVars['COLLAB_REDIS_URL'] = "redis://$redisHost`:$redisPort/$collabDb"
+            }
             if (-not $localVars.ContainsKey('ENABLE_AUTONOMOUS_MEMORY_ADAPTER')) { $localVars['ENABLE_AUTONOMOUS_MEMORY_ADAPTER'] = 'true' }
             if (-not $localVars.ContainsKey('ENABLE_MEMORY_CONSOLIDATION')) { $localVars['ENABLE_MEMORY_CONSOLIDATION'] = 'false' }
             if (-not $localVars.ContainsKey('AUTONOMOUS_MEMORY_STORE_MODE')) { $localVars['AUTONOMOUS_MEMORY_STORE_MODE'] = 'ceo_autonomous' }
             if (-not $localVars.ContainsKey('WORKER_API_RPC_TIMEOUT_MS')) { $localVars['WORKER_API_RPC_TIMEOUT_MS'] = '120000' }
             if (-not $localVars.ContainsKey('WORKER_ACTOR_USER_ID')) { $localVars['WORKER_ACTOR_USER_ID'] = '00000000-0000-4000-8000-000000000001' }
+            if (-not $localVars.ContainsKey('MEMORY_GRAPH_V2_ENABLED')) { $localVars['MEMORY_GRAPH_V2_ENABLED'] = 'true' }
+            if (-not $localVars.ContainsKey('MEMORY_GRAPH_V2_ROLLOUT_PERCENT')) { $localVars['MEMORY_GRAPH_V2_ROLLOUT_PERCENT'] = '100' }
+            if (-not $localVars.ContainsKey('MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS')) { $localVars['MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS'] = '' }
+            if (-not $localVars.ContainsKey('FORCE_MEMORY_CORTEX_ONLY')) { $localVars['FORCE_MEMORY_CORTEX_ONLY'] = 'true' }
+            if (-not $localVars.ContainsKey('AGENTS_ACTIVE_DIRECTORY_PAGE_SIZE')) { $localVars['AGENTS_ACTIVE_DIRECTORY_PAGE_SIZE'] = '100' }
             $out += ""
         }
         "logging" {
@@ -203,7 +249,8 @@ function Generate-PostgresEnvFile {
 
     $keys = @(
         "POSTGRES_USER","POSTGRES_PASSWORD","POSTGRES_DB","POSTGRES_PORT","POSTGRES_HOST",
-        "DB_HOST","DB_PORT","DB_USERNAME","DB_PASSWORD","DB_DATABASE"
+        "DB_HOST","DB_PORT","DB_USERNAME","DB_PASSWORD","DB_DATABASE",
+        "MIGRATIONS_DIRS","MIGRATIONS_DIR"
     )
 
     $out = @()
@@ -235,6 +282,8 @@ $serviceConfigs = @{
         "AUTHORIZATION_ENABLED","METRICS_ADAPTER","METRICS_ENABLE_DEFAULT_COLLECTORS",
         "PROMETHEUS_COLLECT_DEFAULT_METRICS","PROMETHEUS_PREFIX",
         "HTTP_TIMEOUT","CORS_ORIGIN","CORS_CREDENTIALS",
+        "ENABLE_ADVANCED_APPROVAL",
+        "TENANT_MEMBERSHIP_ENFORCED",
         "SWAGGER_ENABLED","SWAGGER_PATH",
         "ENCRYPTION_ADAPTER","AES_KEY","AES_ALGORITHM","AES_KEY_LENGTH",
         "CONSUL_ENABLED","CONSUL_HOST","CONSUL_PORT","CONSUL_CONFIG_PREFIX","CONSUL_SECURE","CONSUL_TOKEN","CONSUL_DATACENTER"
@@ -242,7 +291,9 @@ $serviceConfigs = @{
     "api" = @(
         "NODE_ENV","PORT","JWT_SECRET","JWT_REFRESH_SECRET","JWT_EXPIRES_IN","JWT_REFRESH_EXPIRES_IN",
         "DB_HOST","DB_PORT","DB_USERNAME","DB_PASSWORD","DB_DATABASE","DB_SYNCHRONIZE","DB_LOGGING",
-        "REDIS_HOST","REDIS_PORT","REDIS_PASSWORD","REDIS_DB",
+        "MIGRATIONS_DIRS","MIGRATIONS_DIR",
+        "REDIS_HOST","REDIS_PORT","REDIS_PASSWORD","REDIS_DB","REDIS_URL",
+        "COLLAB_REDIS_URL","REDIS_DB_COLLAB","REDIS_KEY_PREFIX",
         "CACHE_ADAPTER_TYPE","METRICS_ADAPTER","METRICS_ENABLED","PROMETHEUS_COLLECT_DEFAULT_METRICS","PROMETHEUS_PREFIX",
         "RMQ_URL","HTTP_TIMEOUT","CORS_ORIGIN","CORS_CREDENTIALS",
         "ENCRYPTION_ADAPTER","AES_KEY","HASHING_ADAPTER","BCRYPT_SALT_ROUNDS",
@@ -250,26 +301,55 @@ $serviceConfigs = @{
         "STORAGE_MINIO_ENDPOINT","STORAGE_MINIO_PORT","STORAGE_MINIO_USE_SSL",
         "STORAGE_MINIO_ACCESS_KEY","STORAGE_MINIO_SECRET_KEY","STORAGE_MINIO_BUCKET_NAME",
         "SWAGGER_ENABLED","SWAGGER_PATH","TEST_AUTH_ENABLED",
+        "ENABLE_ADVANCED_APPROVAL",
+        "TENANT_MEMBERSHIP_ENFORCED",
         "ENABLE_SESSION_MEMORY","ENABLE_MEMORY_CONSOLIDATION","MEMORY_CONSOLIDATION_WINDOW_MESSAGES",
-        "MEMORY_RAG_QUERY_TIMEOUT_MS","MEMORY_HYBRID_VECTOR_WEIGHT",
+        "MEMORY_RAG_QUERY_TIMEOUT_MS","MEMORY_HYBRID_VECTOR_WEIGHT","MEMORY_EMBEDDING_DIMENSIONS","MEMORY_EMBEDDING_MODEL",
+        "EMBEDDING_PROJECTION_ENABLED","EMBEDDING_MODEL_DIM","EMBEDDING_TARGET_DIM",
+        "MEMORY_GRAPH_V2_ENABLED","MEMORY_GRAPH_V2_ROLLOUT_PERCENT","MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS",
+        "FACTS_AS_FALLBACK_ONLY",
+        "FRONTEND_URL",
+        "REGISTER_EMAIL_VERIFICATION_ENABLED",
+        "MAIL_DEV_LOG_ONLY",
+        "SMTP_HOST","SMTP_PORT","SMTP_SECURE","SMTP_USER","SMTP_PASS","SMTP_FROM","MAIL_FROM",
+        "SMTP_CONNECTION_TIMEOUT_MS","SMTP_GREETING_TIMEOUT_MS","SMTP_SOCKET_TIMEOUT_MS",
+        "TOOL_INTERNAL_BASE_URL","API_INTERNAL_AUTH_SECRET",
+        "DIRECTOR_AUTONOMOUS_ENABLED","EMPLOYEE_AUTONOMOUS_ENABLED","MULTI_AGENT_GRAPH_V2_ENABLED",
         "CONSUL_ENABLED","CONSUL_HOST","CONSUL_PORT","CONSUL_CONFIG_PREFIX","CONSUL_SECURE","CONSUL_TOKEN","CONSUL_DATACENTER"
     )
     "webhooks" = @("NODE_ENV","PORT","APP_VERSION","CONSUL_ENABLED","CONSUL_HOST","CONSUL_PORT","CONSUL_CONFIG_PREFIX","CONSUL_SECURE","CONSUL_TOKEN","CONSUL_DATACENTER")
     "worker" = @(
         "NODE_ENV","PORT","APP_VERSION",
+        "REDIS_HOST","REDIS_PORT","REDIS_PASSWORD","REDIS_DB",
+        "REDIS_URL","REDIS_KEY_PREFIX","COLLAB_REDIS_URL","REDIS_DB_COLLAB",
+        "COLLAB_CEO_DISPATCH_PLAN_V2_ENABLED","COLLAB_DISPATCH_CONFIRM_MODE",
+        "COLLAB_PROGRAM_SSOT_ENABLED","COLLAB_PROGRAM_CONFIRM_MODE","COLLAB_PROGRAM_LEGACY_ROUTER_FALLBACK",
+        "MAIN_ROOM_DISTRIBUTION_COMPLETION_SUMMARY_ENABLED",
+        "MAIN_ROOM_DISPATCH_CHAT_MESSAGES_ENABLED","MAIN_ROOM_DISPATCH_RESPECT_DEPENDENCIES",
+        "MAIN_ROOM_DISPATCH_WAVE_SUPERVISION_NUDGE_ENABLED",
+        "COLLAB_DEPT_DIRECTOR_MODEL_ENABLED",
+        "DIRECTOR_AUTONOMOUS_ENABLED","EMPLOYEE_AUTONOMOUS_ENABLED","MULTI_AGENT_GRAPH_V2_ENABLED",
         "RABBITMQ_HOST","RABBITMQ_PORT","RABBITMQ_USER","RABBITMQ_PASSWORD","RABBITMQ_VHOST","RABBITMQ_URI","RABBITMQ_PREFETCH_COUNT","RABBITMQ_RECONNECT_DELAY","RABBITMQ_MAX_RETRIES",
         "RMQ_URL","API_RMQ_RPC_QUEUE","API_RMQ_RPC_QUEUE_AUTONOMOUS","WORKER_API_RMQ_RPC_QUEUE","WORKER_API_RPC_TIMEOUT_MS","WORKER_ACTOR_USER_ID",
         "TASK_HEARTBEAT_INTERVAL_MS","TASK_HEARTBEAT_MAX_COMPANIES_PER_TICK",
-        "OPENAI_API_KEY","ANTHROPIC_API_KEY","CEO_LLM_TIMEOUT_MS","CEO_LLM_MAX_OUTPUT_TOKENS","CEO_LLM_ESTIMATED_COST","CEO_REPORT_MAX_CHARS",
+        "OPENAI_API_KEY","ANTHROPIC_API_KEY",
+        "CEO_LLM_TIMEOUT_MS","CEO_LLM_MAX_OUTPUT_TOKENS","CEO_LLM_ESTIMATED_COST","CEO_REPORT_MAX_CHARS",
+        "WORKER_COLLAB_LLM_TIMEOUT_MS",
+        "CEO_CLASSIFIER_MODEL","CEO_LIGHT_MODEL","CEO_HEAVY_MODEL",
+        "CEO_LIGHT_TIMEOUT_MS","CEO_LIGHT_PRIMARY_TIMEOUT_MS","CEO_LIGHT_FALLBACK_TIMEOUT_MS","CEO_HEAVY_TIMEOUT_MS","ENQUEUE_IDEMPOTENCY_TTL_MS",
+        "FOUNDRY_HEAVY_STATE_MACHINE_ENABLED",
+        "FOUNDRY_TENANT_DEBUG",
         "AUTONOMOUS_COOLDOWN_TASK_COMPLETED_MS","AUTONOMOUS_COOLDOWN_BUDGET_WARNING_MS",
         "ENABLE_MEMORY_CONSOLIDATION","ENABLE_AUTONOMOUS_MEMORY_ADAPTER","AUTONOMOUS_MEMORY_STORE_MODE",
         "WORKER_CHECKPOINT_DATABASE_URL","LANGGRAPH_CHECKPOINT_SCHEMA","WORKER_ALLOW_UNSAFE_SKILL_STUBS",
+        "MEMORY_GRAPH_V2_ENABLED","MEMORY_GRAPH_V2_ROLLOUT_PERCENT","MEMORY_GRAPH_V2_ROLLOUT_WHITELIST_COMPANY_IDS",
+        "FORCE_MEMORY_CORTEX_ONLY","AGENTS_ACTIVE_DIRECTORY_PAGE_SIZE",
         "CONSUL_ENABLED","CONSUL_HOST","CONSUL_PORT","CONSUL_CONFIG_PREFIX","CONSUL_SECURE","CONSUL_TOKEN","CONSUL_DATACENTER"
     )
     "logging" = @("NODE_ENV","PORT","HOSTNAME","LOKI_URL","ELASTICSEARCH_URL","ELASTICSEARCH_INDEX_PREFIX","LOG_DIR","CONSUL_ENABLED","CONSUL_HOST","CONSUL_PORT","CONSUL_CONFIG_PREFIX","CONSUL_SECURE","CONSUL_TOKEN","CONSUL_DATACENTER")
 }
 
-$envContent = Get-Content $Source -Raw
+$envContent = Get-Content $Source -Raw -Encoding UTF8
 $envVars = Parse-EnvFile -content $envContent
 
 if ([string]::IsNullOrWhiteSpace($Service)) {

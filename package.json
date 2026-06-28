@@ -4,6 +4,8 @@
   "description": "NestJS Microservices Platform",
   "main": "index.js",
   "scripts": {
+    "setup:dev": "cp env.shared.example .env.shared && pnpm install && bash scripts/env-manager.sh && pnpm infra:start && pnpm migrate:run && pnpm dev",
+    "setup:quick": "cp env.shared.example .env.shared && pnpm install && bash scripts/env-manager.sh && pnpm infra:start",
     "build": "turbo run build",
     "dev": "turbo run dev --concurrency=16",
     "start": "turbo run start",

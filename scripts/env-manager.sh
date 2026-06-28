@@ -201,6 +201,21 @@ API_VARS=(
     ["SWAGGER_ENABLED"]=1
     ["SWAGGER_PATH"]=1
     ["TEST_AUTH_ENABLED"]=1
+    ["FRONTEND_URL"]=1
+    ["REGISTER_EMAIL_VERIFICATION_ENABLED"]=1
+    ["MAIL_DEV_LOG_ONLY"]=1
+    ["SMTP_HOST"]=1
+    ["SMTP_PORT"]=1
+    ["SMTP_SECURE"]=1
+    ["SMTP_USER"]=1
+    ["SMTP_PASS"]=1
+    ["SMTP_FROM"]=1
+    ["MAIL_FROM"]=1
+    ["SMTP_CONNECTION_TIMEOUT_MS"]=1
+    ["SMTP_GREETING_TIMEOUT_MS"]=1
+    ["SMTP_SOCKET_TIMEOUT_MS"]=1
+    ["TOOL_INTERNAL_BASE_URL"]=1
+    ["API_INTERNAL_AUTH_SECRET"]=1
     ["CONSUL_ENABLED"]=1
     ["CONSUL_HOST"]=1
     ["CONSUL_PORT"]=1
@@ -279,6 +294,8 @@ generate_service_env_file() {
                 echo "REDIS_PORT=$(get_env_value "REDIS_PORT" "$env_file")"
                 echo "REDIS_PASSWORD=$(get_env_value "REDIS_PASSWORD" "$env_file")"
                 echo "REDIS_DB=$(get_env_value "REDIS_DB_GATEWAY" "$env_file")"
+                echo "ENABLE_ADVANCED_APPROVAL=$(get_env_value "ENABLE_ADVANCED_APPROVAL" "$env_file")"
+                echo "TENANT_MEMBERSHIP_ENFORCED=$(get_env_value "TENANT_MEMBERSHIP_ENFORCED" "$env_file")"
                 # ... 添加其他 gateway 特定变量
                 ;;
             api)
@@ -294,7 +311,23 @@ generate_service_env_file() {
                 echo "DB_DATABASE=$(get_env_value "API_DB_DATABASE" "$env_file")"
                 echo "DB_SYNCHRONIZE=$(get_env_value "DB_SYNCHRONIZE" "$env_file")"
                 echo "DB_LOGGING=$(get_env_value "DB_LOGGING" "$env_file")"
-                # ... 添加其他 api 特定变量
+                echo "MIGRATIONS_DIRS=$(get_env_value "MIGRATIONS_DIRS" "$env_file")"
+                echo "MIGRATIONS_DIR=$(get_env_value "MIGRATIONS_DIR" "$env_file")"
+                echo "ENABLE_ADVANCED_APPROVAL=$(get_env_value "ENABLE_ADVANCED_APPROVAL" "$env_file")"
+                echo "TENANT_MEMBERSHIP_ENFORCED=$(get_env_value "TENANT_MEMBERSHIP_ENFORCED" "$env_file")"
+                echo ""
+                echo "# 认证 / 邮件（密码重置）"
+                echo "FRONTEND_URL=$(get_env_value "FRONTEND_URL" "$env_file")"
+                echo "MAIL_DEV_LOG_ONLY=$(get_env_value "MAIL_DEV_LOG_ONLY" "$env_file")"
+                echo "SMTP_HOST=$(get_env_value "SMTP_HOST" "$env_file")"
+                echo "SMTP_PORT=$(get_env_value "SMTP_PORT" "$env_file")"
+                echo "SMTP_SECURE=$(get_env_value "SMTP_SECURE" "$env_file")"
+                echo "SMTP_USER=$(get_env_value "SMTP_USER" "$env_file")"
+                echo "SMTP_PASS=$(get_env_value "SMTP_PASS" "$env_file")"
+                echo "SMTP_FROM=$(get_env_value "SMTP_FROM" "$env_file")"
+                echo "SMTP_CONNECTION_TIMEOUT_MS=$(get_env_value "SMTP_CONNECTION_TIMEOUT_MS" "$env_file")"
+                echo "SMTP_GREETING_TIMEOUT_MS=$(get_env_value "SMTP_GREETING_TIMEOUT_MS" "$env_file")"
+                echo "SMTP_SOCKET_TIMEOUT_MS=$(get_env_value "SMTP_SOCKET_TIMEOUT_MS" "$env_file")"
                 ;;
         esac
     } > "$output_path"
