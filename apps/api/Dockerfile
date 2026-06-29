@@ -42,6 +42,15 @@ RUN pnpm install --frozen-lockfile \
     && pnpm --filter @service/security build \
     && pnpm --filter @service/messaging build \
     && pnpm --filter @service/tenant build \
+    && pnpm --filter @service/ai build \
+    && pnpm --filter @foundry/contracts build \
+    && pnpm --filter @foundry/skill-md build \
+    && pnpm --filter @foundry/collaboration-core build \
+    && pnpm --filter @foundry/task-core build \
+    && pnpm --filter @foundry/supervisor-core build \
+    && pnpm --filter @foundry/multi-agent-core build \
+    && pnpm --filter @foundry/observability-core build \
+    && pnpm --filter @foundry/skills build \
     && pnpm --filter @service/api build
 
 # 生产镜像
@@ -88,6 +97,15 @@ COPY --from=builder /app/infrastructure/monitoring/dist ./infrastructure/monitor
 COPY --from=builder /app/infrastructure/security/dist ./infrastructure/security/dist
 COPY --from=builder /app/infrastructure/messaging/dist ./infrastructure/messaging/dist
 COPY --from=builder /app/infrastructure/tenant/dist ./infrastructure/tenant/dist
+COPY --from=builder /app/infrastructure/ai/dist ./infrastructure/ai/dist
+COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=builder /app/packages/core/collaboration/dist ./packages/core/collaboration/dist
+COPY --from=builder /app/packages/core/task/dist ./packages/core/task/dist
+COPY --from=builder /app/packages/core/supervisor/dist ./packages/core/supervisor/dist
+COPY --from=builder /app/packages/core/multi-agent/dist ./packages/core/multi-agent/dist
+COPY --from=builder /app/packages/core/observability/dist ./packages/core/observability/dist
+COPY --from=builder /app/packages/skill-md/dist ./packages/skill-md/dist
+COPY --from=builder /app/packages/skills/dist ./packages/skills/dist
 
 WORKDIR /app/apps/api
 

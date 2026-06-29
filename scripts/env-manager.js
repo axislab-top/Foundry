@@ -59,39 +59,53 @@ function generateDockerEnv(outputPath, vars) {
   content += `NODE_ENV=${getEnvValue('NODE_ENV', vars)}\n`;
   content += `LOG_LEVEL=${getEnvValue('LOG_LEVEL', vars)}\n\n`;
 
-  // 数据库配置
-  content += `# 数据库配置\n`;
-  content += `DB_HOST=${getEnvValue('DB_HOST', vars)}\n`;
-  content += `DB_PORT=${getEnvValue('DB_PORT', vars)}\n`;
-  content += `DB_USERNAME=${getEnvValue('DB_USERNAME', vars)}\n`;
-  content += `DB_PASSWORD=${getEnvValue('DB_PASSWORD', vars)}\n`;
-  content += `DB_DATABASE=${getEnvValue('DB_DATABASE', vars)}\n`;
-  content += `DB_SYNCHRONIZE=${getEnvValue('DB_SYNCHRONIZE', vars)}\n`;
-  content += `DB_LOGGING=${getEnvValue('DB_LOGGING', vars)}\n\n`;
+  // 数据库配置（Docker 环境使用容器名称）
+  content += `# 数据库配置（Docker 环境使用容器名称 postgres）\n`;
+  content += `DB_HOST=postgres\n`;
+  content += `DB_PORT=${getEnvValue('DB_PORT', vars) || '5432'}\n`;
+  content += `DB_USERNAME=${getEnvValue('DB_USERNAME', vars) || 'postgres'}\n`;
+  content += `DB_PASSWORD=${getEnvValue('DB_PASSWORD', vars) || 'postgres'}\n`;
+  content += `DB_DATABASE=${getEnvValue('DB_DATABASE', vars) || 'service_db'}\n`;
+  content += `DB_SYNCHRONIZE=${getEnvValue('DB_SYNCHRONIZE', vars) || 'true'}\n`;
+  content += `DB_LOGGING=${getEnvValue('DB_LOGGING', vars) || 'false'}\n\n`;
 
-  // Redis 配置
-  content += `# Redis 配置\n`;
-  content += `REDIS_HOST=${getEnvValue('REDIS_HOST', vars)}\n`;
-  content += `REDIS_PORT=${getEnvValue('REDIS_PORT', vars)}\n`;
-  content += `REDIS_PASSWORD=${getEnvValue('REDIS_PASSWORD', vars)}\n\n`;
+  // Redis 配置（Docker 环境使用容器名称）
+  content += `# Redis 配置（Docker 环境使用容器名称 redis）\n`;
+  content += `REDIS_HOST=redis\n`;
+  content += `REDIS_PORT=${getEnvValue('REDIS_PORT', vars) || '6379'}\n`;
+  content += `REDIS_PASSWORD=${getEnvValue('REDIS_PASSWORD', vars) || ''}\n\n`;
+
+  // RabbitMQ 配置（Docker 环境使用容器名称）
+  content += `# RabbitMQ 配置（Docker 环境使用容器名称 rabbitmq）\n`;
+  content += `RABBITMQ_HOST=rabbitmq\n`;
+  content += `RABBITMQ_PORT=${getEnvValue('RABBITMQ_PORT', vars) || '5672'}\n`;
+  content += `RABBITMQ_USER=${getEnvValue('RABBITMQ_USER', vars) || 'admin'}\n`;
+  content += `RABBITMQ_PASSWORD=${getEnvValue('RABBITMQ_PASSWORD', vars) || 'admin123'}\n`;
+  content += `RABBITMQ_VHOST=${getEnvValue('RABBITMQ_VHOST', vars) || '/'}\n`;
+  content += `RABBITMQ_URI=amqp://${getEnvValue('RABBITMQ_USER', vars) || 'admin'}:${getEnvValue('RABBITMQ_PASSWORD', vars) || 'admin123'}@rabbitmq:5672/\n`;
+  content += `RMQ_URL=amqp://${getEnvValue('RABBITMQ_USER', vars) || 'admin'}:${getEnvValue('RABBITMQ_PASSWORD', vars) || 'admin123'}@rabbitmq:5672/\n\n`;
 
   // JWT 配置
   content += `# JWT 配置\n`;
-  content += `JWT_SECRET=${getEnvValue('JWT_SECRET', vars)}\n`;
-  content += `JWT_REFRESH_SECRET=${getEnvValue('JWT_REFRESH_SECRET', vars)}\n`;
-  content += `JWT_EXPIRES_IN=${getEnvValue('JWT_EXPIRES_IN', vars)}\n`;
-  content += `JWT_REFRESH_EXPIRES_IN=${getEnvValue('JWT_REFRESH_EXPIRES_IN', vars)}\n\n`;
+  content += `JWT_SECRET=${getEnvValue('JWT_SECRET', vars) || 'your-jwt-secret-key-change-in-production'}\n`;
+  content += `JWT_REFRESH_SECRET=${getEnvValue('JWT_REFRESH_SECRET', vars) || 'your-jwt-refresh-secret-key-change-in-production'}\n`;
+  content += `JWT_EXPIRES_IN=${getEnvValue('JWT_EXPIRES_IN', vars) || '15m'}\n`;
+  content += `JWT_REFRESH_EXPIRES_IN=${getEnvValue('JWT_REFRESH_EXPIRES_IN', vars) || '7d'}\n\n`;
 
   // 服务端口配置
   content += `# 服务端口配置\n`;
-  content += `GATEWAY_SERVICE_PORT=${getEnvValue('GATEWAY_SERVICE_PORT', vars)}\n`;
-  content += `API_SERVICE_PORT=${getEnvValue('API_SERVICE_PORT', vars)}\n`;
-  content += `WEBHOOKS_SERVICE_PORT=${getEnvValue('WEBHOOKS_SERVICE_PORT', vars)}\n`;
-  content += `WORKER_SERVICE_PORT=${getEnvValue('WORKER_SERVICE_PORT', vars)}\n\n`;
+  content += `GATEWAY_SERVICE_PORT=${getEnvValue('GATEWAY_SERVICE_PORT', vars) || '3002'}\n`;
+  content += `API_SERVICE_PORT=${getEnvValue('API_SERVICE_PORT', vars) || '3000'}\n`;
+  content += `WEBHOOKS_SERVICE_PORT=${getEnvValue('WEBHOOKS_SERVICE_PORT', vars) || '3003'}\n`;
+  content += `WORKER_SERVICE_PORT=${getEnvValue('WORKER_SERVICE_PORT', vars) || '3004'}\n\n`;
+
+  // Consul 配置（开发环境禁用）
+  content += `# Consul 配置（开发环境禁用）\n`;
+  content += `CONSUL_ENABLED=false\n\n`;
 
   // 前端 URL
   content += `# 前端 URL\n`;
-  content += `FRONTEND_URL=${getEnvValue('FRONTEND_URL', vars)}\n`;
+  content += `FRONTEND_URL=${getEnvValue('FRONTEND_URL', vars) || 'http://localhost:5173'}\n`;
 
   // 确保目录存在
   const dir = path.dirname(outputPath);

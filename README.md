@@ -97,16 +97,16 @@ git clone https://github.com/axislab-top/Foundry.git && cd Foundry
 pnpm install
 
 # 3. Configure environment
-cp env.shared.example .env.shared
+node -e "fs.copyFileSync('env.shared.example','.env.shared')"
 
 # 4. Generate service .env files
-bash scripts/env-manager.sh
+node scripts/env-manager.js
 
 # 5. Start infrastructure (PostgreSQL, Redis, RabbitMQ)
 pnpm infra:start
 
 # 6. Initialize database
-bash scripts/bootstrap-db.sh
+node scripts/bootstrap-db.js
 
 # 7. Start development server
 pnpm dev
@@ -114,7 +114,13 @@ pnpm dev
 
 > ⏱️ **First launch takes 5-10 minutes** — Docker needs to download all images (~2 GB). Subsequent starts take ~30 seconds.
 
-> 💡 **Windows users**: Use **Git Bash** or **WSL** to run setup commands (not cmd/PowerShell). Run as Administrator if you encounter permission errors.
+> 💡 **Windows users**: Run `pnpm setup:dev` directly in cmd or PowerShell. Run as Administrator if you encounter permission errors.
+
+> 🇨🇳 **China users**: Docker Hub may be inaccessible. Configure mirror accelerator in Docker Desktop → Settings → Docker Engine:
+> ```json
+> { "registry-mirrors": ["https://docker.1ms.run", "https://docker.xuanyuan.me"] }
+> ```
+> Then restart Docker Desktop before running setup.
 
 After containers are healthy and migrations complete, visit:
 
@@ -167,6 +173,35 @@ pnpm infra:restart   # Restart all containers
 | `getaddrinfo ENOTFOUND postgres` | You have a stale `.env` file with Docker hostnames. Delete `.env` and re-run `pnpm setup:dev` |
 | RabbitMQ `ACCESS_REFUSED` | RabbitMQ container was created with wrong credentials. Run `pnpm infra:stop` then `pnpm setup:dev` again |
 | Database connection timeout | PostgreSQL may be slow to start on Windows. The app will retry automatically (10s timeout) |
+| Docker image pull timeout | Configure mirror accelerator (see below) or pull images manually: `node scripts/pull-docker-images.js` |
+
+#### Docker Image Pull Issues (China Users)
+
+If you see errors like `failed to fetch anonymous token` or `content not found`:
+
+1. **Configure Docker Mirror** (recommended):
+   - Docker Desktop → Settings → Docker Engine
+   - Add to JSON:
+   ```json
+   {
+     "registry-mirrors": [
+       "https://docker.1ms.run",
+       "https://docker.xuanyuan.me"
+     ]
+   }
+   ```
+   - Click "Apply & restart"
+
+2. **Pull images manually** (if mirror doesn't work):
+   ```bash
+   node scripts/pull-docker-images.js
+   ```
+
+3. **Pull specific image** (if only one fails):
+   ```bash
+   docker pull node:20-alpine
+   docker pull node:20-bookworm-slim
+   ```
 
 > 💡 **Diagnose database issues**: Run `node scripts/diagnose-db.js` in a separate terminal while the project is running.
 

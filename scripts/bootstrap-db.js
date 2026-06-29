@@ -35,6 +35,8 @@ async function main() {
 
   const dbUser = process.env.DB_USERNAME || 'postgres';
   const dbName = process.env.DB_DATABASE || 'service_db';
+  // 支持自定义容器名称，默认使用 service-postgres-dev（Docker Compose 开发环境）
+  const containerName = process.env.POSTGRES_CONTAINER || 'service-postgres-dev';
   const projectRoot = path.resolve(__dirname, '..');
   const baselineSql = path.join(projectRoot, 'infrastructure', 'postgres', 'migrations', 'baseline-schema.sql');
 
@@ -48,7 +50,7 @@ async function main() {
   process.stdout.write('等待 PostgreSQL...');
   let ready = false;
   for (let i = 0; i < 30; i++) {
-    const result = exec(`docker exec service-postgres pg_isready -U ${dbUser}`);
+    const result = exec(`docker exec ${containerName} pg_isready -U ${dbUser}`);
     if (result && result.includes('accepting connections')) {
       console.log(colors.green(' 就绪'));
       ready = true;
@@ -77,7 +79,7 @@ async function main() {
   fs.writeFileSync(tmpSql, filteredSql, 'utf-8');
 
   try {
-    exec(`docker exec -i service-postgres psql -U ${dbUser} -d ${dbName} < "${tmpSql}"`);
+    exec(`docker exec -i ${containerName} psql -U ${dbUser} -d ${dbName} < "${tmpSql}"`);
   } catch (e) {
     // 忽略错误，可能是表已存在
   }
@@ -87,7 +89,7 @@ async function main() {
 
   // 获取表数量
   const tableCount = exec(
-    `docker exec service-postgres psql -U ${dbUser} -d ${dbName} -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"`
+    `docker exec ${containerName} psql -U ${dbUser} -d ${dbName} -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"`
   );
 
   console.log(colors.green(` 完成 (${(tableCount || '0').trim()} 张表)`));

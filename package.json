@@ -4,8 +4,8 @@
   "description": "NestJS Microservices Platform",
   "main": "index.js",
   "scripts": {
-    "setup:dev": "node -e \"fs.copyFileSync('env.shared.example','.env.shared')\" && pnpm install && node scripts/env-manager.js && pnpm infra:start && node scripts/bootstrap-db.js && pnpm dev",
-    "setup:quick": "node -e \"fs.copyFileSync('env.shared.example','.env.shared')\" && pnpm install && node scripts/env-manager.js && pnpm infra:start && node scripts/bootstrap-db.js",
+    "setup:dev": "node -e \"fs.copyFileSync('env.shared.example','.env.shared')\" && pnpm install && node scripts/env-manager.js && node scripts/pull-docker-images.js && pnpm infra:start && node scripts/bootstrap-db.js && pnpm dev",
+    "setup:quick": "node -e \"fs.copyFileSync('env.shared.example','.env.shared')\" && pnpm install && node scripts/env-manager.js && node scripts/pull-docker-images.js && pnpm infra:start && node scripts/bootstrap-db.js",
     "bootstrap:db": "node scripts/bootstrap-db.js",
     "build": "turbo run build",
     "dev": "turbo run dev --concurrency=32",
