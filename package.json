@@ -4,9 +4,9 @@
   "description": "NestJS Microservices Platform",
   "main": "index.js",
   "scripts": {
-    "setup:dev": "cp env.shared.example .env.shared && pnpm install && bash scripts/env-manager.sh && pnpm infra:start && bash scripts/bootstrap-db.sh && pnpm dev",
-    "setup:quick": "cp env.shared.example .env.shared && pnpm install && bash scripts/env-manager.sh && pnpm infra:start && bash scripts/bootstrap-db.sh",
-    "bootstrap:db": "bash scripts/bootstrap-db.sh",
+    "setup:dev": "node -e \"fs.copyFileSync('env.shared.example','.env.shared')\" && pnpm install && node scripts/env-manager.js && pnpm infra:start && node scripts/bootstrap-db.js && pnpm dev",
+    "setup:quick": "node -e \"fs.copyFileSync('env.shared.example','.env.shared')\" && pnpm install && node scripts/env-manager.js && pnpm infra:start && node scripts/bootstrap-db.js",
+    "bootstrap:db": "node scripts/bootstrap-db.js",
     "build": "turbo run build",
     "dev": "turbo run dev --concurrency=32",
     "start": "turbo run start",
@@ -68,12 +68,6 @@
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.28.0",
-  "pnpm": {
-    "overrides": {
-      "@types/react": "^19.2.2",
-      "@types/react-dom": "^19.2.2"
-    }
-  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.27",

@@ -114,7 +114,7 @@ pnpm dev
 
 > ⏱️ **First launch takes 5-10 minutes** — Docker needs to download all images (~2 GB). Subsequent starts take ~30 seconds.
 
-> 💡 **Windows users**: Run as Administrator if you encounter permission errors.
+> 💡 **Windows users**: Use **Git Bash** or **WSL** to run setup commands (not cmd/PowerShell). Run as Administrator if you encounter permission errors.
 
 After containers are healthy and migrations complete, visit:
 

@@ -8,9 +8,11 @@ packages:
   - 'packages/core/collaboration'
   - 'packages/core/multi-agent'
   - 'infrastructure/*'
-  - 'tooling/*'
   - 'contracts/types'
   - 'contracts/events'
   - 'client'
-  - 'client-frontend'
   - 'admin'
+
+overrides:
+  "@types/react": "^19.2.2"
+  "@types/react-dom": "^19.2.2"

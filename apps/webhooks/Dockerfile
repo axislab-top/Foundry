@@ -10,7 +10,6 @@ COPY apps ./apps
 COPY packages ./packages
 COPY infrastructure ./infrastructure
 COPY contracts ./contracts
-COPY tooling ./tooling
 
 # 安装 pnpm
 RUN npm install -g pnpm@10.27.0
@@ -29,7 +28,6 @@ COPY apps ./apps
 COPY packages ./packages
 COPY infrastructure ./infrastructure
 COPY contracts ./contracts
-COPY tooling ./tooling
 
 # 安装 pnpm
 RUN npm install -g pnpm@10.27.0
