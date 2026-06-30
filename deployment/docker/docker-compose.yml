@@ -201,10 +201,10 @@ services:
       # RabbitMQ 配置（如果需要消息队列）
       - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
       - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
-      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
       - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
-      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
       - API_RMQ_RPC_QUEUE=${API_RMQ_RPC_QUEUE:-api-rpc-queue}
       - API_RMQ_RPC_QUEUE_AUTONOMOUS=${API_RMQ_RPC_QUEUE_AUTONOMOUS:-api-rpc-autonomous-queue}
       - API_RMQ_AUTONOMOUS_PREFETCH=${API_RMQ_AUTONOMOUS_PREFETCH:-5}
@@ -246,7 +246,7 @@ services:
       - WEBHOOKS_SERVICE_URL=${WEBHOOKS_SERVICE_URL:-http://webhooks-service:3003}
       - WORKER_SERVICE_URL=${WORKER_SERVICE_URL:-http://worker-service:3004}
       - LOGGING_SERVICE_URL=${LOGGING_SERVICE_URL:-http://logging-service:3001}
-      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
       - SERVICE_ADDRESS=${SERVICE_ADDRESS:-service-gateway}
     depends_on:
       postgres:
@@ -285,10 +285,10 @@ services:
       # RabbitMQ 配置
       - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
       - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
-      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
       - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
-      - RABBITMQ_URI=${RABBITMQ_URI:-amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/}
+      - RABBITMQ_URI=${RABBITMQ_URI:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@rabbitmq:5672/}
     depends_on:
       postgres:
         condition: service_healthy
@@ -320,10 +320,10 @@ services:
       # RabbitMQ：与 api-service / gateway 一致，显式 RMQ_URL 避免仅依赖 RABBITMQ_* 时分叉
       - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
       - RABBITMQ_PORT=${RABBITMQ_PORT:-5672}
-      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-admin123}
       - RABBITMQ_VHOST=${RABBITMQ_VHOST:-/}
-      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
+      - RMQ_URL=${RMQ_URL:-amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@${RABBITMQ_HOST:-rabbitmq}:${RABBITMQ_PORT:-5672}/}
       - API_RMQ_RPC_QUEUE=${API_RMQ_RPC_QUEUE:-api-rpc-queue}
       - API_RMQ_RPC_QUEUE_AUTONOMOUS=${API_RMQ_RPC_QUEUE_AUTONOMOUS:-api-rpc-autonomous-queue}
       - WORKER_API_RMQ_RPC_QUEUE=${WORKER_API_RMQ_RPC_QUEUE:-${API_RMQ_RPC_QUEUE_AUTONOMOUS:-api-rpc-autonomous-queue}}

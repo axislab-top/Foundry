@@ -99,7 +99,7 @@ async function bootstrap() {
   const rmqUrl =
     process.env.RMQ_URL ||
     process.env.RABBITMQ_URI ||
-    'amqp://guest:guest@localhost:5672/';
+    'amqp://admin:admin123@localhost:5672/';
   const rmqQueue = process.env.WEBHOOKS_RMQ_RPC_QUEUE || 'webhooks-rpc-queue';
   const rpcNoAck = readBooleanEnv('WEBHOOKS_RMQ_RPC_NOACK', true);
   app.connectMicroservice<MicroserviceOptions>({

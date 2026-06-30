@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 export const runnerEnvSchema = Joi.object({
-  RMQ_URL: Joi.string().default('amqp://guest:guest@localhost:5672'),
+  RMQ_URL: Joi.string().default('amqp://admin:admin123@localhost:5672'),
   RUNNER_RMQ_QUEUE: Joi.string().default('runner-rpc-queue'),
   RUNNER_HTTP_PORT: Joi.number().default(3010),
   RUNNER_EXEC_MODE: Joi.string().valid('mock', 'kubernetes').default('mock'),
